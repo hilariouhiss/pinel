@@ -3,7 +3,7 @@ dist
 node_modules
 .vscode-test/
 *.vsix
-.pi/
+.pi/subagents/
 media/webview.js
 media/webview.css
 media/webview.js.map

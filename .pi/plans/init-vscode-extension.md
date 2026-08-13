@@ -171,4 +171,6 @@ pinel/
 - **副侧边栏**：实测声明式清单仅支持 activitybar/panel，README 记录拖拽方式
 - **Windows shim 三坑**（均修复并有回归测试）：① PATH 中无扩展名 `pi` sh 脚本遮蔽 `pi.cmd` → `where.exe` 解析并优先 `.cmd`；② cmd.exe 包装需 `windowsVerbatimArguments`（Node 默认反斜杠转义引号，cmd 不解析）；③ cmd 路径须用 ComSpec 反斜杠形式（正斜杠破坏其参数解析）
 - **真实 pi 冒烟验证**：RpcClient 对真实 pi 0.84.1 完成 get_state（deepseek/deepseek-v4-pro）、get_available_models、prompt 接受、真实扩展 extension_ui_request 自动取消、进程树清理
-- **测试**：20/20 通过（framing 7、流式装配 5、spawn 解析 4、集成 4——状态同步/端到端多块流式/abort 中断/UI 请求自动取消）
+- **测试**：21/21 通过（framing 7、流式装配 5、spawn 解析 4、集成 5——状态同步/端到端多块流式/abort 中断/UI 请求自动取消/跨消息装配不串块）
+- **实现评审修复**（子代理评审后）：流式装配在 message_start/agent_settled 重置并门控 settle 后迟到的 message_update（防跨消息污染，含 TWOMSG 回归测试）；POSIX spawn detached 使进程组 kill 生效；webview ready 握手重发快照（视图重显重放竞态）；shell 命令模式自动拼入 `--mode rpc` 且命令发送带 30s 超时；webview 图片压缩（>1568px 转 JPEG）；默认 watch 任务含 webview 打包
+- **与计划的等价偏差**（已确认）：agentStart/agentEnd/agentSettled 未作为独立 webview 消息转发，以 `status.isStreaming` 等价映射；pi 版本预检以 spawn 失败检测替代；`get_available_models` 类型/假 pi 已备但 v0.1 UI 仅用 get_state 展示模型（v0.2 模型切换时使用）
