@@ -52,7 +52,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   }
 
   private post(msg: OutMessage): void {
-    void this.view?.webview.postMessage(msg);
+    const view = this.view;
+    if (!view) {
+      return;
+    }
+    try {
+      void view.webview.postMessage(msg);
+    } catch {
+      // webview 已销毁（视图隐藏/关闭）时忽略
+    }
   }
 
   private handleMessage(msg: WebviewInMessage): void {

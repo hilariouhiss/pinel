@@ -4,3 +4,7 @@ node_modules
 .vscode-test/
 *.vsix
 .pi/
+media/webview.js
+media/webview.css
+media/webview.js.map
+media/webview.css.map
