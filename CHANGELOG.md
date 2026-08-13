@@ -15,6 +15,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 - 未打开文件夹时不再显示「pi 进程异常」，改为友好提示「⚠ 未打开文件夹」；打开文件夹后自动连接 pi
 - 移除「添加图片」按钮（保留 Ctrl+V 粘贴图片）
+- 更换扩展图标为高清版 SVG
 
 ### Fixed
 
