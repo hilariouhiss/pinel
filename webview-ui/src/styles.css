@@ -1,0 +1,474 @@
+/* Pinel webview 样式 —— 全部使用 VS Code CSS 变量，自动适配主题 */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+}
+
+.pinel-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--vscode-editor-background);
+}
+
+/* ------------------------------------------------------------------ 提示条 */
+.notices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 8px 0;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  border: 1px solid var(--vscode-input-border);
+  background: var(--vscode-input-background);
+}
+
+.notice-warning {
+  color: var(--vscode-warningForeground, #cca700);
+}
+
+.notice-error {
+  color: var(--vscode-errorForeground);
+}
+
+.notice-text {
+  flex: 1;
+  word-break: break-all;
+}
+
+.notice-close {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+/* ------------------------------------------------------------------ 消息区 */
+.pinel-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 10px;
+}
+
+.pinel-empty {
+  margin-top: 30%;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+}
+
+.pinel-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  margin-bottom: 8px;
+}
+
+.pinel-empty-hint {
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.msg {
+  margin-bottom: 14px;
+}
+
+.msg-role {
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: var(--vscode-descriptionForeground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.msg-user .msg-role {
+  color: var(--vscode-textLink-foreground);
+}
+
+.msg-user .msg-text {
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg-image {
+  display: block;
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  border: 1px solid var(--vscode-input-border);
+}
+
+.msg-text {
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--vscode-textLink-foreground);
+  animation: blink 1s steps(2) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- thinking */
+.thinking {
+  margin: 6px 0;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-input-background) 60%, transparent);
+}
+
+.thinking-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  list-style: none;
+}
+
+.thinking-summary::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground);
+}
+
+.thinking-preview {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0.7;
+}
+
+.thinking-body {
+  padding: 0 8px 8px;
+  font-size: 12.5px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ------------------------------------------------------------------ 工具 */
+.toolchip {
+  margin: 6px 0;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.toolchip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: var(--vscode-input-background);
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+  text-align: left;
+}
+
+.toolchip-name {
+  font-weight: 600;
+}
+
+.toolchip-args-preview {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+}
+
+.toolchip-args {
+  margin: 0;
+  padding: 8px;
+  overflow-x: auto;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--vscode-input-background) 60%, transparent);
+  border-top: 1px solid var(--vscode-input-border);
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.toolresult {
+  margin: 6px 0 6px 12px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.toolresult.status-error {
+  border-color: var(--vscode-errorForeground);
+}
+
+.toolresult-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: var(--vscode-input-background);
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+  text-align: left;
+}
+
+.toolresult-title {
+  font-weight: 600;
+}
+
+.toolresult-len {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.toolresult-body {
+  margin: 0;
+  padding: 8px;
+  max-height: 300px;
+  overflow: auto;
+  font-size: 11px;
+  border-top: 1px solid var(--vscode-input-border);
+  font-family: var(--vscode-editor-font-family, monospace);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.toolstatus.status-error {
+  color: var(--vscode-errorForeground);
+}
+
+.toolstatus.status-done {
+  color: var(--vscode-testing-iconPassed, #73c991);
+}
+
+/* ---------------------------------------------------------------- markdown */
+.md-codeblock {
+  margin: 6px 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-input-background));
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.md-code {
+  padding: 1px 4px;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-input-background));
+  border-radius: 3px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+}
+
+.md-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------------ 输入区 */
+.composer {
+  border-top: 1px solid var(--vscode-input-border);
+  padding: 6px 8px;
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.composer-attachment {
+  position: relative;
+}
+
+.composer-attachment img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-input-border);
+}
+
+.composer-attachment-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  line-height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--vscode-input-border);
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.composer-input {
+  flex: 1;
+  resize: none;
+  padding: 7px 10px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  line-height: 1.5;
+  outline: none;
+}
+
+.composer-input:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.composer-send,
+.composer-stop,
+.composer-icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-input-border);
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.composer-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.composer-stop {
+  background: var(--vscode-inputValidation-errorBackground, transparent);
+  color: var(--vscode-errorForeground);
+}
+
+.composer-icon-btn {
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ------------------------------------------------------------------ 状态栏 */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  border-top: 1px solid var(--vscode-input-border);
+  background: var(--vscode-titleBar-activeBackground, var(--vscode-editor-background));
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.status-item {
+  white-space: nowrap;
+}
+
+.status-spacer {
+  flex: 1;
+}
+
+.status-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-ok {
+  color: var(--vscode-testing-iconPassed, #73c991);
+}
+
+.status-error {
+  color: var(--vscode-errorForeground);
+}
+
+.status-restart {
+  border: 1px solid var(--vscode-input-border);
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+/* ------------------------------------------------------------------ 动效 */
+.spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--vscode-descriptionForeground);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: -1px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,0 +1,253 @@
+import { spawn, spawnSync, type ChildProcess, type SpawnOptions } from "node:child_process";
+import { EventEmitter } from "node:events";
+import * as fs from "node:fs";
+import { JsonlDecoder, encodeRecord } from "./framing";
+import type { ClientCommand, RpcRecord, RpcResponse } from "./protocol";
+
+const IS_WIN = process.platform === "win32";
+
+/** spawn 解析结果。 */
+export interface SpawnSpec {
+  cmd: string;
+  args: string[];
+  options: SpawnOptions;
+}
+
+/**
+ * 解析 pi 启动方式（Windows shim 处理）。
+ *
+ * 规则：
+ * 1. `command` 是存在的文件路径：
+ *    - `.cmd` / `.bat` → 通过 `cmd.exe /d /s /c` 包装执行（CreateProcess 无法
+ *      直接执行批处理 shim）；
+ *    - 其他 → 直接 spawn。
+ * 2. `command` 是含空格/参数的非路径字符串（如 `node "/path/fake-pi.js"`）→
+ *    作为完整 shell 命令执行（shell: true）。
+ * 3. 裸命令名（如 `pi`）→ 直接 spawn：Node ≥ 20.12 在 Windows 上会按
+ *    PATHEXT 解析 `pi.cmd` 并正确处理参数引用；POSIX 上即 PATH 查找。
+ */
+export function resolveSpawnSpec(command: string, rpcArgs: string[], cwd: string): SpawnSpec {
+  const looksLikePath = command.includes("/") || command.includes("\\");
+
+  if (looksLikePath && fs.existsSync(command)) {
+    const lower = command.toLowerCase();
+    if (IS_WIN && (lower.endsWith(".cmd") || lower.endsWith(".bat"))) {
+      return {
+        cmd: process.env.ComSpec ?? "cmd.exe",
+        args: ["/d", "/s", "/c", `"${command}"`, ...rpcArgs],
+        options: { cwd, windowsHide: true },
+      };
+    }
+    return { cmd: command, args: rpcArgs, options: { cwd, windowsHide: true } };
+  }
+
+  if (looksLikePath && !fs.existsSync(command)) {
+    // 完整命令字符串（含参数），交给 shell 执行——用于测试/自定义脚本场景。
+    return {
+      cmd: command,
+      args: [],
+      options: { cwd, shell: true, windowsHide: true },
+    };
+  }
+
+  return { cmd: command, args: rpcArgs, options: { cwd, windowsHide: true } };
+}
+
+interface PendingRequest {
+  command: string;
+  resolve: (data: unknown) => void;
+  reject: (err: Error) => void;
+}
+
+export interface RpcClientEvents {
+  record: (record: RpcRecord) => void;
+  exit: (code: number | null, signal: string | null) => void;
+  spawnError: (err: Error) => void;
+  stderr: (line: string) => void;
+}
+
+/**
+ * pi RPC 子进程客户端：spawn + 严格 LF framing + id 关联 + 事件分发。
+ *
+ * - stdout 按协议严格切分（自实现 LF 切分，禁用 Node readline）；
+ * - 每个命令带自增 id，响应按 id 关联；不带 id 的响应按 command 兜底；
+ * - `stop()` 终止整个进程树（Windows: taskkill /T /F；POSIX: 信号），
+ *   避免 pi 的 bash 工具子进程成为孤儿。
+ */
+export class RpcClient extends EventEmitter {
+  private child: ChildProcess | null = null;
+  private decoder = new JsonlDecoder();
+  private pending = new Map<string, PendingRequest>();
+  private nextId = 1;
+  private stoppedIntentionally = false;
+
+  override on<K extends keyof RpcClientEvents>(event: K, listener: RpcClientEvents[K]): this {
+    return super.on(event, listener);
+  }
+
+  override emit<K extends keyof RpcClientEvents>(event: K, ...args: Parameters<RpcClientEvents[K]>): boolean {
+    return super.emit(event, ...args);
+  }
+
+  get isRunning(): boolean {
+    return this.child !== null && this.child.exitCode === null && this.child.signalCode === null;
+  }
+
+  get pid(): number | undefined {
+    return this.child?.pid;
+  }
+
+  /** 启动子进程（重复调用前需先 stop）。 */
+  async start(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<void> {
+    if (this.isRunning) {
+      return;
+    }
+    this.stoppedIntentionally = false;
+    this.decoder = new JsonlDecoder();
+    const spec = resolveSpawnSpec(command, ["--mode", "rpc"], cwd);
+    const child = spawn(spec.cmd, spec.args, { ...spec.options, env, stdio: ["pipe", "pipe", "pipe"] });
+    this.child = child;
+
+    child.stdout!.setEncoding("utf8");
+    child.stderr!.setEncoding("utf8");
+
+    child.stdout!.on("data", (chunk: string) => {
+      for (const line of this.decoder.push(chunk)) {
+        this.handleLine(line);
+      }
+    });
+
+    let stderrBuf = "";
+    child.stderr!.on("data", (chunk: string) => {
+      stderrBuf += chunk;
+      let idx: number;
+      while ((idx = stderrBuf.indexOf("\n")) !== -1) {
+        const line = stderrBuf.slice(0, idx).replace(/\r$/, "");
+        stderrBuf = stderrBuf.slice(idx + 1);
+        if (line.trim().length > 0) {
+          this.emit("stderr", line);
+        }
+      }
+    });
+
+    child.on("error", (err) => {
+      // spawn 失败（ENOENT 等）
+      this.child = null;
+      this.rejectAllPending(new Error(`无法启动 pi 进程: ${err.message}`));
+      this.emit("spawnError", err);
+    });
+
+    child.on("exit", (code, signal) => {
+      this.child = null;
+      if (!this.stoppedIntentionally) {
+        this.rejectAllPending(new Error(`pi 进程已退出 (code=${code}, signal=${signal})`));
+      }
+      this.emit("exit", code, signal);
+    });
+  }
+
+  /** 发送命令并等待响应，resolve 为响应中的 `data`；失败 reject。 */
+  send<T = unknown>(command: ClientCommand): Promise<T> {
+    if (!this.isRunning) {
+      return Promise.reject(new Error("pi 进程未运行"));
+    }
+    const id = String(this.nextId++);
+    const record: RpcRecord = { id, ...command };
+    return new Promise<T>((resolve, reject) => {
+      this.pending.set(id, { command: command.type, resolve: (d) => resolve(d as T), reject });
+      this.writeRaw(record);
+    });
+  }
+
+  /** 直接写一帧（用于 extension_ui_response 等无需响应的记录）。 */
+  writeRaw(record: unknown): void {
+    if (!this.isRunning) {
+      return;
+    }
+    this.child!.stdin!.write(encodeRecord(record));
+  }
+
+  /** 终止整个进程树。 */
+  async stop(): Promise<void> {
+    const child = this.child;
+    this.stoppedIntentionally = true;
+    this.rejectAllPending(new Error("pi 进程已停止"));
+    this.child = null;
+    if (!child || child.exitCode !== null || child.signalCode !== null) {
+      return;
+    }
+    const pid = child.pid;
+    if (!pid) {
+      child.kill("SIGKILL");
+      return;
+    }
+    if (IS_WIN) {
+      // 终止整棵进程树（含 bash 工具派生的子进程）
+      spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { windowsHide: true });
+    } else {
+      try {
+        process.kill(-pid, "SIGTERM");
+      } catch {
+        child.kill("SIGTERM");
+      }
+      setTimeout(() => {
+        try {
+          process.kill(-pid, "SIGKILL");
+        } catch {
+          child.kill("SIGKILL");
+        }
+      }, 2000).unref();
+    }
+  }
+
+  private handleLine(line: string): void {
+    let record: RpcRecord;
+    try {
+      record = JSON.parse(line) as RpcRecord;
+    } catch {
+      // JSONL 解码容错：跳过无法解析的帧
+      this.emit("stderr", `[Pinel] 无法解析的 RPC 帧: ${line.slice(0, 200)}`);
+      return;
+    }
+    if (record.type === "response") {
+      this.handleResponse(record as RpcResponse);
+    } else {
+      this.emit("record", record);
+    }
+  }
+
+  private handleResponse(res: RpcResponse): void {
+    let entry: PendingRequest | undefined;
+    let key: string | undefined;
+    if (res.id) {
+      key = res.id;
+      entry = this.pending.get(key);
+    }
+    if (!entry) {
+      // 不带 id 的响应：按 command 字段兜底关联
+      for (const [k, v] of this.pending) {
+        if (v.command === res.command) {
+          key = k;
+          entry = v;
+          break;
+        }
+      }
+    }
+    if (!entry || !key) {
+      return; // 与任何请求无关的响应，忽略
+    }
+    this.pending.delete(key);
+    if (res.success) {
+      entry.resolve(res.data);
+    } else {
+      entry.reject(new Error(res.error ?? `命令 ${res.command} 失败`));
+    }
+  }
+
+  private rejectAllPending(err: Error): void {
+    for (const [, entry] of this.pending) {
+      entry.reject(err);
+    }
+    this.pending.clear();
+  }
+}
