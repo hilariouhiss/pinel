@@ -24,6 +24,18 @@
             "group": "build",
             "isBackground": true,
             "label": "npm: watch:esbuild",
+            "problemMatcher": {
+                "owner": "esbuild",
+                "pattern": {
+                    "regexp": "✘ \\[ERROR\\] (.*)$",
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "\\[watch\\] build started",
+                    "endsPattern": "\\[watch\\] build finished"
+                }
+            },
             "presentation": {
                 "group": "watch",
                 "reveal": "never"
@@ -47,6 +59,18 @@
             "group": "build",
             "isBackground": true,
             "label": "npm: watch:webview",
+            "problemMatcher": {
+                "owner": "esbuild-webview",
+                "pattern": {
+                    "regexp": "\\[webview\\] build failed: (.*)$",
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "\\[webview\\] watching",
+                    "endsPattern": "\\[webview\\] watching"
+                }
+            },
             "presentation": {
                 "group": "watch",
                 "reveal": "never"
