@@ -22,5 +22,6 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - F5 调试时开发宿主未打开工作区（launch.json 未传工作区参数）导致面板提示「请先打开一个文件夹」且重启无效
 - 重启 pi 后旧进程迟到的退出事件可能把状态栏打回「pi 进程异常」（restart 竞态）
 - 工具调用结果左侧多余缩进，与其他消息左对齐
+- 活动栏图标显示为黑色方块（图标含全幅背景，被 VS Code mask 染色渲染吞没）——替换为单色 π 轮廓
 
 - Initial release
