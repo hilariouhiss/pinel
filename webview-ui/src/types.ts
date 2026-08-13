@@ -63,12 +63,35 @@ export interface ChatMessage {
   [key: string]: unknown;
 }
 
+export interface UiRequest {
+  id: string;
+  method: string;
+  title?: string;
+  message?: string;
+  options?: string[];
+  placeholder?: string;
+  prefill?: string;
+  timeout?: number;
+}
+
+export interface TodoTask {
+  id: number;
+  subject: string;
+  status: "pending" | "in_progress" | "completed" | "deleted";
+  description?: string;
+  activeForm?: string;
+}
+
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[] }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "tool"; tool: ToolCard }
   | { type: "status"; status: ChatStatus }
+  | { type: "uiRequest"; request: UiRequest }
+  | { type: "uiResolved"; id: string }
+  | { type: "uiCleared" }
+  | { type: "todos"; todos: TodoTask[] }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {

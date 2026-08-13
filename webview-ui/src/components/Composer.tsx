@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from "react";
+import { useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { vscode } from "../index";
 import type { Attachment, ChatStatus } from "../types";
 
@@ -35,7 +35,6 @@ let attachmentSeq = 0;
 export function Composer({ status }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const fileInput = useRef<HTMLInputElement>(null);
   const busy = status.isStreaming || status.isCompacting;
 
   const send = () => {
@@ -86,16 +85,6 @@ export function Composer({ status }: Props) {
     }
   };
 
-  const onPick = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      for (const file of files) {
-        addImageFile(file);
-      }
-    }
-    e.target.value = "";
-  };
-
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -132,14 +121,6 @@ const rows = Math.min(8, Math.max(2, text.split("\n").length));
         </div>
       )}
       <div className="composer-row">
-        <button
-          className="composer-icon-btn"
-          title="添加图片"
-          onClick={() => fileInput.current?.click()}
-        >
-          🖼
-        </button>
-        <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={onPick} />
         <textarea
           className="composer-input"
           placeholder={

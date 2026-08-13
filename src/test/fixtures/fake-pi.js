@@ -292,6 +292,21 @@ async function handleCommand(record) {
     case "prompt": {
       respond(id, "prompt", true);
       const text = String(record.message ?? "");
+      // 注意：UIREQUEST-CRASH 必须优先于 UIREQUEST 判断（子串包含关系）
+      if (text.includes("UIREQUEST-CRASH")) {
+        // 对话框 pending 期间进程崩溃：发 confirm 帧后 1.5s exit(1)
+        out({
+          type: "extension_ui_request",
+          id: "ui-crash-1",
+          method: "confirm",
+          title: "Crash?",
+          message: "pending 期间崩溃",
+        });
+        setTimeout(() => process.exit(1), 1500);
+        // 进程将在 1.5s 后死亡，此等待不会 resolve（进程死亡即回收）
+        await waitForUiResponse("ui-crash-1");
+        break;
+      }
       if (text.includes("UIREQUEST")) {
         out({
           type: "extension_ui_request",
@@ -300,7 +315,7 @@ async function handleCommand(record) {
           title: "Allow?",
           message: "Proceed with fake action?",
         });
-        // 等待客户端回复（客户端应自动回复 cancelled，否则这里会一直等待）
+        // 等待客户端回复（pinel 现在渲染内联卡片由用户作答；不回复则一直等待）
         const response = await waitForUiResponse("ui-1");
         log({ dir: "ui-response", response });
       }
@@ -310,6 +325,51 @@ async function handleCommand(record) {
         void streamSequence(text, false);
         setTimeout(() => process.exit(1), 1500);
         break;
+      }
+      if (text.includes("ASKUI-TIMEOUT")) {
+        // 模拟 pi 对带 timeout 的对话框自动超时 resolve：发 select 帧后
+        // 不等待响应，延时走完流并 settle（配合 settled 清理回归测试）
+        out({
+          type: "extension_ui_request",
+          id: "ui-timeout-1",
+          method: "select",
+          title: "Choose?",
+          options: ["1. A", "2. B"],
+          timeout: 1000,
+        });
+        void streamSequence(text, false);
+        break;
+      }
+      if (text.includes("TODOME")) {
+        // 模拟 todo 工具执行：两轮 create + update，details.tasks 为全量快照
+        out({ type: "tool_execution_start", toolCallId: "todo_1", toolName: "todo", args: { action: "create", subject: "任务一", description: "第一个任务" } });
+        out({ type: "tool_execution_end", toolCallId: "todo_1", toolName: "todo", result: todoResult("create", { action: "create", subject: "任务一", description: "第一个任务" }, [
+          { id: 1, subject: "任务一", status: "pending", description: "第一个任务" },
+        ]) });
+        out({ type: "tool_execution_start", toolCallId: "todo_2", toolName: "todo", args: { action: "create", subject: "任务二", description: "第二个任务" } });
+        out({ type: "tool_execution_end", toolCallId: "todo_2", toolName: "todo", result: todoResult("create", { action: "create", subject: "任务二", description: "第二个任务" }, [
+          { id: 1, subject: "任务一", status: "pending", description: "第一个任务" },
+          { id: 2, subject: "任务二", status: "pending", description: "第二个任务" },
+        ]) });
+        out({ type: "tool_execution_start", toolCallId: "todo_3", toolName: "todo", args: { action: "update", id: 2, status: "in_progress", activeForm: "执行任务二" } });
+        out({ type: "tool_execution_end", toolCallId: "todo_3", toolName: "todo", result: todoResult("update", { action: "update", id: 2, status: "in_progress", activeForm: "执行任务二" }, [
+          { id: 1, subject: "任务一", status: "pending", description: "第一个任务" },
+          { id: 2, subject: "任务二", status: "in_progress", description: "第二个任务", activeForm: "执行任务二" },
+        ]) });
+        void streamSequence(text, false);
+        break;
+      }
+      if (text.includes("ASKUI")) {
+        // 模拟 ask_user_question 插件的 RPC 问卷：发 select 帧等待回复
+        out({
+          type: "extension_ui_request",
+          id: "ui-1",
+          method: "select",
+          title: "Pick one",
+          options: ["1. A", "2. B"],
+        });
+        const response = await waitForUiResponse("ui-1");
+        log({ dir: "ui-response", response });
       }
       if (text.includes("TWOMSG")) {
         void twoMessageSequence(text);
@@ -334,8 +394,10 @@ async function handleCommand(record) {
       break;
 
     case "extension_ui_response": {
-      const waiter = pendingUiWaiters.find((w) => w.id === record.id);
-      if (waiter) {
+      // 命中后从数组移除：防止后续同 id 请求命中已 resolve 的旧 waiter
+      const idx = pendingUiWaiters.findIndex((w) => w.id === record.id);
+      if (idx !== -1) {
+        const [waiter] = pendingUiWaiters.splice(idx, 1);
         waiter.resolve(record);
       }
       break;
@@ -350,4 +412,15 @@ function waitForUiResponse(id) {
   return new Promise((resolve) => {
     pendingUiWaiters.push({ id, resolve });
   });
+}
+
+/** 构造 todo 工具的 tool_execution_end result（details.tasks 全量快照）。 */
+function todoResult(action, params, tasks) {
+  const verb = action === "update" ? "Updated" : "Created";
+  const target = tasks[tasks.length - 1] ?? params;
+  const label = params.id !== undefined ? `#${params.id}` : `#${tasks.length}`;
+  return {
+    content: [{ type: "text", text: `${verb} ${label}: ${target.subject} (${target.status})` }],
+    details: { action, params, tasks, nextId: tasks.length + 1 },
+  };
 }

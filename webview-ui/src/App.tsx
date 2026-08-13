@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, HostMessage, StreamBlock, ToolCard } from "./types";
+import type { ChatMessage, ChatStatus, HostMessage, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { MessageView } from "./components/MessageView";
 import { Notices } from "./components/Notices";
 import { StatusBar } from "./components/StatusBar";
+import { TodoPanel } from "./components/TodoPanel";
+import { UiDialogs } from "./components/UiDialogs";
 
 const initialStatus: ChatStatus = {
   processState: "stopped",
@@ -23,6 +25,8 @@ export default function App() {
   const [streamBlocks, setStreamBlocks] = useState<StreamBlock[]>([]);
   const [tools, setTools] = useState<Record<string, ToolCard>>({});
   const [status, setStatus] = useState<ChatStatus>(initialStatus);
+  const [pendingUi, setPendingUi] = useState<UiRequest[]>([]);
+  const [todos, setTodos] = useState<TodoTask[]>([]);
   const [notices, setNotices] = useState<Array<{ id: number; level: string; text: string }>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -34,6 +38,8 @@ export default function App() {
         setMessages(msg.messages);
         setStreamBlocks([]);
         setStatus(msg.status);
+        setPendingUi(msg.pendingUi ?? []);
+        setTodos(msg.todos ?? []);
         break;
       case "stream":
         setStreamBlocks(msg.blocks);
@@ -46,6 +52,18 @@ export default function App() {
         break;
       case "status":
         setStatus(msg.status);
+        break;
+      case "uiRequest":
+        setPendingUi((prev) => [...prev, msg.request]);
+        break;
+      case "uiResolved":
+        setPendingUi((prev) => prev.filter((r) => r.id !== msg.id));
+        break;
+      case "uiCleared":
+        setPendingUi([]);
+        break;
+      case "todos":
+        setTodos(msg.todos);
         break;
       case "notice": {
         const id = ++noticeSeq;
@@ -65,13 +83,14 @@ export default function App() {
     setNotices((prev) => prev.filter((n) => n.id !== id));
   }, []);
 
-  // 自动滚动到底部（用户上滚查看历史时不打扰）
+  // 自动滚动到底部（用户上滚查看历史时不打扰）；pendingUi 新卡片出现在
+  // 流末尾时也滚动，确保对话框可见
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickToBottom.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages, streamBlocks, tools]);
+  }, [messages, streamBlocks, tools, pendingUi]);
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -86,6 +105,7 @@ export default function App() {
   return (
     <div className="pinel-root">
       <Notices notices={notices} onDismiss={dismissNotice} />
+      {todos.length > 0 && <TodoPanel todos={todos} />}
       <div className="pinel-scroll" ref={scrollRef} onScroll={onScroll}>
         {!hasConversation && (
           <div className="pinel-empty">
@@ -108,6 +128,7 @@ export default function App() {
             tools={tools}
           />
         )}
+        <UiDialogs requests={pendingUi} />
       </div>
       <Composer status={status} />
       <StatusBar status={status} />

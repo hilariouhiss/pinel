@@ -140,22 +140,108 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.ok(aborts.length >= 1, `假 pi 日志中必须出现 abort 命令（实际 ${aborts.length} 条）`);
   });
 
-  test("extension_ui_request 对话框被自动取消（防阻塞）", async () => {
+  test("extension_ui_request 对话框被广播并可由用户答复（confirm 链路）", async () => {
     const marker = `UIREQUEST-${Date.now()}`;
     const baseline = api.getSettledCount();
     await api.sendPrompt(marker);
+
+    // 对话框请求应广播给 UI（pendingUi 可见），而非自动取消
+    await waitFor(() => api.getPendingUi().length > 0, 10000, "对话框请求广播");
+    const pending = api.getPendingUi();
+    assert.strictEqual(pending.length, 1, "同一时刻应只有一个待决对话框");
+    assert.strictEqual(pending[0].method, "confirm");
+
+    // 用户答复（确认）→ 假 pi 收到非 cancelled 的响应
+    api.uiRespond(pending[0].id, { confirmed: true });
+    await waitFor(() => api.getPendingUi().length === 0, 5000, "答复后对话框移除");
+
     await api.waitForSettled(30000, baseline);
 
-    // 假 pi 记录收到的 extension_ui_response（应为 cancelled: true）
+    // 假 pi 记录收到的 extension_ui_response（应为 confirmed: true 而非 cancelled）
     const records = readFakePiLog(logPath);
     const responses = records.filter((r) => (r.record as { dir?: string })?.dir === "ui-response");
     assert.ok(responses.length >= 1, "假 pi 必须收到 extension_ui_response");
-    const last = (responses[responses.length - 1].record as { response?: { cancelled?: boolean } }).response;
-    assert.strictEqual(last?.cancelled, true, "回复必须为 cancelled: true");
+    const last = (responses[responses.length - 1].record as { response?: { cancelled?: boolean; confirmed?: boolean } }).response;
+    assert.strictEqual(last?.cancelled, undefined, "回复不得为 cancelled");
+    assert.strictEqual(last?.confirmed, true, "回复必须为 confirmed: true");
 
-    // 流式仍然正常完成（说明对话框没有阻塞 agent）
+    // 流式仍然正常完成（说明对话框回复没有阻塞 agent）
     const assistant = api.getMessages().find((m) => m.role === "assistant");
     assert.ok(assistant, "UI 请求后流式必须正常完成");
+  });
+
+  test("select 对话框：广播 + 选项答复回传 value", async () => {
+    const marker = `ASKUI-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+
+    await waitFor(() => api.getPendingUi().length > 0, 10000, "select 请求广播");
+    const pending = api.getPendingUi()[0];
+    assert.strictEqual(pending.method, "select");
+    assert.deepStrictEqual(pending.options, ["1. A", "2. B"]);
+
+    // 用户选第一个选项 → value 回传
+    api.uiRespond(pending.id, { value: "1. A" });
+    await api.waitForSettled(30000, baseline);
+
+    const records = readFakePiLog(logPath);
+    const responses = records.filter((r) => (r.record as { dir?: string })?.dir === "ui-response");
+    assert.ok(responses.length >= 1, "假 pi 必须收到 select 答复");
+    const last = (responses[responses.length - 1].record as { response?: { value?: string } }).response;
+    assert.strictEqual(last?.value, "1. A", "回复必须携带所选选项");
+  });
+
+  test("todo 工具结果解析为待办列表（含 snapshot 携带）", async () => {
+    const marker = `TODOME-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+
+    // 最终快照：2 个任务，第 2 个 in_progress
+    await waitFor(
+      () => api.getTodos().length === 2 && api.getTodos()[1]?.status === "in_progress",
+      15000,
+      "待办列表解析",
+    );
+    const todos = api.getTodos();
+    assert.strictEqual(todos[0].subject, "任务一");
+    assert.strictEqual(todos[0].status, "pending");
+    assert.strictEqual(todos[1].subject, "任务二");
+    assert.strictEqual(todos[1].activeForm, "执行任务二");
+
+    await api.waitForSettled(30000, baseline);
+    // snapshot 后待办状态仍保留（webview 重载恢复路径）
+    assert.deepStrictEqual(api.getTodos(), todos, "settled 后待办快照必须保留");
+  });
+
+  test("agent_settled 清理未决对话框（pi 超时自动 resolve 路径）", async () => {
+    // ASKUI-TIMEOUT：假 pi 发 select 帧后不等待回复，延时走完流并 settle
+    const marker = `ASKUI-TIMEOUT-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+
+    await waitFor(() => api.getPendingUi().length > 0, 10000, "对话框请求广播");
+    assert.strictEqual(api.getPendingUi()[0].id, "ui-timeout-1");
+
+    // 不回复，等待流自然结束（模拟 pi 超时自动 resolve）
+    await api.waitForSettled(30000, baseline);
+    assert.strictEqual(api.getPendingUi().length, 0, "settled 后未决对话框必须被清理");
+  });
+
+  test("pi 崩溃时清理未决对话框（handleExit 路径）", async () => {
+    // UIREQUEST-CRASH：假 pi 发 confirm 帧后 1.5s 崩溃——对话框 pending 期间进程退出
+    const marker = `UIREQUEST-CRASH-${Date.now()}`;
+    await api.sendPrompt(marker);
+    await waitFor(() => api.getPendingUi().length > 0, 10000, "对话框请求广播");
+    await waitFor(() => api.getStatus().processState === "error", 15000, "pi 崩溃进入 error");
+    assert.strictEqual(api.getPendingUi().length, 0, "崩溃后未决对话框必须清空");
+
+    // 恢复现场供后续测试：重启
+    await api.restart();
+    await waitFor(
+      () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+      20000,
+      "重启后恢复",
+    );
   });
 
   test("连续消息：第二条流式块不串入第一条的旧块（contentIndex 装配跨消息重置）", async () => {

@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import { ChatController, type ChatStatus, type ToolCard } from "./chat/controller";
 import { ChatPanelProvider } from "./chat/panel";
-import type { AgentMessage } from "./rpc/protocol";
+import type { AgentMessage, ExtensionUiRequest } from "./rpc/protocol";
+import type { TodoTask } from "./chat/todos";
 
 /** 暴露给集成测试的钩子接口（通过扩展 exports 获取）。 */
 export interface PinelTestApi {
@@ -18,6 +19,12 @@ export interface PinelTestApi {
   getPartialBlocks(): Array<{ kind: string; text: string; toolCall?: { id: string; name: string; arguments: string } }>;
   /** 当前已完成的 agent 轮次计数（agent_settled 次数）。 */
   getSettledCount(): number;
+  /** 待决的扩展对话框请求。 */
+  getPendingUi(): ExtensionUiRequest[];
+  /** 当前待办任务快照。 */
+  getTodos(): TodoTask[];
+  /** 答复扩展对话框（模拟用户在 webview 中的操作）。 */
+  uiRespond(id: string, response: { value?: string; confirmed?: boolean; cancelled?: boolean }): void;
   /** 轮询等待流结束（agent_settled 后 isStreaming=false）。 */
   waitForSettled(timeoutMs: number, baseline?: number): Promise<void>;
 }
@@ -59,6 +66,9 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     getTools: () => controller.getTools(),
     getPartialBlocks: () => controller.getPartialBlocks(),
     getSettledCount: () => controller.getSettledCount(),
+    getPendingUi: () => controller.getPendingUi(),
+    getTodos: () => controller.getTodos(),
+    uiRespond: (id, response) => controller.uiRespond(id, response),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {
       const deadline = Date.now() + timeoutMs;
       // 基线在触发动作之前捕获（调用方传入），避免 settled 在基线记录前就被处理

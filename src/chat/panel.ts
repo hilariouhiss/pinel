@@ -15,6 +15,14 @@ interface WebviewRestartMessage {
   type: "restart";
 }
 
+interface WebviewUiResponseMessage {
+  type: "uiResponse";
+  id: string;
+  value?: string;
+  confirmed?: boolean;
+  cancelled?: boolean;
+}
+
 interface WebviewReadyMessage {
   type: "ready";
 }
@@ -23,6 +31,7 @@ type WebviewInMessage =
   | WebviewPromptMessage
   | WebviewAbortMessage
   | WebviewRestartMessage
+  | WebviewUiResponseMessage
   | WebviewReadyMessage;
 
 /**
@@ -86,6 +95,13 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "restart":
         void this.controller.restart();
+        break;
+      case "uiResponse":
+        this.controller.uiRespond(msg.id, {
+          value: msg.value,
+          confirmed: msg.confirmed,
+          cancelled: msg.cancelled,
+        });
         break;
     }
   }

@@ -18,6 +18,7 @@ import {
   type ToolExecutionUpdateEvent,
 } from "../rpc/protocol";
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
+import { parseTodoTasks, type TodoTask } from "./todos";
 
 export type ProcessState = "stopped" | "starting" | "running" | "error" | "no-workspace";
 
@@ -41,11 +42,15 @@ export interface ToolCard {
 }
 
 export type OutMessage =
-  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus }
+  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[] }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; tool: ToolCard }
   | { type: "status"; status: ChatStatus }
+  | { type: "uiRequest"; request: ExtensionUiRequest }
+  | { type: "uiResolved"; id: string }
+  | { type: "uiCleared" }
+  | { type: "todos"; todos: TodoTask[] }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
@@ -98,6 +103,10 @@ export class ChatController {
   private restarting = false;
   private disposed = false;
   private workspaceWatcher: vscode.Disposable;
+  /** 待决的扩展对话框（按 id；同一时刻通常只有一个，pi 侧 dialog 阻塞 agent）。 */
+  private pendingUi = new Map<string, ExtensionUiRequest>();
+  /** todo 工具维护的任务快照（运行期内存态，restart 后随新进程重置）。 */
+  private todos: TodoTask[] = [];
 
   constructor(output: vscode.OutputChannel) {
     this.output = output;
@@ -228,8 +237,13 @@ export class ChatController {
       this.partialAssembly = createAssembly();
       this.partialBlocks = [];
       this.status = { ...initialStatus };
-      // 立即广播重置后的状态，让 UI 有即时反馈（随后 start() 会推进到 starting）
+      this.pendingUi.clear();
+      this.todos = [];
+      // 立即广播重置后的状态 + 清除对话框/待办，让 UI 有即时反馈
+      //（防止旧卡片在重启窗口内被应答，新进程可能复用同 id）
       this.fire({ type: "status", status: this.status });
+      this.fire({ type: "uiCleared" });
+      this.fire({ type: "todos", todos: this.todos });
       if (old) {
         await old.stop();
       }
@@ -332,6 +346,15 @@ export class ChatController {
 
       case "agent_settled": {
         this.settledCount++;
+        // 清扫未决对话框：pi 侧对带 timeout 的 dialog 会超时自动 resolve，
+        // abort 后 pending 的 dialog 也被 pi reject——此刻残留的请求不会再被
+        // 应答，继续显示卡片只会误导用户。
+        // 前提（实测）：dialog 阻塞 agent 期间不会发出 agent_settled，
+        // 因此这里清扫到的都是已失效的请求。
+        if (this.pendingUi.size > 0) {
+          this.pendingUi.clear();
+          this.fire({ type: "uiCleared" });
+        }
         // 重置装配：abort 等场景下 settle 后仍可能有迟到的 message_update
         //（流序列尾部事件），不应污染下一条消息
         this.partialAssembly = createAssembly();
@@ -395,6 +418,14 @@ export class ChatController {
 
       case "tool_execution_end": {
         const e = event as ToolExecutionEndEvent;
+        // todo 工具：解析全量任务快照并更新待办面板（未文档化字段，防御解析）
+        if (e.toolName === "todo") {
+          const tasks = parseTodoTasks(e.result);
+          if (tasks) {
+            this.todos = tasks;
+            this.fire({ type: "todos", todos: tasks });
+          }
+        }
         const tool = this.tools.get(e.toolCallId) ?? {
           toolCallId: e.toolCallId,
           toolName: e.toolName,
@@ -437,14 +468,15 @@ export class ChatController {
       case "extension_ui_request": {
         const req = event as ExtensionUiRequest;
         if (DIALOG_UI_METHODS.has(req.method)) {
-          // v0.1 决策：不提供交互 UI，自动取消，防止 agent 永久阻塞。
-          this.client?.writeRaw({ type: "extension_ui_response", id: req.id, cancelled: true });
-          this.notice("warning", `扩展请求交互（${req.method}：${req.title ?? ""}）——v0.1 已自动取消`);
+          // 对话框请求：广播给 webview 渲染内联卡片，等待用户作答（uiRespond）。
+          this.pendingUi.set(req.id, req);
+          this.fire({ type: "uiRequest", request: req });
         } else if (req.method === "notify") {
           const level = req.notifyType === "error" ? "error" : req.notifyType === "warning" ? "warning" : "info";
           this.notice(level, String(req.message ?? req.title ?? ""));
         }
-        // setStatus/setWidget/setTitle/set_editor_text：fire-and-forget，v0.1 忽略
+        // setStatus/setWidget/setTitle/set_editor_text：fire-and-forget，当前 pi
+        // 只发无内容帧（待列表内容走 todo 工具结果解析），暂不渲染
         break;
       }
 
@@ -482,6 +514,11 @@ export class ChatController {
       isStreaming: false,
     };
     this.partialBlocks = [];
+    // 进程已死：残留对话框无法再被应答，清空并广播（防卡片滞留、作答无效）
+    if (this.pendingUi.size > 0) {
+      this.pendingUi.clear();
+      this.fire({ type: "uiCleared" });
+    }
     this.fire({ type: "status", status: this.status });
     this.fire({ type: "stream", blocks: [] });
   }
@@ -504,9 +541,25 @@ export class ChatController {
     }
   }
 
+  /** 用户答复对话框：回写 pi 并从 pendingUi 移除。未知 id 静默忽略（防御跨进程同 id 复用/迟到双答）。 */
+  uiRespond(id: string, response: { value?: string; confirmed?: boolean; cancelled?: boolean }): void {
+    if (!this.pendingUi.has(id)) {
+      return;
+    }
+    this.pendingUi.delete(id);
+    this.client?.writeRaw({ type: "extension_ui_response", id, ...response });
+    this.fire({ type: "uiResolved", id });
+  }
+
   /** 全量快照（面板 resolve / 重启后重放）。 */
   fireSnapshot(): void {
-    this.fire({ type: "snapshot", messages: this.messages, status: this.status });
+    this.fire({
+      type: "snapshot",
+      messages: this.messages,
+      status: this.status,
+      pendingUi: [...this.pendingUi.values()],
+      todos: this.todos,
+    });
   }
 
   private fire(msg: OutMessage): void {
@@ -558,6 +611,14 @@ export class ChatController {
 
   getSettledCount(): number {
     return this.settledCount;
+  }
+
+  getPendingUi(): ExtensionUiRequest[] {
+    return [...this.pendingUi.values()];
+  }
+
+  getTodos(): TodoTask[] {
+    return [...this.todos];
   }
 }
 
