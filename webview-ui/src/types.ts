@@ -7,7 +7,7 @@ export interface ModelInfo {
   [key: string]: unknown;
 }
 
-export type ProcessState = "stopped" | "starting" | "running" | "error";
+export type ProcessState = "stopped" | "starting" | "running" | "error" | "no-workspace";
 
 export interface ChatStatus {
   processState: ProcessState;

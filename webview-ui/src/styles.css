@@ -445,6 +445,10 @@ body {
   color: var(--vscode-errorForeground);
 }
 
+.status-warn {
+  color: var(--vscode-notificationsWarningIcon-foreground, #cca700);
+}
+
 .status-restart {
   border: 1px solid var(--vscode-input-border);
   background: var(--vscode-button-background);

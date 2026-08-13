@@ -19,7 +19,7 @@ import {
 } from "../rpc/protocol";
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
 
-export type ProcessState = "stopped" | "starting" | "running" | "error";
+export type ProcessState = "stopped" | "starting" | "running" | "error" | "no-workspace";
 
 export interface ChatStatus {
   processState: ProcessState;
@@ -95,9 +95,19 @@ export class ChatController {
   private workspaceRoot: string | undefined;
   private streamStartCount = 0;
   private settledCount = 0;
+  private restarting = false;
+  private disposed = false;
+  private workspaceWatcher: vscode.Disposable;
 
   constructor(output: vscode.OutputChannel) {
     this.output = output;
+    // 未打开文件夹时提示用户；打开文件夹后自动连接
+    this.workspaceWatcher = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      if (this.status.processState === "no-workspace" && vscode.workspace.workspaceFolders?.length) {
+        this.startPromise = null;
+        void this.ensureStarted();
+      }
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -113,10 +123,19 @@ export class ChatController {
   }
 
   private async start(): Promise<void> {
+    if (this.disposed) {
+      return; // dispose 后禁止任何新 spawn（watcher/restart 并发防御）
+    }
     const root = vscode.workspace.workspaceFolders?.[0];
     if (!root) {
-      this.status = { ...this.status, processState: "error", error: "请先打开一个文件夹" };
+      // 未打开文件夹：不是进程异常，用友好状态提示并引导用户
+      this.status = {
+        ...this.status,
+        processState: "no-workspace",
+        error: "当前窗口未打开文件夹。请打开一个文件夹后再使用 Pinel。",
+      };
       this.fire({ type: "status", status: this.status });
+      this.notice("info", "未打开文件夹：打开文件夹后 Pi 将自动连接。");
       return;
     }
     this.workspaceRoot = root.uri.fsPath;
@@ -125,15 +144,41 @@ export class ChatController {
     const command = this.resolvePiCommand();
     const client = new RpcClient();
     this.client = client;
-    client.on("record", (r) => this.handleRecord(r));
-    client.on("spawnError", (err) => this.handleSpawnError(err));
-    client.on("exit", (code) => this.handleExit(code));
+    // 事件处理器绑定 client 身份：restart 后旧 client 的迟到事件
+    //（exit/spawnError/record）一律忽略，避免污染新进程状态
+    client.on("record", (r) => {
+      if (this.client !== client) {
+        return;
+      }
+      this.handleRecord(r);
+    });
+    client.on("spawnError", (err) => {
+      if (this.client !== client) {
+        return;
+      }
+      this.handleSpawnError(err);
+    });
+    client.on("exit", (code) => {
+      if (this.client !== client) {
+        return;
+      }
+      this.handleExit(code);
+    });
+    // stderr 有意不做身份过滤：append-only 诊断日志，旧进程停止期间的最后输出
+    // 仍有诊断价值；不参与任何状态更新，不存在污染风险
     client.on("stderr", (line) => this.output.appendLine(line));
 
     try {
       await client.start(command, this.workspaceRoot, process.env);
     } catch (err) {
-      this.handleSpawnError(err as Error);
+      if (this.client === client) {
+        this.handleSpawnError(err as Error);
+      }
+      return;
+    }
+
+    if (this.client !== client) {
+      // 已被 restart 取代（首次启动进行中点击了重启）：放弃本次启动流程
       return;
     }
 
@@ -151,6 +196,9 @@ export class ChatController {
       };
       this.fire({ type: "status", status: this.status });
     } catch (err) {
+      if (this.client !== client) {
+        return; // 已被 restart 取代：静默放弃，不发误导性警告
+      }
       this.notice("warning", `获取状态失败：${(err as Error).message}`);
     }
 
@@ -159,33 +207,48 @@ export class ChatController {
       this.messages = data.messages ?? [];
       this.fireSnapshot();
     } catch (err) {
+      if (this.client !== client) {
+        return; // 已被 restart 取代：静默放弃
+      }
       this.notice("warning", `获取历史消息失败：${(err as Error).message}`);
     }
   }
 
   /** 重启：杀掉旧进程并重新启动，随后用 get_messages 回放历史。 */
   async restart(): Promise<void> {
-    const old = this.client;
-    this.client = null;
-    this.startPromise = null;
-    this.tools.clear();
-    this.partialAssembly = createAssembly();
-    this.partialBlocks = [];
-    this.status = { ...initialStatus };
-    if (old) {
-      await old.stop();
+    if (this.restarting) {
+      return; // 防重入：忽略重启进行中的重复点击
     }
-    await this.ensureStarted();
-    this.fireSnapshot();
+    this.restarting = true;
+    try {
+      const old = this.client;
+      this.client = null;
+      this.startPromise = null;
+      this.tools.clear();
+      this.partialAssembly = createAssembly();
+      this.partialBlocks = [];
+      this.status = { ...initialStatus };
+      // 立即广播重置后的状态，让 UI 有即时反馈（随后 start() 会推进到 starting）
+      this.fire({ type: "status", status: this.status });
+      if (old) {
+        await old.stop();
+      }
+      await this.ensureStarted();
+      this.fireSnapshot();
+    } finally {
+      this.restarting = false;
+    }
   }
 
   /** 关闭：终止整个进程树。 */
   async dispose(): Promise<void> {
+    this.disposed = true; // 阻止 dispose 后 watcher/restart 再次 spawn（孤儿进程防御）
     const client = this.client;
     this.client = null;
     if (client) {
       await client.stop();
     }
+    this.workspaceWatcher.dispose();
     this.onChange.dispose();
   }
 

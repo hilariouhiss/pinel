@@ -192,4 +192,47 @@ suite("Pinel 集成测试（假 pi）", () => {
     const assistantCount = api.getMessages().filter((m) => m.role === "assistant").length;
     assert.ok(assistantCount >= 2, `应落盘两条助手消息（实际 ${assistantCount}）`);
   });
+
+  test("重启竞态回归：旧进程 exit 事件不污染新进程状态", async () => {
+    // CRASHME：假 pi 正常响应后延迟 1.5s 崩溃。测试在流未结束时立即 restart：
+    // stop() 杀掉旧进程后，其 exit 事件（macrotask）迟到于新进程的 running（微任务链）；
+    // 未修复时 handleExit 会把状态打回 error，修复后身份过滤屏蔽旧事件。
+    const marker = `CRASHME-${Date.now()}`;
+    await api.sendPrompt(marker);
+
+    await api.restart();
+
+    await waitFor(
+      () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+      20000,
+      "重启后恢复 running",
+    );
+
+    // 旧进程的 exit 事件已在此前到达（stop 等待窗口内）；额外等待确认无迟到污染
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const status = api.getStatus();
+    assert.strictEqual(status.processState, "running", "旧进程 exit 事件不得污染新状态");
+    assert.strictEqual(status.model?.name, "Fake Model", "新进程状态必须同步成功");
+  });
+
+  test("pi 崩溃后重启恢复", async () => {
+    // CRASHME 流程走完（1.5s 后 exit(1)）→ error 状态 → 重启 → running
+    const marker = `CRASHME-${Date.now()}`;
+    await api.sendPrompt(marker);
+    await waitFor(() => api.getStatus().processState === "error", 15000, "pi 崩溃后进入 error");
+
+    await api.restart();
+
+    await waitFor(
+      () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+      20000,
+      "重启后恢复 running",
+    );
+    // fake-pi 消息存进程内存，重启后 get_messages 为空（新进程状态）
+    assert.deepStrictEqual(api.getMessages(), [], "快照消息应反映新进程（空历史）");
+  });
+
+  // 注：「未打开文件夹」友好状态在独立空窗口实例套件覆盖
+  //（src/test-no-workspace/no-workspace.test.ts）——主套件内移除全部工作区文件夹
+  // 不可逆（VS Code 空窗口不支持 updateWorkspaceFolders 恢复）。
 });

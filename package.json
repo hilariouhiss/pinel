@@ -72,7 +72,7 @@
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit && tsc -p webview-ui/tsconfig.json",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "node scripts/clean-test-userdata.mjs && vscode-test"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

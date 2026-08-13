@@ -304,6 +304,13 @@ async function handleCommand(record) {
         const response = await waitForUiResponse("ui-1");
         log({ dir: "ui-response", response });
       }
+      if (text.includes("CRASHME")) {
+        // 模拟 pi 崩溃：正常响应后延迟退出（配合 restart 竞态回归测试：
+        // 测试在流未结束时立即 restart，旧进程的 exit 事件迟到不得污染新状态）
+        void streamSequence(text, false);
+        setTimeout(() => process.exit(1), 1500);
+        break;
+      }
       if (text.includes("TWOMSG")) {
         void twoMessageSequence(text);
       } else {

@@ -9,6 +9,8 @@ export interface PinelTestApi {
   openPanel(): Promise<void>;
   sendPrompt(text: string): Promise<void>;
   abort(): Promise<void>;
+  /** 重启 pi 进程（触发 ChatController.restart）。 */
+  restart(): Promise<void>;
   getStatus(): ChatStatus;
   getMessages(): AgentMessage[];
   getTools(): Map<string, ToolCard>;
@@ -51,6 +53,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     },
     sendPrompt: (text: string) => controller.sendPrompt({ text }),
     abort: () => controller.abort(),
+    restart: () => controller.restart(),
     getStatus: () => controller.getStatus(),
     getMessages: () => controller.getMessages(),
     getTools: () => controller.getTools(),

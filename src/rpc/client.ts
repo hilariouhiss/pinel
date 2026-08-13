@@ -227,37 +227,67 @@ export class RpcClient extends EventEmitter {
     this.child!.stdin!.write(encodeRecord(record));
   }
 
-  /** 终止整个进程树。 */
+  /**
+   * 终止整个进程树，并等待子进程真正退出。
+   *
+   * 等待退出的必要性：taskkill 同步返回后，子进程的 exit 事件要到下一轮
+   * 事件循环才派发；若不等待，restart() 会在新进程启动后收到旧进程的
+   * exit 事件，污染状态（见 ChatController 的身份过滤）。
+   * 约定：永不 reject（kill/taskkill 异常均吞掉）；5s 超时兜底防止挂起。
+   */
   async stop(): Promise<void> {
     const child = this.child;
     this.stoppedIntentionally = true;
     this.rejectAllPending(new Error("pi 进程已停止"));
     this.child = null;
     if (!child || child.exitCode !== null || child.signalCode !== null) {
+      // 已退出：不存在迟到的 exit 事件，立即返回
       return;
     }
+
+    // 等待真实退出（spawn 失败场景由 error 事件兜底）
+    const exited = new Promise<void>((resolve) => {
+      child.once("exit", () => resolve());
+      child.once("error", () => resolve());
+    });
+    const kill = (sig: NodeJS.Signals): void => {
+      try {
+        child.kill(sig);
+      } catch {
+        // 进程已退出（竞态），忽略
+      }
+    };
+
     const pid = child.pid;
     if (!pid) {
-      child.kill("SIGKILL");
-      return;
-    }
-    if (IS_WIN) {
+      kill("SIGKILL");
+    } else if (IS_WIN) {
       // 终止整棵进程树（含 bash 工具派生的子进程）
-      spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { windowsHide: true });
+      try {
+        spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { windowsHide: true });
+      } catch {
+        kill("SIGKILL");
+      }
     } else {
       try {
         process.kill(-pid, "SIGTERM");
       } catch {
-        child.kill("SIGTERM");
+        kill("SIGTERM");
       }
-      setTimeout(() => {
+      const sigkillTimer = setTimeout(() => {
         try {
           process.kill(-pid, "SIGKILL");
         } catch {
-          child.kill("SIGKILL");
+          kill("SIGKILL");
         }
-      }, 2000).unref();
+      }, 2000);
+      sigkillTimer.unref();
+      // 进程提前退出时取消兜底定时器（避免对已回收 PID 再发信号）
+      void exited.then(() => clearTimeout(sigkillTimer));
     }
+
+    // 超时兜底：进程僵死时不永久挂起 restart（旧事件此后由身份过滤屏蔽）
+    await Promise.race([exited, sleep(5000)]);
   }
 
   private handleLine(line: string): void {
@@ -312,4 +342,8 @@ export class RpcClient extends EventEmitter {
     }
     this.pending.clear();
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

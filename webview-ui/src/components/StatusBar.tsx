@@ -30,6 +30,18 @@ export function StatusBar({ status }: Props) {
         </>
       );
       break;
+    case "no-workspace":
+      stateEl = (
+        <>
+          <span className="status-state status-warn" title={status.error ?? ""}>
+            ⚠ 未打开文件夹
+          </span>
+          <button className="status-restart" onClick={() => vscode.postMessage({ type: "restart" })}>
+            重试
+          </button>
+        </>
+      );
+      break;
     case "running":
       stateEl = status.isStreaming ? (
         <span className="status-state">
