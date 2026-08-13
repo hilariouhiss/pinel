@@ -6,6 +6,30 @@ interface Props {
   status: ChatStatus;
 }
 
+/** 图片压缩：最长边 > 1568px 时用 canvas 缩小并转 JPEG，控制随 prompt 发送的体积。 */
+async function compressImage(
+  dataUrl: string,
+  mimeType: string,
+): Promise<{ dataUrl: string; mimeType: string }> {
+  const MAX_EDGE = 1568;
+  const img = new Image();
+  img.src = dataUrl;
+  await img.decode();
+  const scale = Math.min(1, MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+  if (scale >= 1) {
+    return { dataUrl, mimeType }; // 原图足够小，保持原样
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.naturalWidth * scale);
+  canvas.height = Math.round(img.naturalHeight * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return { dataUrl, mimeType };
+  }
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return { dataUrl: canvas.toDataURL("image/jpeg", 0.85), mimeType: "image/jpeg" };
+}
+
 let attachmentSeq = 0;
 
 export function Composer({ status }: Props) {
@@ -35,8 +59,13 @@ export function Composer({ status }: Props) {
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = String(reader.result);
-      const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-      setAttachments((prev) => [...prev, { id: ++attachmentSeq, data: base64, mimeType: file.type }]);
+      void compressImage(dataUrl, file.type).then((compressed) => {
+        const base64 = compressed.dataUrl.slice(compressed.dataUrl.indexOf(",") + 1);
+        setAttachments((prev) => [
+          ...prev,
+          { id: ++attachmentSeq, data: base64, mimeType: compressed.mimeType },
+        ]);
+      });
     };
     reader.readAsDataURL(file);
   };
@@ -82,7 +111,7 @@ export function Composer({ status }: Props) {
     }
   };
 
-  const rows = Math.min(8, Math.max(2, text.split("\n").length));
+const rows = Math.min(8, Math.max(2, text.split("\n").length));
 
   return (
     <div className="composer">

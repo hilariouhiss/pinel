@@ -157,4 +157,39 @@ suite("Pinel 集成测试（假 pi）", () => {
     const assistant = api.getMessages().find((m) => m.role === "assistant");
     assert.ok(assistant, "UI 请求后流式必须正常完成");
   });
+
+  test("连续消息：第二条流式块不串入第一条的旧块（contentIndex 装配跨消息重置）", async () => {
+    const marker = `TWOMSG-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+
+    // 等待假 pi 标记"第二条消息的 delta 已发送"（此后 2.5s 内流式状态稳定）
+    await waitFor(
+      () =>
+        readFakePiLog(logPath).some(
+          (r) =>
+            (r.record as { dir?: string; message?: string })?.dir === "marker" &&
+            (r.record as { message?: string }).message === "second-delta-sent",
+        ),
+      15000,
+      "second-delta-sent 标记",
+    );
+
+    // 等待控制器应用 delta 后采样：若跨消息装配未重置，这里会残留第一条的
+    // thinking 旧块（blocks.length === 3），回归检测即失败
+    await waitFor(
+      () => {
+        const blocks = api.getPartialBlocks();
+        return blocks.length > 0 && blocks[0].kind === "text" && blocks[0].text.includes("第二条");
+      },
+      8000,
+      "第二条消息的流式块",
+    );
+    const blocks = api.getPartialBlocks();
+    assert.strictEqual(blocks.length, 1, `不应残留第一条的旧块：${JSON.stringify(blocks)}`);
+
+    await api.waitForSettled(30000, baseline);
+    const assistantCount = api.getMessages().filter((m) => m.role === "assistant").length;
+    assert.ok(assistantCount >= 2, `应落盘两条助手消息（实际 ${assistantCount}）`);
+  });
 });

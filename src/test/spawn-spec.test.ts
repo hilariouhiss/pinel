@@ -16,9 +16,9 @@ import { resolveSpawnSpec } from "../rpc/client";
 suite("resolveSpawnSpec 单元测试", () => {
   const isWin = process.platform === "win32";
 
-  test("不存在的路径式字符串 → shell 命令模式（测试钩子场景）", () => {
+  test("不存在的路径式字符串 → shell 命令模式（测试钩子场景，自动拼入 --mode rpc）", () => {
     const spec = resolveSpawnSpec('node "/path/to/fake-pi.js"', ["--mode", "rpc"], process.cwd());
-    assert.strictEqual(spec.cmd, 'node "/path/to/fake-pi.js"');
+    assert.strictEqual(spec.cmd, 'node "/path/to/fake-pi.js" --mode rpc');
     assert.deepStrictEqual(spec.args, []);
     assert.strictEqual(spec.options.shell, true);
     assert.strictEqual(spec.options.windowsHide, true);

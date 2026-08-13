@@ -17,7 +17,7 @@ import {
   type ToolExecutionStartEvent,
   type ToolExecutionUpdateEvent,
 } from "../rpc/protocol";
-import { applyDelta, blocksFromMessage, createAssembly, type StreamBlock } from "./stream-assembly";
+import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
 
 export type ProcessState = "stopped" | "starting" | "running" | "error";
 
@@ -169,6 +169,7 @@ export class ChatController {
     this.client = null;
     this.startPromise = null;
     this.tools.clear();
+    this.partialAssembly = createAssembly();
     this.partialBlocks = [];
     this.status = { ...initialStatus };
     if (old) {
@@ -268,8 +269,11 @@ export class ChatController {
 
       case "agent_settled": {
         this.settledCount++;
-        this.status = { ...this.status, isStreaming: false, isCompacting: false };
+        // 重置装配：abort 等场景下 settle 后仍可能有迟到的 message_update
+        //（流序列尾部事件），不应污染下一条消息
+        this.partialAssembly = createAssembly();
         this.partialBlocks = [];
+        this.status = { ...this.status, isStreaming: false, isCompacting: false };
         this.fire({ type: "status", status: this.status });
         this.fire({ type: "stream", blocks: [] });
         // 最终同步（含 compaction/retry 后的最终状态）
@@ -278,11 +282,18 @@ export class ChatController {
       }
 
       case "message_start":
+        // 每条新消息重置分块装配状态（contentIndex 映射是每消息独立的），
+        // 否则会串入上一条消息遗留的 thinking/toolCall 块
+        this.partialAssembly = createAssembly();
         this.partialBlocks = [];
         this.fire({ type: "stream", blocks: [] });
         break;
 
       case "message_update":
+        if (!this.status.isStreaming) {
+          // 防御：agent_settled 后迟到的增量（abort 场景）直接丢弃
+          break;
+        }
         this.handleDelta(event.assistantMessageEvent as AssistantDeltaEvent);
         break;
 

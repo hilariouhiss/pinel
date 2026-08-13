@@ -12,6 +12,8 @@ export interface PinelTestApi {
   getStatus(): ChatStatus;
   getMessages(): AgentMessage[];
   getTools(): Map<string, ToolCard>;
+  /** 当前流式部分消息的展示块（contentIndex 装配产物）。 */
+  getPartialBlocks(): Array<{ kind: string; text: string; toolCall?: { id: string; name: string; arguments: string } }>;
   /** 当前已完成的 agent 轮次计数（agent_settled 次数）。 */
   getSettledCount(): number;
   /** 轮询等待流结束（agent_settled 后 isStreaming=false）。 */
@@ -52,6 +54,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     getStatus: () => controller.getStatus(),
     getMessages: () => controller.getMessages(),
     getTools: () => controller.getTools(),
+    getPartialBlocks: () => controller.getPartialBlocks(),
     getSettledCount: () => controller.getSettledCount(),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {
       const deadline = Date.now() + timeoutMs;

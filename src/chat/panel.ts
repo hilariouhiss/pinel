@@ -15,7 +15,15 @@ interface WebviewRestartMessage {
   type: "restart";
 }
 
-type WebviewInMessage = WebviewPromptMessage | WebviewAbortMessage | WebviewRestartMessage;
+interface WebviewReadyMessage {
+  type: "ready";
+}
+
+type WebviewInMessage =
+  | WebviewPromptMessage
+  | WebviewAbortMessage
+  | WebviewRestartMessage
+  | WebviewReadyMessage;
 
 /**
  * 副侧边栏聊天面板（WebviewViewProvider）。
@@ -65,6 +73,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   private handleMessage(msg: WebviewInMessage): void {
     switch (msg.type) {
+      // webview 挂载完成握手：resolve 时同步 fireSnapshot 早于 webview 异步加载，
+      // 可能丢失；收到 ready 后重发快照保证重放（视图隐藏重显/重启场景）
+      case "ready":
+        this.controller.fireSnapshot();
+        break;
       case "sendPrompt":
         void this.controller.sendPrompt({ text: msg.text, images: msg.images });
         break;

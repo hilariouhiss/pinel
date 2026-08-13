@@ -49,7 +49,7 @@
 | 决策 | 选择 | 理由 |
 |---|---|---|
 | 集成方式 | RPC 子进程 | 用户已确认。进程隔离、复用用户已装 pi（认证/技能/扩展天然可用）、不随 pi 升级损坏、无扩展宿主 Node 版本耦合 |
-| UI 容器 | 副侧边栏 WebviewView | 用户已确认。VS Code 1.85+ `contributes.viewsContainers` 支持声明 `location` 定位侧栏（执行时实测 auxiliarybar 效果）；若目标 engine 版本不支持，退化为 README 说明一次性拖拽（位置由 VS Code 持久记忆） |
+| UI 容器 | 副侧边栏 WebviewView | 用户已确认。**执行期实测**：官方 contribution point 文档确认声明式 `viewsContainers` 仅支持 `activitybar`/`panel`，无 `location`/auxiliarybar 键 → 采用 activitybar 容器 + README 一次性拖拽说明（VS Code 会记忆位置） |
 | Webview 框架 | React 19 + esbuild 打包（已确认） | 聊天流式 UI 组件化收益大，Claude Code 插件亦用 React；与宿主共用 esbuild，不引入第二套打包器 |
 | 会话持久化 | 跟随 pi 默认行为（已确认） | 不加 `--no-session`，重启 VS Code 后历史仍在；v0.1 不做会话切换 UI |
 | Markdown 渲染 | marked + DOMPurify 消毒 | 助手文本含 markdown；webview CSP 禁止远程内容 |
@@ -142,7 +142,7 @@ pinel/
 | 风险 | 缓解 |
 |---|---|
 | Windows 下 spawn pi 的 `.cmd` shim 失败 | 解析真实可执行路径；回退 `shell:true` 或直接 `node <pi-cli-js>`；列入任务 3 必测项 |
-| 副侧边栏定位需实测 | 任务 2 先试 manifest `location` 声明并实测；不生效则 README 说明一次性拖拽（位置会被记忆） |
+| 副侧边栏定位需实测 | ✅ 已实测：声明式清单不支持（见 §2.1），README 说明一次性拖拽（位置会被记忆） |
 | pi 版本演进导致 RPC 协议漂移 | `pi --version` 校验最低版本并在 UI 提示；protocol.ts 集中管理协议类型 |
 | Node `readline` 违反 JSONL framing 协议 | 自实现 LF 切分；framing 单元测试覆盖 |
 | webview XSS（markdown 渲染） | CSP 禁止远程内容 + DOMPurify 消毒 |
@@ -163,3 +163,12 @@ pinel/
    - `engines.vscode`: `^1.85.0`
 3. **会话持久化**：✅ 跟随 pi 默认（每工作区持久会话，重启保留历史）
 4. **README 语言**：✅ 中文
+
+## 7. 执行记录（实现后回溯更新）
+
+- **engines.vscode**：generator-code 模板默认 `^1.125.0`，高于计划假设的 `^1.85.0`，保留模板默认
+- **Markdown 渲染**：用 `react-markdown`（不启用 rehype-raw，天然防 XSS）等价实现计划中的 marked+DOMPurify 目标，少一个运行时消毒依赖
+- **副侧边栏**：实测声明式清单仅支持 activitybar/panel，README 记录拖拽方式
+- **Windows shim 三坑**（均修复并有回归测试）：① PATH 中无扩展名 `pi` sh 脚本遮蔽 `pi.cmd` → `where.exe` 解析并优先 `.cmd`；② cmd.exe 包装需 `windowsVerbatimArguments`（Node 默认反斜杠转义引号，cmd 不解析）；③ cmd 路径须用 ComSpec 反斜杠形式（正斜杠破坏其参数解析）
+- **真实 pi 冒烟验证**：RpcClient 对真实 pi 0.84.1 完成 get_state（deepseek/deepseek-v4-pro）、get_available_models、prompt 接受、真实扩展 extension_ui_request 自动取消、进程树清理
+- **测试**：20/20 通过（framing 7、流式装配 5、spawn 解析 4、集成 4——状态同步/端到端多块流式/abort 中断/UI 请求自动取消）

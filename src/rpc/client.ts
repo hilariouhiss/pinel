@@ -39,8 +39,9 @@ export function resolveSpawnSpec(command: string, rpcArgs: string[], cwd: string
 
   if (looksLikePath && !fs.existsSync(command)) {
     // 完整命令字符串（含参数），交给 shell 执行——用于测试/自定义脚本场景。
+    // 注意：把 --mode rpc 拼入命令串（shell 模式不使用独立 args 数组）
     return {
-      cmd: command,
+      cmd: `${command} ${rpcArgs.join(" ")}`,
       args: [],
       options: { cwd, shell: true, windowsHide: true },
     };
@@ -94,6 +95,7 @@ interface PendingRequest {
   command: string;
   resolve: (data: unknown) => void;
   reject: (err: Error) => void;
+  onSettled?: () => void;
 }
 
 export interface RpcClientEvents {
@@ -142,7 +144,12 @@ export class RpcClient extends EventEmitter {
     this.stoppedIntentionally = false;
     this.decoder = new JsonlDecoder();
     const spec = resolveSpawnSpec(command, ["--mode", "rpc"], cwd);
-    const child = spawn(spec.cmd, spec.args, { ...spec.options, env, stdio: ["pipe", "pipe", "pipe"] });
+    const options: SpawnOptions = { ...spec.options, env, stdio: ["pipe", "pipe", "pipe"] };
+    if (!IS_WIN && !options.shell) {
+      // POSIX：独立进程组，使 stop() 的负 PID 组 kill 生效（bash 工具子进程随组终止）
+      options.detached = true;
+    }
+    const child = spawn(spec.cmd, spec.args, options);
     this.child = child;
 
     child.stdout!.setEncoding("utf8");
@@ -183,15 +190,31 @@ export class RpcClient extends EventEmitter {
     });
   }
 
-  /** 发送命令并等待响应，resolve 为响应中的 `data`；失败 reject。 */
-  send<T = unknown>(command: ClientCommand): Promise<T> {
+  /**
+   * 发送命令并等待响应，resolve 为响应中的 `data`；失败 reject。
+   * 默认 30s 超时：错误配置（如 piPath 指向交互模式的命令）不应让面板
+   * 永久停在“启动中”。
+   */
+  send<T = unknown>(command: ClientCommand, timeoutMs = 30_000): Promise<T> {
     if (!this.isRunning) {
       return Promise.reject(new Error("pi 进程未运行"));
     }
     const id = String(this.nextId++);
     const record: RpcRecord = { id, ...command };
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { command: command.type, resolve: (d) => resolve(d as T), reject });
+      const entry: PendingRequest = {
+        command: command.type,
+        resolve: (d) => resolve(d as T),
+        reject,
+      };
+      this.pending.set(id, entry);
+      const timer = setTimeout(() => {
+        if (this.pending.delete(id)) {
+          reject(new Error(`命令 ${command.type} 超时（${timeoutMs}ms）`));
+        }
+      }, timeoutMs);
+      timer.unref?.();
+      entry.onSettled = () => clearTimeout(timer);
       this.writeRaw(record);
     });
   }
@@ -274,6 +297,7 @@ export class RpcClient extends EventEmitter {
       return; // 与任何请求无关的响应，忽略
     }
     this.pending.delete(key);
+    entry.onSettled?.();
     if (res.success) {
       entry.resolve(res.data);
     } else {
@@ -283,6 +307,7 @@ export class RpcClient extends EventEmitter {
 
   private rejectAllPending(err: Error): void {
     for (const [, entry] of this.pending) {
+      entry.onSettled?.();
       entry.reject(err);
     }
     this.pending.clear();
