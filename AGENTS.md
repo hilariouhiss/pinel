@@ -49,6 +49,7 @@ pinel/
 ├─ dist/ out/              # 构建产物（gitignored）
 ├─ esbuild.js              # 宿主打包脚本（入口 src/extension.ts → dist/extension.js，external: vscode）
 ├─ .vscodeignore           # 发布裁剪：排除 src/ webview-ui/ out/ node_modules 等，只打包 dist/ 与 media/ 产物
+├─ .gitignore              # 忽略分组：依赖/构建产物/测试运行时/工具本地状态（.codegraph/、.pi/subagents/ 不入库）/通用防御
 └─ .vscode-test.mjs        # 测试运行配置（双套件：main 工作区 + no-workspace 空窗口；30s 超时）
 ```
 
