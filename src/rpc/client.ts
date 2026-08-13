@@ -23,22 +23,18 @@ export interface SpawnSpec {
  *    - 其他 → 直接 spawn。
  * 2. `command` 是含空格/参数的非路径字符串（如 `node "/path/fake-pi.js"`）→
  *    作为完整 shell 命令执行（shell: true）。
- * 3. 裸命令名（如 `pi`）→ 直接 spawn：Node ≥ 20.12 在 Windows 上会按
- *    PATHEXT 解析 `pi.cmd` 并正确处理参数引用；POSIX 上即 PATH 查找。
+ * 3. 裸命令名（如 `pi`）→ Windows 上用 `shell: true` 交给 cmd.exe：
+ *    实测发现 PATH 中同时存在无扩展名的 `pi`（shell 脚本）与 `pi.cmd` 时，
+ *    libuv/where.exe 都会优先命中前者，直接 spawn 报 ENOENT；
+ *    而 cmd.exe 自身会按 PATHEXT 正确解析到 `pi.cmd`（npm shim 的设计场景）。
+ *    POSIX 上直接 spawn（PATH 查找）。
+ *    注意：shell: true 时参数不自动转义，rpcArgs 必须是不含特殊字符的字面量。
  */
 export function resolveSpawnSpec(command: string, rpcArgs: string[], cwd: string): SpawnSpec {
   const looksLikePath = command.includes("/") || command.includes("\\");
 
   if (looksLikePath && fs.existsSync(command)) {
-    const lower = command.toLowerCase();
-    if (IS_WIN && (lower.endsWith(".cmd") || lower.endsWith(".bat"))) {
-      return {
-        cmd: process.env.ComSpec ?? "cmd.exe",
-        args: ["/d", "/s", "/c", `"${command}"`, ...rpcArgs],
-        options: { cwd, windowsHide: true },
-      };
-    }
-    return { cmd: command, args: rpcArgs, options: { cwd, windowsHide: true } };
+    return specForExistingPath(command, rpcArgs, cwd);
   }
 
   if (looksLikePath && !fs.existsSync(command)) {
@@ -50,7 +46,48 @@ export function resolveSpawnSpec(command: string, rpcArgs: string[], cwd: string
     };
   }
 
+  if (IS_WIN) {
+    // where.exe 返回全部匹配（可能同时有无扩展名 sh 与 .cmd shim），
+    // 优先 .cmd/.bat 行——实测无扩展名 sh 无法被 CreateProcess 执行
+    const found = whereWindows(command);
+    const picked =
+      found.find((line) => /\.(cmd|bat)$/i.test(line.trim())) ?? found[0];
+    if (picked && fs.existsSync(picked)) {
+      return specForExistingPath(picked, rpcArgs, cwd);
+    }
+  }
+
   return { cmd: command, args: rpcArgs, options: { cwd, windowsHide: true } };
+}
+
+/** 用 where.exe 解析可执行文件真实路径（返回全部匹配行）。 */
+function whereWindows(command: string): string[] {
+  try {
+    const result = spawnSync("where.exe", [command], { windowsHide: true, encoding: "utf8" });
+    if (result.status === 0) {
+      return result.stdout.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    }
+  } catch {
+    // where.exe 不可用时回退裸命令名
+  }
+  return [];
+}
+
+function specForExistingPath(filePath: string, rpcArgs: string[], cwd: string): SpawnSpec {
+  const lower = filePath.toLowerCase();
+  if (IS_WIN && (lower.endsWith(".cmd") || lower.endsWith(".bat"))) {
+    // cmd.exe 包装（npm shim 同款）：
+    // - 必须用 windowsVerbatimArguments：Node 默认会用反斜杠转义参数中的引号，
+    //   而 cmd.exe 不解析该转义，会导致整个命令串被当作命令名；
+    // - /s /c 后整条命令用双重引号包裹（/s 会剥离首尾引号）；
+    // - cmd 路径用 ComSpec（反斜杠形式）；实测正斜杠路径会破坏 cmd 参数解析。
+    return {
+      cmd: process.env.ComSpec ?? "cmd.exe",
+      args: ["/d", "/s", "/c", `""${filePath}" ${rpcArgs.join(" ")}"`],
+      options: { cwd, windowsHide: true, windowsVerbatimArguments: true },
+    };
+  }
+  return { cmd: filePath, args: rpcArgs, options: { cwd, windowsHide: true } };
 }
 
 interface PendingRequest {
