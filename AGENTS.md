@@ -21,7 +21,9 @@
 | `src/rpc/` | RPC 协议层：`protocol.ts`（协议类型，对齐 docs/rpc.md）、`framing.ts`（严格 LF JSONL 编解码）、`client.ts`（子进程生命周期 + 请求/响应关联） |
 | `src/chat/` | 聊天层：`controller.ts`（会话控制器：事件映射/流装配/状态广播）、`panel.ts`（WebviewViewProvider + postMessage 协议 + CSP HTML）、`stream-assembly.ts`（contentIndex 分块装配纯函数） |
 | `src/extension.ts` | 入口：activate/deactivate、命令注册、面板注册、导出 `PinelTestApi` 测试钩子 |
-| `src/test/` | 单元测试 + 集成测试 + `fixtures/fake-pi.js`（按 rpc.md 实现的假 pi） |
+| `src/test/` | 单元测试 + 集成测试 + `fixtures/fake-pi.js`（按 rpc.md 实现的假 pi）、`fixtures/long-running.js`（stop 测试用长命进程） |
+| `src/test-no-workspace/` | 空窗口实例集成测试（独立 .vscode-test.mjs 配置，不传 workspaceFolder 启动） |
+| `scripts/` | 测试辅助脚本（clean-test-userdata.mjs：每次 npm test 前清理 .vscode-test/user-data） |
 | `webview-ui/` | React 聊天 UI（独立 tsconfig 与 esbuild 配置，与宿主完全隔离） |
 | `media/` | 图标（入库）；webview 构建产物（gitignored，构建生成） |
 
@@ -34,6 +36,8 @@ pinel/
 │  ├─ rpc/                 # RPC 客户端与协议（不含 vscode 依赖，纯逻辑可单测）
 │  ├─ chat/                # 控制器/面板/流式装配（依赖 vscode API 与 rpc 层）
 │  └─ test/                # 测试（.test.ts 单测 + extension.test.ts 集成 + fixtures/ 假 pi）
+├─ src/test-no-workspace/  # 空窗口实例集成测试（独立测试套件）
+├─ scripts/                # 测试辅助脚本（clean-test-userdata.mjs）
 ├─ webview-ui/             # React webview 源码（browser 平台，不得 import 宿主代码或 vscode API）
 │  ├─ src/components/      # Composer / MessageView / Markdown / Notices / StatusBar
 │  ├─ src/types.ts         # 宿主消息协议镜像（与 controller OutMessage 手工同步）
@@ -45,7 +49,7 @@ pinel/
 ├─ dist/ out/              # 构建产物（gitignored）
 ├─ esbuild.js              # 宿主打包脚本（入口 src/extension.ts → dist/extension.js，external: vscode）
 ├─ .vscodeignore           # 发布裁剪：排除 src/ webview-ui/ out/ node_modules 等，只打包 dist/ 与 media/ 产物
-└─ .vscode-test.mjs        # 测试运行配置（out/test/**/*.test.js，mocha tdd，30s 超时，workspaceFolder '.'）
+└─ .vscode-test.mjs        # 测试运行配置（双套件：main 工作区 + no-workspace 空窗口；30s 超时）
 ```
 
 ## Build and Test
@@ -62,7 +66,7 @@ npm run package      # 生产构建（minify）
 
 - **测试首次运行**会下载 VS Code 到 `.vscode-test/`（gitignored），约 100MB
 - **F5 调试**：先 `npm run watch`（tasks.json 默认构建任务已含 webview），否则全新 clone 后面板空白
-- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 21/21 通过）
+- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 25/25 通过）
 
 ## Coding Guidelines
 
@@ -115,11 +119,13 @@ npm run package      # 生产构建（minify）
 
 ## Testing Guidelines
 
-**已有测试**（21 个，全部必须保持通过）：
+**已有测试**（25 个，全部必须保持通过）：
 - `framing.test.ts`：LF framing（U+2028、`\r\n`、粘包拆包）
 - `stream-assembly.test.ts`：contentIndex 分块装配（多块交替、权威替换、乱序）
 - `spawn-spec.test.ts`：Windows shim 解析（.cmd 包装、verbatim 参数、shell 模式）
-- `extension.test.ts`：集成测试（真实 VS Code + 假 pi：状态同步、端到端流式、abort、UI 自动取消、跨消息不串块）
+- `stop.test.ts`：`RpcClient.stop()` 等待真实退出（exit 事件在 resolve 前派发、子进程已死）
+- `extension.test.ts`：集成测试（真实 VS Code + 假 pi：状态同步、端到端流式、abort、UI 自动取消、跨消息不串块、重启竞态回归、崩溃后重启恢复）
+- `src/test-no-workspace/no-workspace.test.ts`：空窗口实例友好状态（no-workspace + 引导文本，不伪装成进程异常）
 
 **新增功能覆盖要求**：
 - 纯逻辑（framing/装配/spawn 解析类）→ 在 `src/test/` 加 mocha 单测，与现有 suite 风格一致
@@ -127,9 +133,16 @@ npm run package      # 生产构建（minify）
 - 修改 RPC 命令/事件处理必须同步更新 `protocol.ts` 类型与假 pi
 
 **集成测试专项注意（踩坑沉淀）**：
-- 等待空闲用 `api.waitForSettled(timeoutMs, baseline)` 且 **baseline 必须在触发动作前捕获**（settle 与响应异步到达，基线后置会死等）
-- 假 pi 的中断用**代际计数**（abortGeneration），不得用全局布尔并在新 prompt 里复位——那会复活被 abort 的旧流，其迟到事件污染后续装配
+- 等待空闲用 `api.waitForSettled(timeoutMs, baseline)` 且 **baseline 必须在触发动作前捕获**（settle 与响应异步到达，基线后置会死等）；重启类测试**不要用** waitForSettled（无新 prompt 时 settled 不前进会挂到超时），改用 `waitFor` 轮询断言
+- 假 pi 的中断用**代际计数**（abortGeneration），不得用全局布尔并在新 prompt 里复位——那会复活被 abort 的旧流，其迟到事件污染后续装配；CRASHME 场景为「先正常 respond 再延迟 exit(1)」，配合「sendPrompt 后立即 restart」可确定性复现 restart 竞态（旧 exit 事件迟到污染新状态）
 - 测试运行于真实 VS Code，`vscode.workspace.workspaceFolders[0]` 即仓库根（workspaceFolder '.'）
+- **@vscode/test-cli 配置里 `launchArgs` 非空时 `workspaceFolder` 会被忽略**（实测：加任何 launchArgs 后 main 实例空窗口启动）；不要在 launchArgs 里传诊断 flag
+- 两个测试实例共享 `.vscode-test/user-data`：no-workspace 套件（空窗口）退出会把空窗口状态持久化，污染下次运行的 main 实例——`npm test` 已内置清理脚本（scripts/clean-test-userdata.mjs），直接跑 `npx vscode-test` 跳过清理会踩坑
+- 主套件内**不得**用 `updateWorkspaceFolders` 移除全部工作区文件夹：VS Code 空窗口不支持该 API 恢复（实测 add 返回 false，不可逆），no-workspace 场景由独立空窗口实例套件覆盖
+
+**F5 调试专项注意（踩坑沉淀）**：
+- `.vscode/launch.json` 的 extensionHost 配置必须**显式把 `${workspaceFolder}` 作为 args 传入**（官方推荐写法）；缺省时开发宿主以空窗口启动，`workspaceFolders` 为空 → 面板提示「请先打开一个文件夹」且点重启无效（pi 从未被 spawn）
+- F5 时 Debug Console 的 `DEP0169 url.parse` 警告来自 **VS Code 自身**（1.133 内置 AgentHost 进程 + 扩展宿主内部代码），与本仓库无关（宿主 bundle 与 pi 依赖均无 url.parse；pi 的 stderr 被完全接管不会出现在 Debug Console）；警告无害，随 VS Code 升级自然消失（上游 issue microsoft/vscode#301941），无需处理
 
 ## Agent Instructions
 
