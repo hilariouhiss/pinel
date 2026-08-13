@@ -8,6 +8,8 @@ webview-ui/**
 .yarnrc
 esbuild.js
 vsc-extension-quickstart.md
+AGENTS.md
+.pi/**
 **/tsconfig.json
 **/eslint.config.mjs
 **/*.map
