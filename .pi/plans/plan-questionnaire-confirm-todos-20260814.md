@@ -1,6 +1,6 @@
 # 计划：问卷确认流程 + 待办移位 + 用户消息重复修复
 
-> 状态：待用户确认（/plan 轮次，仅规划未实现）
+> 状态：✅ 已实现（2026-08-14；F5 人工验收待用户执行）
 > 日期：2026-08-14
 > 仓库：`C:/source_code/Other/pinel`
 
@@ -150,3 +150,10 @@ README.md / CHANGELOG.md / AGENTS.md  # 文档同步（T20）
 - **HIGH-2**：清理路径（settled/handleExit/restart）先对残留缓冲帧逐帧回 cancelled（插件问卷无 timeout，pi 侧不会自动解锁）
 - **MED-1~5**：计数钩子只统计 pi 事件来源；缓冲前标题门控；重入替换语义；select 先到吸收防御；T12 提交吸收 fake-pi 改动与集成测试（自含验证）
 - **LOW-1~6**：哨兵取 options 末项；聚焦后同步 stickToBottom + 可见性检查；容器级 Esc；currentStreamRole 全 role 设置；多选空提交回空串；缓冲与 pendingUi 分离存储
+
+## 9. 执行记录（实施后回溯更新）
+
+- **提交**：三个独立提交——`3a23c64 fix:` 重复消息（含 fake-pi 默认流用户事件 + 去重测试）、`33d9bcc feat:` 待办移位（30vh 限高）、`f1e702a feat:` 问卷确认流程（纯模块+状态机+组件+测试）
+- **测试**：59/59 通过（新增 questionnaire.test.ts 单测 4 组 + 集成 4：整卷全链路含修改重答与哨兵自定义、取消无残留、通用对话框标题门控、用户消息去重）
+- **实现期修复**：① 全链路/取消测试因 fake-pi 穿插的通用对话框阻塞——通用对话框改为 `QUESTIONNAIRE-GENERIC` 标记单独触发；② 响应序列断言因 fake-pi 日志跨测试累积失败——新增 `recordsAfterPrompt(marker)` 按 prompt 边界切片
+- **待用户 F5 人工验收**：待办面板在输入框上方（30vh 内滚动）；真机触发 ask_user_question → 整卷显示/自动滚动聚焦/答完确认面板/修改重答/确认后 agent 拿到最终答案/取消整卷/Esc 放弃；发送消息只显示一次；通用对话框自动聚焦；亮/暗主题
