@@ -3,9 +3,9 @@
  *
  * 行为：
  * - get_state / get_messages / get_available_models 返回固定状态
- * - prompt 触发流式序列：agent_start → message_start → 多 contentIndex 块
- *   （text/thinking 交替 + toolCall）→ tool_execution_* → message_end →
- *   agent_end → agent_settled
+ * - prompt 触发流式序列：message_start/message_end（用户消息，镜像真实 pi）→
+ *   agent_start → message_start → 多 contentIndex 块（text/thinking 交替 + toolCall）
+ *   → tool_execution_* → message_end → agent_end → agent_settled
  * - prompt 含 "ABORTME"：慢速流（每事件 400ms），收到 abort 后立即收尾
  * - prompt 含 "UIREQUEST"：先发 extension_ui_request（confirm 对话框，无 timeout）
  *   并等待客户端回复（用于验证客户端自动 cancelled 回复）
@@ -128,6 +128,11 @@ async function streamSequence(promptText, slow) {
   const gen = abortGeneration;
   streaming = true;
   const step = slow ? 400 : 60;
+  // 镜像真实 pi：用户消息也发 message_start/message_end（pinel 侧必须门控
+  // 不重复推送——webview 已有乐观渲染的用户消息）
+  const userMessage = { role: "user", content: [{ type: "text", text: promptText }] };
+  out({ type: "message_start", message: userMessage });
+  out({ type: "message_end", message: userMessage });
   const assistantContent = [
     { type: "text", text: "你好，世界" },
     { type: "thinking", thinking: "思考中…" },

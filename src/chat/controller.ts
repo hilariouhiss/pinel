@@ -100,6 +100,11 @@ export class ChatController {
   private messages: AgentMessage[] = [];
   private partialBlocks: StreamBlock[] = [];
   private tools = new Map<string, ToolCard>();
+  /** 当前流式消息的角色（message_start 设置，全 role 防旧值残留）；
+   *  message_update 仅对 assistant 应用——防御 pi 未来对用户消息发 delta。 */
+  private currentStreamRole = "assistant";
+  /** pi 事件来源的 message 广播计数（乐观渲染不计入；测试断言 user 恒为 0）。 */
+  private messageEventCounts = { user: 0, assistant: 0, toolResult: 0 };
   private startPromise: Promise<void> | null = null;
   private workspaceRoot: string | undefined;
   private streamStartCount = 0;
@@ -479,6 +484,10 @@ export class ChatController {
       case "message_start":
         // 每条新消息重置分块装配状态（contentIndex 映射是每消息独立的），
         // 否则会串入上一条消息遗留的 thinking/toolCall 块
+        this.currentStreamRole =
+          typeof (event as { message?: AgentMessage }).message?.role === "string"
+            ? (event as { message: AgentMessage }).message.role
+            : "assistant";
         this.partialAssembly = createAssembly();
         this.partialBlocks = [];
         this.fire({ type: "stream", blocks: [] });
@@ -489,13 +498,24 @@ export class ChatController {
           // 防御：agent_settled 后迟到的增量（abort 场景）直接丢弃
           break;
         }
+        if (this.currentStreamRole !== "assistant") {
+          // 防御：用户消息的 delta 不渲染成助手流式气泡
+          break;
+        }
         this.handleDelta(event.assistantMessageEvent as AssistantDeltaEvent);
         break;
 
       case "message_end": {
+        const msg = event.message as AgentMessage;
+        if (msg.role === "user") {
+          // pi 对用户消息也发 message_end：webview 已有乐观渲染的用户消息，
+          // 再广播会重复显示；权威列表由 agent_end/settle get_messages 快照提供
+          break;
+        }
+        this.messageEventCounts[msg.role === "toolResult" ? "toolResult" : "assistant"]++;
         this.partialBlocks = [];
-        this.messages.push(event.message as AgentMessage);
-        this.fire({ type: "message", message: event.message as AgentMessage });
+        this.messages.push(msg);
+        this.fire({ type: "message", message: msg });
         this.fire({ type: "stream", blocks: [] });
         break;
       }
@@ -748,6 +768,11 @@ export class ChatController {
 
   getSettledCount(): number {
     return this.settledCount;
+  }
+
+  /** pi 事件来源的 message 广播计数（user/assistant/toolResult；乐观渲染不计入）。 */
+  getMessageEventCounts(): { user: number; assistant: number; toolResult: number } {
+    return { ...this.messageEventCounts };
   }
 
   getPendingUi(): ExtensionUiRequest[] {

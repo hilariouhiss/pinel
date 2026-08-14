@@ -163,6 +163,34 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.ok(messages.some((m) => m.role === "toolResult"), "必须存在 toolResult 消息");
   });
 
+  test("用户消息只显示一次：pi 的 user message 事件不重复推送", async () => {
+    // 假 pi 默认流会发用户消息的 message_start/message_end（镜像真实 pi）；
+    // 宿主必须门控不广播——webview 已有乐观渲染的用户消息，否则重复显示。
+    // 会话历史跨 prompt 累积，按 marker 过滤本次 prompt 的用户消息断言恰好一条。
+    const marker = `dedup-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+    await api.waitForSettled(30000, baseline);
+
+    const textOf = (content: unknown): string => {
+      if (typeof content === "string") {
+        return content;
+      }
+      if (Array.isArray(content)) {
+        return content
+          .filter((b) => (b as { type?: string }).type === "text")
+          .map((b) => String((b as { text?: unknown }).text ?? ""))
+          .join("");
+      }
+      return "";
+    };
+    const users = api.getMessages().filter((m) => m.role === "user" && textOf(m.content).includes(marker));
+    assert.strictEqual(users.length, 1, "本次 prompt 的消息列表必须恰好一条用户消息");
+    const counts = api.getMessageEventCounts();
+    assert.strictEqual(counts.user, 0, "pi 驱动的 user message 事件不得广播（乐观渲染已显示）");
+    assert.ok(counts.assistant >= 1, "助手消息广播计数必须正常");
+  });
+
   test("流式中 abort 中断", async () => {
     const marker = `ABORTME-${Date.now()}`;
     const baseline = api.getSettledCount();

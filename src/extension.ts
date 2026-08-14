@@ -19,6 +19,8 @@ export interface PinelTestApi {
   getPartialBlocks(): Array<{ kind: string; text: string; toolCall?: { id: string; name: string; arguments: string } }>;
   /** 当前已完成的 agent 轮次计数（agent_settled 次数）。 */
   getSettledCount(): number;
+  /** pi 事件来源的 message 广播计数（user/assistant/toolResult；乐观渲染不计入）。 */
+  getMessageEventCounts(): { user: number; assistant: number; toolResult: number };
   /** 待决的扩展对话框请求。 */
   getPendingUi(): ExtensionUiRequest[];
   /** 当前待办任务快照。 */
@@ -76,6 +78,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     getTools: () => ctrl.getTools(),
     getPartialBlocks: () => ctrl.getPartialBlocks(),
     getSettledCount: () => ctrl.getSettledCount(),
+    getMessageEventCounts: () => ctrl.getMessageEventCounts(),
     getPendingUi: () => ctrl.getPendingUi(),
     getTodos: () => ctrl.getTodos(),
     getCommands: () => ctrl.getCommands(),
