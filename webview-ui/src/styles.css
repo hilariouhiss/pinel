@@ -532,6 +532,18 @@ body {
   color: var(--vscode-quickInputList-focusForeground, inherit);
 }
 
+/* 激活行内辅助元素跟随 QuickPick 官方手法：inherit 跟随焦点前景色 + 降不透明度分层 */
+.composer-suggest-item.active .composer-suggest-desc {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.composer-suggest-item.active .composer-suggest-source {
+  color: inherit;
+  opacity: 0.8;
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
 .composer-suggest-name {
   flex-shrink: 0;
   font-weight: 600;

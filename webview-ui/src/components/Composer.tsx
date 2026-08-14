@@ -64,6 +64,8 @@ export function Composer({ status, commands }: Props) {
   const [suggestDismissed, setSuggestDismissed] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** 候选弹窗容器（滚动同步用）。 */
+  const suggestRef = useRef<HTMLDivElement>(null);
   /** 接受补全后把光标置于文本末尾（受控 setState 后需显式设置选区）。 */
   const caretAtEnd = useRef(false);
 
@@ -79,6 +81,16 @@ export function Composer({ status, commands }: Props) {
   useEffect(() => {
     setHighlight(0);
   }, [candidates]);
+
+  // 高亮项滚动同步：activeIndex 或列表变化时把选中项滚入弹窗可视区。
+  // block:'nearest' 只滚最近的滚动容器（弹窗自身），不牵动消息列表；
+  // 依赖含 candidates：覆盖“滚轮滚到底 + 高亮已在 0 + 过滤变化”的路径
+  //（activeIndex 值不变时列表变化也需要回滚到首项）。
+  // 已知有意行为：鼠标 hover 改 highlight 也会触发本 effect（nearest 无跳跃，良性）。
+  useEffect(() => {
+    const items = suggestRef.current?.querySelectorAll(".composer-suggest-item");
+    items?.[activeIndex]?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, candidates]);
 
   // 接受补全后：聚焦输入框并把光标移到末尾
   useEffect(() => {
@@ -207,7 +219,7 @@ export function Composer({ status, commands }: Props) {
   return (
     <div className="composer">
       {popupVisible && (
-        <div className="composer-suggest" role="listbox" aria-label="命令补全">
+        <div className="composer-suggest" role="listbox" aria-label="命令补全" ref={suggestRef}>
           {candidates.map((cmd, i) => (
             <div
               key={`${cmd.name}-${i}`}
