@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { ChatController, type ChatStatus, type ToolCard } from "./chat/controller";
 import { ChatPanelProvider } from "./chat/panel";
-import type { AgentMessage, ExtensionUiRequest } from "./rpc/protocol";
+import type { AgentMessage, ExtensionUiRequest, SlashCommand } from "./rpc/protocol";
 import type { TodoTask } from "./chat/todos";
 
 /** 暴露给集成测试的钩子接口（通过扩展 exports 获取）。 */
@@ -23,6 +23,8 @@ export interface PinelTestApi {
   getPendingUi(): ExtensionUiRequest[];
   /** 当前待办任务快照。 */
   getTodos(): TodoTask[];
+  /** 当前可用斜杠命令列表（get_commands 结果；空=未获取/获取失败）。 */
+  getCommands(): SlashCommand[];
   /** 模型自愈信息：最近一次初始同步尝试次数与是否自动重启过。 */
   getModelHealInfo(): { attempts: number; autoRestarted: boolean };
   /** 答复扩展对话框（模拟用户在 webview 中的操作）。 */
@@ -76,6 +78,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     getSettledCount: () => ctrl.getSettledCount(),
     getPendingUi: () => ctrl.getPendingUi(),
     getTodos: () => ctrl.getTodos(),
+    getCommands: () => ctrl.getCommands(),
     getModelHealInfo: () => ctrl.getModelHealInfo(),
     uiRespond: (id, response) => ctrl.uiRespond(id, response),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {

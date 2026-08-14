@@ -113,13 +113,18 @@ export interface GetAvailableModelsCommand {
   type: "get_available_models";
 }
 
+export interface GetCommandsCommand {
+  type: "get_commands";
+}
+
 export type ClientCommand =
   | PromptCommand
   | SteerCommand
   | AbortCommand
   | GetStateCommand
   | GetMessagesCommand
-  | GetAvailableModelsCommand;
+  | GetAvailableModelsCommand
+  | GetCommandsCommand;
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -147,6 +152,25 @@ export interface GetMessagesData {
 
 export interface GetAvailableModelsData {
   models: Model[];
+}
+
+/**
+ * get_commands 返回的斜杠命令（防御解析见 src/chat/commands.ts）。
+ *
+ * 文档漂移注：pi 0.84.x 实际返回字段为 name/description/source/sourceInfo
+ * （dist/modes/rpc/rpc-mode.js），而 docs/rpc.md 示例写的是 path/location——
+ * 协议类型以实测实现为准，sourceInfo 本版本不使用，预留 unknown。
+ */
+export interface SlashCommand {
+  name: string;
+  description?: string;
+  /** extension | prompt | skill；pi 未来可能新增来源，不写死联合类型（UI 有兜底徽标）。 */
+  source?: string;
+  sourceInfo?: unknown;
+}
+
+export interface GetCommandsData {
+  commands: SlashCommand[];
 }
 
 // ---------------------------------------------------------------------------

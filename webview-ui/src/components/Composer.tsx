@@ -1,9 +1,33 @@
-import { useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import { vscode } from "../index";
-import type { Attachment, ChatStatus } from "../types";
+import { isCommandQuery, matchCommands } from "../command-match";
+import type { Attachment, ChatStatus, SlashCommand } from "../types";
 
 interface Props {
   status: ChatStatus;
+  commands: SlashCommand[];
+}
+
+/** 来源徽标（中文标签）；未知来源兜底"其他"（pi 未来可能新增 source）。 */
+function sourceLabel(source: string | undefined): string {
+  switch (source) {
+    case "extension":
+      return "扩展";
+    case "prompt":
+      return "提示模板";
+    case "skill":
+      return "技能";
+    default:
+      return "其他";
+  }
 }
 
 /** 图片压缩：最长边 > 1568px 时用 canvas 缩小并转 JPEG，控制随 prompt 发送的体积。 */
@@ -32,10 +56,49 @@ async function compressImage(
 
 let attachmentSeq = 0;
 
-export function Composer({ status }: Props) {
+export function Composer({ status, commands }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const busy = status.isStreaming || status.isCompacting;
+  // 弹窗 Esc 关闭标记：文本变化时复位（继续输入重新触发补全）
+  const [suggestDismissed, setSuggestDismissed] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** 接受补全后把光标置于文本末尾（受控 setState 后需显式设置选区）。 */
+  const caretAtEnd = useRef(false);
+
+  const query = useMemo(() => (isCommandQuery(text) ? text.slice(1) : ""), [text]);
+  const candidates = useMemo(() => matchCommands(commands, query), [commands, query]);
+  // 用 isCommandQuery 而非 query 长度门禁：仅输入 /（空查询）也要弹出全部命令；
+  // 接受补全后 text 为 /cmd （含尾空格）谓词失效，弹窗自然关闭（不会重新弹出）
+  const popupVisible = !suggestDismissed && isCommandQuery(text) && candidates.length > 0;
+  // 防越界夹取（列表变化瞬间 highlight 可能超出新长度）
+  const activeIndex = Math.min(highlight, Math.max(0, candidates.length - 1));
+
+  // 列表变化（过滤输入/命令刷新）时高亮重置为第一项
+  useEffect(() => {
+    setHighlight(0);
+  }, [candidates]);
+
+  // 接受补全后：聚焦输入框并把光标移到末尾
+  useEffect(() => {
+    if (!caretAtEnd.current) {
+      return;
+    }
+    caretAtEnd.current = false;
+    const ta = inputRef.current;
+    if (ta) {
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
+  }, [text]);
+
+  const accept = (cmd: SlashCommand) => {
+    // 插入 /命令 + 尾部空格，留在输入框继续编辑（首词仍在输入中，直接整体替换）
+    setText(`/${cmd.name} `);
+    setSuggestDismissed(false);
+    caretAtEnd.current = true;
+  };
 
   const send = () => {
     const trimmed = text.trim();
@@ -86,6 +149,40 @@ export function Composer({ status }: Props) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (popupVisible) {
+      // IME 组合输入期间不拦截任何键：候选词确认（Enter）/翻页（↑↓）与弹窗快捷键冲突
+      if (e.nativeEvent.isComposing) {
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlight((h) => Math.min(h + 1, candidates.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlight((h) => Math.max(h - 1, 0));
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        // 弹窗打开时 Enter 优先接受补全（含 busy 态）；接受后再按 Enter 才是发送
+        e.preventDefault();
+        accept(candidates[activeIndex]);
+        return;
+      }
+      if (e.key === "Tab") {
+        // Tab 仅在弹窗打开时接受补全；弹窗关闭时保持默认焦点移动
+        e.preventDefault();
+        accept(candidates[activeIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        // Esc 分层：弹窗打开 → 仅关闭弹窗；再次 Esc 才走中断/清空
+        e.preventDefault();
+        setSuggestDismissed(true);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       send();
@@ -100,10 +197,36 @@ export function Composer({ status }: Props) {
     }
   };
 
-const rows = Math.min(8, Math.max(2, text.split("\n").length));
+  const onSuggestionMouseDown = (e: MouseEvent) => {
+    // 防止点击候选项导致 textarea 失焦（失焦后 webview 滚动可能跳动）
+    e.preventDefault();
+  };
+
+  const rows = Math.min(8, Math.max(2, text.split("\n").length));
 
   return (
     <div className="composer">
+      {popupVisible && (
+        <div className="composer-suggest" role="listbox" aria-label="命令补全">
+          {candidates.map((cmd, i) => (
+            <div
+              key={`${cmd.name}-${i}`}
+              role="option"
+              aria-selected={i === activeIndex}
+              className={`composer-suggest-item${i === activeIndex ? " active" : ""}`}
+              onMouseDown={onSuggestionMouseDown}
+              onMouseEnter={() => setHighlight(i)}
+              onClick={() => accept(cmd)}
+            >
+              <span className="composer-suggest-name">/{cmd.name}</span>
+              {cmd.description && (
+                <span className="composer-suggest-desc">{cmd.description}</span>
+              )}
+              <span className="composer-suggest-source">{sourceLabel(cmd.source)}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {attachments.length > 0 && (
         <div className="composer-attachments">
           {attachments.map((a) => (
@@ -122,13 +245,19 @@ const rows = Math.min(8, Math.max(2, text.split("\n").length));
       )}
       <div className="composer-row">
         <textarea
+          ref={inputRef}
           className="composer-input"
           placeholder={
-            busy ? "流式输出中——发送将加入队列（steer）" : "给 Pi 发送消息（Enter 发送，Shift+Enter 换行，Esc 中断）"
+            busy
+              ? "流式输出中——发送将加入队列（steer）"
+              : "给 Pi 发送消息（Enter 发送，Shift+Enter 换行，Esc 中断，/ 补全命令）"
           }
           rows={rows}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setSuggestDismissed(false); // 文本变化复位 Esc 关闭标记，继续输入重新触发补全
+          }}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
         />

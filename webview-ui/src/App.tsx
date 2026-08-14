@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, HostMessage, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { ChatMessage, ChatStatus, HostMessage, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { MessageView } from "./components/MessageView";
 import { Notices } from "./components/Notices";
@@ -27,6 +27,7 @@ export default function App() {
   const [status, setStatus] = useState<ChatStatus>(initialStatus);
   const [pendingUi, setPendingUi] = useState<UiRequest[]>([]);
   const [todos, setTodos] = useState<TodoTask[]>([]);
+  const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [notices, setNotices] = useState<Array<{ id: number; level: string; text: string }>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -40,6 +41,7 @@ export default function App() {
         setStatus(msg.status);
         setPendingUi(msg.pendingUi ?? []);
         setTodos(msg.todos ?? []);
+        setCommands(msg.commands ?? []);
         break;
       case "stream":
         setStreamBlocks(msg.blocks);
@@ -64,6 +66,9 @@ export default function App() {
         break;
       case "todos":
         setTodos(msg.todos);
+        break;
+      case "commands":
+        setCommands(msg.commands);
         break;
       case "notice": {
         const id = ++noticeSeq;
@@ -113,7 +118,7 @@ export default function App() {
             <div className="pinel-empty-hint">
               在下方输入消息，Pi 编码智能体将在这里流式回复。
               <br />
-              支持粘贴图片；流式输出中按 Esc 或点击停止可中断。
+              输入 / 可补全命令；支持粘贴图片；流式输出中按 Esc 或点击停止可中断。
             </div>
           </div>
         )}
@@ -130,7 +135,7 @@ export default function App() {
         )}
         <UiDialogs requests={pendingUi} />
       </div>
-      <Composer status={status} />
+      <Composer status={status} commands={commands} />
       <StatusBar status={status} />
     </div>
   );

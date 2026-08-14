@@ -82,8 +82,15 @@ export interface TodoTask {
   activeForm?: string;
 }
 
+/** 与宿主协议 SlashCommand 镜像（get_commands 结果）。 */
+export interface SlashCommand {
+  name: string;
+  description?: string;
+  source?: string;
+}
+
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[] }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[] }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "tool"; tool: ToolCard }
@@ -92,6 +99,7 @@ export type HostMessage =
   | { type: "uiResolved"; id: string }
   | { type: "uiCleared" }
   | { type: "todos"; todos: TodoTask[] }
+  | { type: "commands"; commands: SlashCommand[] }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {

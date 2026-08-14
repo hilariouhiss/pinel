@@ -11,10 +11,13 @@
  *   并等待客户端回复（用于验证客户端自动 cancelled 回复）
  * - prompt 含 "TWOMSG"：一个 prompt 产出两条连续助手消息（第一条含 text+thinking，
  *   第二条仅 text 慢速），用于回归测试跨消息 contentIndex 装配重置
+ * - get_commands 返回固定命令集（扩展/模板/技能三类，含 skill: 前缀名）；
+ *   prompt 含 "CMDADD" 时向命令集追加一条命令（settle 后刷新可观察）
  * - 环境变量 PINEL_FAKE_PI_SCENARIO 在进程启动时读取，作用于 get_state
  *   （首次 get_state 发生在任何 prompt 之前，prompt 子串标记机制不可用）：
  *   NULLMODEL-FIRST：前 2 次 get_state 返回 model:null，之后正常
  *   NULLMODEL-FOREVER：get_state 恒返回 model:null
+ *   NOCOMMANDS：get_commands 回 success:false（模拟旧版 pi 未知命令）
  * - 所有收到/发出的记录写入日志文件（PINEL_FAKE_PI_LOG 或系统临时目录）
  * - stdin EOF（父进程关闭管道）时退出：与真实 pi 的优雅退出路径一致，
  *   保证集成测试的 restart 流程不付 2.5s 优雅期等待
@@ -83,6 +86,16 @@ const MODEL = { id: "fake-model", name: "Fake Model", provider: "fake" };
 
 /** get_state 已响应次数（仅 NULLMODEL 场景统计）。 */
 let getStateCount = 0;
+
+/** get_commands 基础命令集（三类来源 + skill: 前缀名，供补全链路测试）。 */
+const baseCommands = [
+  { name: "fix", description: "修复测试失败", source: "prompt", sourceInfo: { path: "/fake/prompts/fix.md" } },
+  { name: "plan", description: "制定实现计划", source: "prompt", sourceInfo: { path: "/fake/prompts/plan.md" } },
+  { name: "skill:ctx-search", description: "检索本地索引", source: "skill", sourceInfo: { path: "/fake/skills/ctx-search/SKILL.md" } },
+  { name: "session-name", description: "设置会话名", source: "extension", sourceInfo: { path: "/fake/extensions/session.ts" } },
+];
+/** CMDADD 场景：是否已向命令集追加过（进程内存态，只追加一次防重复）。 */
+let cmdAdded = false;
 
 function stateData() {
   let model = MODEL;
@@ -319,6 +332,18 @@ async function handleCommand(record) {
       respond(id, "get_available_models", true, { models: [MODEL] });
       break;
 
+    case "get_commands":
+      if (SCENARIO === "NOCOMMANDS") {
+        // 模拟旧版 pi：未知命令（客户端应静默保持空列表，不影响启动）
+        respond(id, "get_commands", false, undefined, "Unknown command: get_commands");
+      } else {
+        const extra = cmdAdded
+          ? [{ name: "cmd-added", description: "追加的命令", source: "prompt", sourceInfo: {} }]
+          : [];
+        respond(id, "get_commands", true, { commands: [...baseCommands, ...extra] });
+      }
+      break;
+
     case "prompt": {
       respond(id, "prompt", true);
       const text = String(record.message ?? "");
@@ -355,6 +380,10 @@ async function handleCommand(record) {
         void streamSequence(text, false);
         setTimeout(() => process.exit(1), 1500);
         break;
+      }
+      if (text.includes("CMDADD")) {
+        // 模拟运行中注册新命令：settle 后客户端刷新 get_commands 时可见
+        cmdAdded = true;
       }
       if (text.includes("ASKUI-TIMEOUT")) {
         // 模拟 pi 对带 timeout 的对话框自动超时 resolve：发 select 帧后

@@ -19,7 +19,7 @@
 | 模块 | 职责 |
 |---|---|
 | `src/rpc/` | RPC 协议层：`protocol.ts`（协议类型，对齐 docs/rpc.md）、`framing.ts`（严格 LF JSONL 编解码）、`client.ts`（子进程生命周期 + 请求/响应关联） |
-| `src/chat/` | 聊天层：`controller.ts`（会话控制器：事件映射/流装配/状态广播）、`panel.ts`（WebviewViewProvider + postMessage 协议 + CSP HTML）、`stream-assembly.ts`（contentIndex 分块装配纯函数）、`todos.ts`（todo 工具结果快照解析纯函数） |
+| `src/chat/` | 聊天层：`controller.ts`（会话控制器：事件映射/流装配/状态广播）、`panel.ts`（WebviewViewProvider + postMessage 协议 + CSP HTML）、`stream-assembly.ts`（contentIndex 分块装配纯函数）、`todos.ts`（todo 工具结果快照解析纯函数）、`commands.ts`（get_commands 响应防御解析纯函数） |
 | `src/extension.ts` | 入口：activate/deactivate、命令注册、面板注册、导出 `PinelTestApi` 测试钩子 |
 | `src/test/` | 单元测试 + 集成测试 + `fixtures/fake-pi.js`（按 rpc.md 实现的假 pi）、`fixtures/long-running.js`（stop 测试用长命进程） |
 | `src/test-no-workspace/` | 空窗口实例集成测试（独立 .vscode-test.mjs 配置，不传 workspaceFolder 启动） |
@@ -40,6 +40,7 @@ pinel/
 ├─ scripts/                # 测试辅助脚本（clean-test-userdata.mjs）
 ├─ webview-ui/             # React webview 源码（browser 平台，不得 import 宿主代码或 vscode API）
 │  ├─ src/components/      # Composer / MessageView / Markdown / Notices / StatusBar / UiDialogs / TodoPanel
+│  ├─ src/command-match.ts # /命令补全匹配纯函数（前缀>子串>描述，skill 裸名命中）
 │  ├─ src/types.ts         # 宿主消息协议镜像（与 controller OutMessage 手工同步）
 │  └─ esbuild.js           # webview 打包脚本（根目录运行：node webview-ui/esbuild.js）
 ├─ media/                  # 图标 + webview 构建产物（webview.js/css 及 .map 被 gitignore）
@@ -67,7 +68,7 @@ npm run package      # 生产构建（minify）
 
 - **测试首次运行**会下载 VS Code 到 `.vscode-test/`（gitignored），约 100MB
 - **F5 调试**：先 `npm run watch`（tasks.json 默认构建任务已含 webview），否则全新 clone 后面板空白
-- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 38/38 通过）
+- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 46/46 通过）
 
 ## Coding Guidelines
 
@@ -94,6 +95,7 @@ npm run package      # 生产构建（minify）
 - 空闲判定用 `agent_settled`（`agent_end` 仅刷新消息列表，之后仍可能有 retry/compaction/排队 continuation）
 - `extension_ui_request` 对话框方法（select/confirm/input/editor）必须回复 `extension_ui_response`，否则 agent 永久阻塞；pinel 渲染内联卡片由用户作答，`agent_settled`/`handleExit`/`restart` 时清空未决请求（清扫正确性依赖「dialog 阻塞期间不 settle」的实测前提）
 - 命令发送带 30s 超时；不带 id 的响应按 `command` 字段兜底关联
+- **命令补全数据链路**：`get_commands` 一律 fire-and-forget（`void fetchCommands()`，内部 try/catch + client 身份校验）——旧版 pi 回 success:false 会 reject，await 在启动关键路径会把面板挂起至 30s；失败静默保持空列表（仅 Output 记录，不弹 notice），补全弹窗对空列表永不弹出；`restart`/`handleExit` 必须清空并广播空命令列表（旧进程的命令会误导补全）；响应字段以实测实现为准（name/description/source/sourceInfo，docs/rpc.md 示例的 path/location 已漂移），防御解析在 `src/chat/commands.ts`；webview 触发谓词 `text.startsWith('/')` 且首词无空白（与 pi 的执行判定解耦，提示层关闭不影响 pi 展开）
 - **模型状态自愈**：初始同步 get_state 最多 4 次尝试（间隔 2s/5s/10s），仍无模型时自动重启 pi 一次（在 `startWithHeal` 内顺序执行，**不走 restart 防重入守卫**——自愈常嵌套在手动重启链内会被守卫拦截）；`modelHealRestarted` 置位后短路为单次尝试，手动 restart 重置；`running` 在首次 get_state 成功后才置位（健康慢启动显示"启动中…"而非假警告）；运行中无模型由 StatusBar 用现有字段推导警告态（⚠ 无可用模型 + 重启按钮），**不新增协议字段**
 
 **Windows 专项约束（有回归测试 `src/test/spawn-spec.test.ts`）**：
@@ -104,7 +106,7 @@ npm run package      # 生产构建（minify）
 - webview CSP `default-src 'none'` + script nonce；markdown 用 react-markdown 且**不得启用 rehype-raw**
 - 不把用户输入拼进 shell 命令字符串（piPath 配置除外——它本就是用户显式指定的本地命令）
 
-**范围纪律**：以下功能属于 v0.2+，非明确需求不得提前实现：会话列表/切换/重命名、Plan Mode、edit diff 预览、@提及、检查点/回退（`get_available_models` 协议类型已备好但未使用）。注：交互 UI（对话框卡片 + 待办面板）已于 2026-08 经用户明确要求提前实现（见 `src/chat/todos.ts` 与 `UiDialogs.tsx`）。
+**范围纪律**：以下功能属于 v0.2+，非明确需求不得提前实现：会话列表/切换/重命名、Plan Mode、edit diff 预览、@提及、检查点/回退（`get_available_models` 协议类型已备好但未使用）。注：交互 UI（对话框卡片 + 待办面板）与 /命令自动补全已于 2026-08 经用户明确要求提前实现（见 `src/chat/todos.ts`、`UiDialogs.tsx` 与 `webview-ui/src/command-match.ts`）。
 
 ## Development Workflow
 
@@ -121,13 +123,14 @@ npm run package      # 生产构建（minify）
 
 ## Testing Guidelines
 
-**已有测试**（38 个，全部必须保持通过）：
+**已有测试**（46 个，全部必须保持通过）：
 - `framing.test.ts`：LF framing（U+2028、`\r\n`、粘包拆包）
 - `stream-assembly.test.ts`：contentIndex 分块装配（多块交替、权威替换、乱序）
 - `spawn-spec.test.ts`：Windows shim 解析（.cmd 包装、verbatim 参数、shell 模式）
 - `stop.test.ts`：`RpcClient.stop()` 等待真实退出（exit 事件在 resolve 前派发、子进程已死）+ 优雅退出路径（stdin EOF 自退 exit code 0）+ 兜底硬杀路径（`PINEL_LONG_NO_EOF=1` 拒不退出）
 - `todos.test.ts`：`parseTodoTasks` 防御解析（全量快照、部分损坏跳过、结构不符 null）
-- `extension.test.ts`：集成测试（真实 VS Code + 假 pi：状态同步、端到端流式、abort、UI 自动取消、跨消息不串块、重启竞态回归、崩溃后重启恢复、模型自愈——NULLMODEL-FIRST 重试恢复无重启 / NULLMODEL-FOREVER 自动重启恰好一次后警告态）
+- `commands.test.ts`：`parseCommands` 防御解析（get_commands 响应：全量合法、部分损坏跳过、结构不符空列表、未知 source 兜底）
+- `extension.test.ts`：集成测试（真实 VS Code + 假 pi：状态同步、端到端流式、abort、UI 自动取消、跨消息不串块、重启竞态回归、崩溃后重启恢复、模型自愈——NULLMODEL-FIRST 重试恢复无重启 / NULLMODEL-FOREVER 自动重启恰好一次后警告态、命令补全链路——启动送达/CMDADD settle 刷新/重启恢复不残留/NOCOMMANDS 旧版失败静默）
 - `src/test-no-workspace/no-workspace.test.ts`：空窗口实例友好状态（no-workspace + 引导文本，不伪装成进程异常）
 
 **新增功能覆盖要求**：
@@ -145,6 +148,7 @@ npm run package      # 生产构建（minify）
 - fake-pi 的 prompt 场景判断注意**子串包含顺序**（如 `UIREQUEST-CRASH` 必须在 `UIREQUEST` 之前）与 `waitForUiResponse` 命中后从数组移除（否则后续同 id 请求命中已 resolve 的旧 waiter 死锁）
 - fake-pi 与 long-running 均在 **stdin EOF 时退出**（与真实 pi 的优雅退出路径一致）：集成测试的 restart 流程不付 2.5s 优雅期等待；long-running 经 `PINEL_LONG_NO_EOF=1` 保持常驻（供 stop 兜底硬杀测试）
 - **待办列表数据源踩坑**：pi 0.84.1 的 RPC 模式对 `setWidget` 组件工厂静默忽略（rpiv-todo 的 todo 面板收不到内容），todo 列表从 `tool_execution_end`（toolName "todo"）的 `result.details.tasks` 全量快照解析——**未文档化字段**，必须防御解析（见 `src/chat/todos.ts`）；若 pi 未来支持字符串数组 widget 或 todo 专用事件，迁移到官方通道
+- **get_commands 数据源踩坑**：docs/rpc.md 示例写 path/location 字段，pi 0.84.x 实际返回 sourceInfo（文档漂移）——协议类型以实现为准 + 防御解析（见 `src/chat/commands.ts`）；get_commands 不受模型状态影响，旧版 pi 回 success:false；`NOCOMMANDS`/`CMDADD` 场景经假 pi 覆盖（NOCOMMANDS 作用于首次 get_commands，用 env 激活而非 prompt 标记）
 
 **F5 调试专项注意（踩坑沉淀）**：
 - `.vscode/launch.json` 的 extensionHost 配置必须**显式把 `${workspaceFolder}` 作为 args 传入**（官方推荐写法）；缺省时开发宿主以空窗口启动，`workspaceFolders` 为空 → 面板提示「请先打开一个文件夹」且点重启无效（pi 从未被 spawn）

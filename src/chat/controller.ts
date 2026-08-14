@@ -6,6 +6,7 @@ import {
   type AssistantDeltaEvent,
   type ExtensionUiRequest,
   type GetAvailableModelsData,
+  type GetCommandsData,
   type GetMessagesData,
   type ImageContent,
   type Model,
@@ -13,12 +14,14 @@ import {
   type RpcEvent,
   type RpcRecord,
   type SessionState,
+  type SlashCommand,
   type ToolExecutionEndEvent,
   type ToolExecutionStartEvent,
   type ToolExecutionUpdateEvent,
 } from "../rpc/protocol";
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
 import { parseTodoTasks, type TodoTask } from "./todos";
+import { parseCommands } from "./commands";
 
 export type ProcessState = "stopped" | "starting" | "running" | "error" | "no-workspace";
 
@@ -42,7 +45,7 @@ export interface ToolCard {
 }
 
 export type OutMessage =
-  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[] }
+  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[] }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; tool: ToolCard }
@@ -51,6 +54,7 @@ export type OutMessage =
   | { type: "uiResolved"; id: string }
   | { type: "uiCleared" }
   | { type: "todos"; todos: TodoTask[] }
+  | { type: "commands"; commands: SlashCommand[] }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
@@ -111,6 +115,8 @@ export class ChatController {
   private pendingUi = new Map<string, ExtensionUiRequest>();
   /** todo 工具维护的任务快照（运行期内存态，restart 后随新进程重置）。 */
   private todos: TodoTask[] = [];
+  /** 可用斜杠命令（get_commands 结果；空列表=未获取/获取失败，补全弹窗不弹出）。 */
+  private commands: SlashCommand[] = [];
 
   constructor(output: vscode.OutputChannel) {
     this.output = output;
@@ -163,6 +169,8 @@ export class ChatController {
       }
       this.notice("warning", `获取历史消息失败：${(err as Error).message}`);
     }
+    // 斜杠命令列表：fire-and-forget，不得阻塞/reject 启动流程（旧版 pi 会回 success:false）
+    void this.fetchCommands();
   }
 
   /**
@@ -336,11 +344,13 @@ export class ChatController {
       this.status = { ...initialStatus };
       this.pendingUi.clear();
       this.todos = [];
-      // 立即广播重置后的状态 + 清除对话框/待办，让 UI 有即时反馈
+      this.commands = [];
+      // 立即广播重置后的状态 + 清除对话框/待办/命令列表，让 UI 有即时反馈
       //（防止旧卡片在重启窗口内被应答，新进程可能复用同 id）
       this.fire({ type: "status", status: this.status });
       this.fire({ type: "uiCleared" });
       this.fire({ type: "todos", todos: this.todos });
+      this.fire({ type: "commands", commands: this.commands });
       if (old) {
         await old.stop();
       }
@@ -459,8 +469,10 @@ export class ChatController {
         this.status = { ...this.status, isStreaming: false, isCompacting: false };
         this.fire({ type: "status", status: this.status });
         this.fire({ type: "stream", blocks: [] });
-        // 最终同步（含 compaction/retry 后的最终状态）
+        // 最终同步（含 compaction/retry 后的最终状态）；命令列表随会话刷新
+        //（扩展可能在运行中注册新命令）
         void this.syncMessages();
+        void this.fetchCommands();
         break;
       }
 
@@ -616,6 +628,10 @@ export class ChatController {
       this.pendingUi.clear();
       this.fire({ type: "uiCleared" });
     }
+    // 命令列表是"进程能力描述"：崩溃后旧列表会误导补全（接受后发送报进程不可用），
+    // 清空并广播，重启后由新启动流程重新拉取
+    this.commands = [];
+    this.fire({ type: "commands", commands: this.commands });
     this.fire({ type: "status", status: this.status });
     this.fire({ type: "stream", blocks: [] });
   }
@@ -638,6 +654,29 @@ export class ChatController {
     }
   }
 
+  /**
+   * fire-and-forget 拉取可用斜杠命令。
+   * 不得 await 在启动关键路径上（send 默认 30s 超时，旧版 pi 回 success:false
+   * 会 reject）：内部 try/catch 吞掉一切失败，静默保持空列表（弹窗不弹出）。
+   */
+  private async fetchCommands(): Promise<void> {
+    const client = this.client;
+    if (!client?.isRunning) {
+      return;
+    }
+    try {
+      const data = await client.send<GetCommandsData>({ type: "get_commands" });
+      if (this.client !== client) {
+        return; // 已被 restart 取代：丢弃迟到结果，不污染新进程状态
+      }
+      this.commands = parseCommands(data);
+      this.fire({ type: "commands", commands: this.commands });
+    } catch (err) {
+      // 旧版 pi 不支持 get_commands：静默（仅 Output 记录，不弹 notice 避免启动噪音）
+      this.output.appendLine(`[info] get_commands 失败（可能为旧版 pi）：${(err as Error).message}`);
+    }
+  }
+
   /** 用户答复对话框：回写 pi 并从 pendingUi 移除。未知 id 静默忽略（防御跨进程同 id 复用/迟到双答）。 */
   uiRespond(id: string, response: { value?: string; confirmed?: boolean; cancelled?: boolean }): void {
     if (!this.pendingUi.has(id)) {
@@ -656,6 +695,7 @@ export class ChatController {
       status: this.status,
       pendingUi: [...this.pendingUi.values()],
       todos: this.todos,
+      commands: this.commands,
     });
   }
 
@@ -716,6 +756,10 @@ export class ChatController {
 
   getTodos(): TodoTask[] {
     return [...this.todos];
+  }
+
+  getCommands(): SlashCommand[] {
+    return [...this.commands];
   }
 
   /** 模型自愈信息（集成测试断言）：最近一次初始同步的尝试次数与是否自动重启过。 */

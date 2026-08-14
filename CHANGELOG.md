@@ -8,6 +8,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- `/` 命令自动补全：输入框键入 `/` 弹出候选下拉列表（数据源为 pi 的 `get_commands`：扩展命令/提示模板/技能，含描述与来源徽标；启动/agent 空闲/重启时刷新）；↑↓ 选择、Enter/Tab 接受、Esc 关闭（与中断/清空分层）、鼠标可点；接受后插入 `/命令 ` 留在输入框继续输入参数；中文输入法组合输入期间不拦截快捷键
 - 扩展 UI 交互：`ctx.ui.*` 对话框（select/confirm/input/editor，如 ask_user_question 插件问卷）渲染为聊天流内联卡片，用户作答/取消后回传 agent
 - 待办面板：todo 工具任务列表（适配 rpiv-todo）在聊天流顶部固定面板展示（可折叠）
 - 模型状态自愈：启动时 get_state 重试（最多 4 次，间隔 2s/5s/10s），仍无模型自动重启 pi 一次；自愈耗尽后状态栏显示「⚠ 无可用模型」警告态 + 重启按钮

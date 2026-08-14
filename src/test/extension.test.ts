@@ -95,6 +95,48 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.strictEqual(status.thinkingLevel, "high");
   });
 
+  test("get_commands 送达：启动后命令列表就绪（三类来源）", async () => {
+    // 命令列表为 fire-and-forget 拉取，轮询等待送达
+    await waitFor(() => api.getCommands().length >= 4, 10000, "命令列表送达");
+    const names = api.getCommands().map((c) => c.name);
+    assert.ok(names.includes("fix"), "必须包含提示模板命令");
+    assert.ok(names.includes("skill:ctx-search"), "必须包含 skill: 前缀命令");
+    assert.ok(names.includes("session-name"), "必须包含扩展命令");
+    const fix = api.getCommands().find((c) => c.name === "fix");
+    assert.strictEqual(fix?.source, "prompt");
+    assert.strictEqual(fix?.description, "修复测试失败");
+  });
+
+  test("settle 后刷新命令列表（CMDADD 场景：运行中注册新命令可观察）", async () => {
+    const marker = `CMDADD-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+    await api.waitForSettled(30000, baseline);
+
+    // settle 后的 fetchCommands 是 fire-and-forget：轮询等待新命令出现
+    await waitFor(
+      () => api.getCommands().some((c) => c.name === "cmd-added"),
+      10000,
+      "settle 后新命令出现",
+    );
+  });
+
+  test("重启后命令列表恢复（新进程重新拉取，不残留旧进程状态）", async () => {
+    await api.restart();
+    await waitFor(
+      () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+      20000,
+      "重启后恢复",
+    );
+    // 重启类场景不用 waitForSettled（无新 prompt 时 settled 不前进），轮询等待重拉完成
+    await waitFor(() => api.getCommands().length >= 4, 10000, "重启后命令列表重新送达");
+    // fake-pi 的 cmdAdded 是进程内存态：新进程不得残留旧进程追加的命令
+    assert.ok(
+      !api.getCommands().some((c) => c.name === "cmd-added"),
+      "新进程命令列表不得残留旧进程的追加命令",
+    );
+  });
+
   test("端到端流式响应：多块装配、工具卡片、消息落盘", async () => {
     const marker = `hello-${Date.now()}`;
     const baseline = api.getSettledCount();
@@ -375,4 +417,26 @@ suite("Pinel 集成测试（假 pi）", () => {
   // 注：「未打开文件夹」友好状态在独立空窗口实例套件覆盖
   //（src/test-no-workspace/no-workspace.test.ts）——主套件内移除全部工作区文件夹
   // 不可逆（VS Code 空窗口不支持 updateWorkspaceFolders 恢复）。
+
+  test("旧版 pi 不支持 get_commands：静默空列表，启动不受影响", async function () {
+    this.timeout(60000);
+    // NOCOMMANDS：get_commands 回 success:false。场景经环境变量在 spawn 时激活
+    //（首次 get_commands 发生在任何 prompt 之前，prompt 子串标记机制不可用）。
+    process.env.PINEL_FAKE_PI_SCENARIO = "NOCOMMANDS";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "NOCOMMANDS 场景启动正常",
+      );
+      // 失败静默：命令列表为空（补全弹窗永不弹出）；启动关键路径未被 reject
+      //（running + 模型已同步即证明）；不弹 notice 由实现保证（仅写 Output 日志）
+      assert.deepStrictEqual(api.getCommands(), [], "get_commands 失败时命令列表必须为空");
+      assert.strictEqual(api.getStatus().processState, "running", "start 不得被 get_commands 失败拒绝");
+    } finally {
+      delete process.env.PINEL_FAKE_PI_SCENARIO;
+      await api.restart(); // 恢复默认场景供后续测试
+    }
+  });
 });
