@@ -146,7 +146,10 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
 
   /**
    * 完整答案/「下一题」后的自动切换：仅 answering 阶段、且存在下一个未答题时
-   * 前进（顺序向后找未答，回绕向前）；不存在（最后一题）→ 交给跃迁 effect。
+   * 前进（顺序向后找未答，回绕向前——乱序作答时拉回前方未答题）；
+   * 不存在（最后一题）→ 交给跃迁 effect。
+   * 不变式：所有 activeTab 写入路径都先写 pendingFocus 再 setActiveTab，
+   * 残留值总在消费前被覆盖（同值 setActiveTab 不触发聚焦属有意漏发）。
    */
   const advanceToNext = (current: number) => {
     if (q.phase !== "answering") {
@@ -209,10 +212,13 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
           onDraftChange={(text) =>
             setDrafts((prev) => ({ ...prev, [activeTab as number]: text }))
           }
-          onAnswer={(a) => {
+          onAnswer={(a, advance) => {
             answer(activeTab as number, a);
-            advanceToNext(activeTab as number);
+            if (advance) {
+              advanceToNext(activeTab as number);
+            }
           }}
+          showNext={q.phase === "answering"}
           onNext={() => advanceToNext(activeTab as number)}
           refCallback={(el) => {
             questionRef.current = el;
@@ -258,6 +264,7 @@ function QuestionCard({
   answer,
   draft,
   locked,
+  showNext,
   onDraftChange,
   onAnswer,
   onNext,
@@ -267,9 +274,11 @@ function QuestionCard({
   answer: QuestionnaireAnswer | null;
   draft: string;
   locked: boolean;
+  /** 是否渲染「下一题」按钮（仅 answering 阶段；reviewing 下跳转由标签承担）。 */
+  showNext: boolean;
   onDraftChange: (text: string) => void;
-  onAnswer: (a: QuestionnaireAnswer) => void;
-  /** 多选卡片的「下一题」按钮（勾选不自动切换，防选到一半被跳走）。 */
+  /** advance 控制答题后是否自动切下一题（单选/自定义 true，多选勾选 false）。 */
+  onAnswer: (a: QuestionnaireAnswer, advance: boolean) => void;
   onNext: () => void;
   refCallback: (el: HTMLDivElement | null) => void;
 }) {
@@ -293,16 +302,20 @@ function QuestionCard({
               className={`qna-option${selected ? " selected" : ""}`}
               disabled={locked}
               onClick={() => {
-                onAnswer(
-                  question.multiSelect
-                    ? {
-                        kind: "multi",
-                        optionIndices: selected
-                          ? selectedMulti.filter((x) => x !== oi)
-                          : [...selectedMulti, oi],
-                      }
-                    : { kind: "option", optionIndex: oi },
-                );
+                if (question.multiSelect) {
+                  // 多选勾选不自动切题（防选到一半被跳走），由「下一题」按钮切走
+                  onAnswer(
+                    {
+                      kind: "multi",
+                      optionIndices: selected
+                        ? selectedMulti.filter((x) => x !== oi)
+                        : [...selectedMulti, oi],
+                    },
+                    false,
+                  );
+                } else {
+                  onAnswer({ kind: "option", optionIndex: oi }, true);
+                }
               }}
             >
               {question.multiSelect && (
@@ -331,12 +344,12 @@ function QuestionCard({
         <button
           className="uidialog-btn"
           disabled={locked || draft.trim().length === 0}
-          onClick={() => onAnswer({ kind: "custom", text: draft })}
+          onClick={() => onAnswer({ kind: "custom", text: draft }, true)}
         >
           使用自定义答案
         </button>
       </div>
-      {question.multiSelect && (
+      {question.multiSelect && showNext && (
         <div className="qna-next-row">
           <button className="uidialog-btn uidialog-btn-ghost qna-next" disabled={locked} onClick={onNext}>
             下一题 →
