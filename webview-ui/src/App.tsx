@@ -110,7 +110,6 @@ export default function App() {
   return (
     <div className="pinel-root">
       <Notices notices={notices} onDismiss={dismissNotice} />
-      {todos.length > 0 && <TodoPanel todos={todos} />}
       <div className="pinel-scroll" ref={scrollRef} onScroll={onScroll}>
         {!hasConversation && (
           <div className="pinel-empty">
@@ -135,6 +134,7 @@ export default function App() {
         )}
         <UiDialogs requests={pendingUi} />
       </div>
+      {todos.length > 0 && <TodoPanel todos={todos} />}
       <Composer status={status} commands={commands} />
       <StatusBar status={status} />
     </div>

@@ -401,6 +401,10 @@ body {
   border-radius: 6px;
   margin-bottom: 6px;
   overflow: hidden;
+  /* 位于输入框上方：限高 30vh 内部滚动，任务多时不挤压消息区与输入框 */
+  max-height: 30vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .todopanel-head {
@@ -430,6 +434,7 @@ body {
 .todopanel-body {
   border-top: 1px solid var(--vscode-input-border);
   padding: 4px 8px;
+  overflow-y: auto;
 }
 
 .todotask {
