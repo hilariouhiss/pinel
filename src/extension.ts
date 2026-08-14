@@ -3,6 +3,7 @@ import { ChatController, type ChatStatus, type ToolCard } from "./chat/controlle
 import { ChatPanelProvider } from "./chat/panel";
 import type { AgentMessage, ExtensionUiRequest, SlashCommand } from "./rpc/protocol";
 import type { TodoTask } from "./chat/todos";
+import type { QuestionnaireView } from "./chat/questionnaire";
 
 /** 暴露给集成测试的钩子接口（通过扩展 exports 获取）。 */
 export interface PinelTestApi {
@@ -27,6 +28,14 @@ export interface PinelTestApi {
   getTodos(): TodoTask[];
   /** 当前可用斜杠命令列表（get_commands 结果；空=未获取/获取失败）。 */
   getCommands(): SlashCommand[];
+  /** 当前问卷视图（ask_user_question；null=无问卷）。 */
+  getQuestionnaire(): QuestionnaireView | null;
+  /** 模拟用户作答问卷第 questionIndex 题。 */
+  questionnaireAnswer(questionIndex: number, answer: unknown): void;
+  /** 模拟用户确认提交问卷。 */
+  questionnaireConfirm(): void;
+  /** 模拟用户放弃整卷问卷。 */
+  questionnaireCancel(): void;
   /** 模型自愈信息：最近一次初始同步尝试次数与是否自动重启过。 */
   getModelHealInfo(): { attempts: number; autoRestarted: boolean };
   /** 答复扩展对话框（模拟用户在 webview 中的操作）。 */
@@ -82,6 +91,10 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     getPendingUi: () => ctrl.getPendingUi(),
     getTodos: () => ctrl.getTodos(),
     getCommands: () => ctrl.getCommands(),
+    getQuestionnaire: () => ctrl.getQuestionnaire(),
+    questionnaireAnswer: (questionIndex, answer) => ctrl.handleQuestionnaireAnswer(questionIndex, answer),
+    questionnaireConfirm: () => ctrl.handleQuestionnaireConfirm(),
+    questionnaireCancel: () => ctrl.handleQuestionnaireCancel(),
     getModelHealInfo: () => ctrl.getModelHealInfo(),
     uiRespond: (id, response) => ctrl.uiRespond(id, response),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {

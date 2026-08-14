@@ -11,6 +11,11 @@
  *   并等待客户端回复（用于验证客户端自动 cancelled 回复）
  * - prompt 含 "TWOMSG"：一个 prompt 产出两条连续助手消息（第一条含 text+thinking，
  *   第二条仅 text 慢速），用于回归测试跨消息 contentIndex 装配重置
+ * - prompt 含 "QUESTIONNAIRE"：模拟 rpiv-ask-user-question 的 RPC 问卷 walker——
+ *   先发 tool_execution_start（ask_user_question 完整题目参数），再逐题串行发
+ *   select/input 并逐一等待回复（单选哨兵后跟进 input、多选发 input），
+ *   每题回复记录到日志（dir: "ui-response"）供集成测试断言；任一点收到
+ *   cancelled 即放弃后续题目（与插件 walker 一致）
  * - get_commands 返回固定命令集（扩展/模板/技能三类，含 skill: 前缀名）；
  *   prompt 含 "CMDADD" 时向命令集追加一条命令（settle 后刷新可观察）
  * - 环境变量 PINEL_FAKE_PI_SCENARIO 在进程启动时读取，作用于 get_state
@@ -390,6 +395,10 @@ async function handleCommand(record) {
         // 模拟运行中注册新命令：settle 后客户端刷新 get_commands 时可见
         cmdAdded = true;
       }
+      if (text.includes("QUESTIONNAIRE")) {
+        await questionnaireSequence(text.includes("QUESTIONNAIRE-GENERIC"));
+        break;
+      }
       if (text.includes("ASKUI-TIMEOUT")) {
         // 模拟 pi 对带 timeout 的对话框自动超时 resolve：发 select 帧后
         // 不等待响应，延时走完流并 settle（配合 settled 清理回归测试）
@@ -476,6 +485,144 @@ function waitForUiResponse(id) {
   return new Promise((resolve) => {
     pendingUiWaiters.push({ id, resolve });
   });
+}
+
+/**
+ * QUESTIONNAIRE 场景：模拟 rpiv-ask-user-question 的 RPC 问卷 walker。
+ * 题目：Q1 单选（A/B）、Q2 多选（X/Y/Z）、Q3 单选（M/N）；每题对话框
+ * 串行发送并等待回复；单选哨兵行后跟进 input（自定义答案）；任一点收到
+ * cancelled 即放弃后续题目（与插件 walker 语义一致）。
+ * withGeneric（QUESTIONNAIRE-GENERIC 标记）：问卷开始前穿插一个标题不匹配
+ * 任何题目的通用 select（ui-generic-1），验证 pinel 的标题门控——通用
+ * 对话框走逐卡路径、问卷帧才被缓冲。
+ */
+async function questionnaireSequence(withGeneric) {
+  let aborted = false;
+  out({
+    type: "tool_execution_start",
+    toolCallId: "qna_1",
+    toolName: "ask_user_question",
+    args: {
+      questions: [
+        {
+          question: "问题一？",
+          header: "q1",
+          options: [
+            { label: "A", description: "选项 A" },
+            { label: "B", description: "选项 B" },
+          ],
+        },
+        {
+          question: "问题二？",
+          header: "q2",
+          options: [
+            { label: "X", description: "选项 X" },
+            { label: "Y", description: "选项 Y" },
+            { label: "Z", description: "选项 Z" },
+          ],
+          multiSelect: true,
+        },
+        {
+          question: "问题三？",
+          header: "q3",
+          options: [
+            { label: "M", description: "选项 M" },
+            { label: "N", description: "选项 N" },
+          ],
+        },
+      ],
+    },
+  });
+
+  // 问卷期间穿插的通用对话框（标题不匹配任何题目 → pinel 走逐卡路径）
+  if (withGeneric) {
+    out({
+      type: "extension_ui_request",
+      id: "ui-generic-1",
+      method: "select",
+      title: "Allow something?",
+      options: ["1. Yes", "2. No"],
+    });
+    const rg = await waitForUiResponse("ui-generic-1");
+    log({ dir: "ui-response", id: "ui-generic-1", response: rg });
+  }
+
+  // Q1 单选：select + 哨兵行
+  out({
+    type: "extension_ui_request",
+    id: "qna-1",
+    method: "select",
+    title: "[q1] 问题一？",
+    options: ["1. A — 选项 A", "2. B — 选项 B", "3. Type something."],
+  });
+  const r1 = await waitForUiResponse("qna-1");
+  log({ dir: "ui-response", id: "qna-1", response: r1 });
+  if (r1.cancelled) {
+    aborted = true;
+  } else if (r1.value === "3. Type something.") {
+    // 哨兵：跟进 input（自定义答案）
+    out({
+      type: "extension_ui_request",
+      id: "qna-1i",
+      method: "input",
+      title: "问题一？\n\nType your answer:",
+      placeholder: "",
+    });
+    const r1i = await waitForUiResponse("qna-1i");
+    log({ dir: "ui-response", id: "qna-1i", response: r1i });
+    if (r1i.cancelled) {
+      aborted = true;
+    }
+  }
+
+  // Q2 多选：input
+  if (!aborted) {
+    out({
+      type: "extension_ui_request",
+      id: "qna-2",
+      method: "input",
+      title: "问题二？\n\nEnter the numbers of all that apply, comma-separated (e.g. \"1,3\"), or type a custom answer as plain text.",
+      placeholder: "1,3",
+    });
+    const r2 = await waitForUiResponse("qna-2");
+    log({ dir: "ui-response", id: "qna-2", response: r2 });
+    if (r2.cancelled) {
+      aborted = true;
+    }
+  }
+
+  // Q3 单选：select + 哨兵行
+  if (!aborted) {
+    out({
+      type: "extension_ui_request",
+      id: "qna-3",
+      method: "select",
+      title: "[q3] 问题三？",
+      options: ["1. M — 选项 M", "2. N — 选项 N", "3. Type something."],
+    });
+    const r3 = await waitForUiResponse("qna-3");
+    log({ dir: "ui-response", id: "qna-3", response: r3 });
+    if (!r3.cancelled && r3.value === "3. Type something.") {
+      out({
+        type: "extension_ui_request",
+        id: "qna-3i",
+        method: "input",
+        title: "问题三？\n\nType your answer:",
+        placeholder: "",
+      });
+      const r3i = await waitForUiResponse("qna-3i");
+      log({ dir: "ui-response", id: "qna-3i", response: r3i });
+    }
+  }
+
+  out({
+    type: "tool_execution_end",
+    toolCallId: "qna_1",
+    toolName: "ask_user_question",
+    result: { content: [{ type: "text", text: aborted ? "questionnaire abandoned" : "questionnaire answered" }], details: {} },
+    isError: false,
+  });
+  void streamSequence(`questionnaire-${Date.now()}`, false);
 }
 
 /** 构造 todo 工具的 tool_execution_end result（details.tasks 全量快照）。 */

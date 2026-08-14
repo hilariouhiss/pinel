@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, HostMessage, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { ChatMessage, ChatStatus, HostMessage, QuestionnaireView, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { MessageView } from "./components/MessageView";
 import { Notices } from "./components/Notices";
 import { StatusBar } from "./components/StatusBar";
 import { TodoPanel } from "./components/TodoPanel";
 import { UiDialogs } from "./components/UiDialogs";
+import { Questionnaire } from "./components/Questionnaire";
 
 const initialStatus: ChatStatus = {
   processState: "stopped",
@@ -28,6 +29,9 @@ export default function App() {
   const [pendingUi, setPendingUi] = useState<UiRequest[]>([]);
   const [todos, setTodos] = useState<TodoTask[]>([]);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
+  const [questionnaire, setQuestionnaire] = useState<QuestionnaireView | null>(null);
+  /** 新对话框卡片 id：到达时强制滚动+聚焦（快照重放不触发）。 */
+  const [focusDialogId, setFocusDialogId] = useState<string | null>(null);
   const [notices, setNotices] = useState<Array<{ id: number; level: string; text: string }>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -42,6 +46,7 @@ export default function App() {
         setPendingUi(msg.pendingUi ?? []);
         setTodos(msg.todos ?? []);
         setCommands(msg.commands ?? []);
+        setQuestionnaire(msg.questionnaire ?? null);
         break;
       case "stream":
         setStreamBlocks(msg.blocks);
@@ -57,6 +62,7 @@ export default function App() {
         break;
       case "uiRequest":
         setPendingUi((prev) => [...prev, msg.request]);
+        setFocusDialogId(msg.request.id); // 新卡片强制滚动+聚焦
         break;
       case "uiResolved":
         setPendingUi((prev) => prev.filter((r) => r.id !== msg.id));
@@ -69,6 +75,12 @@ export default function App() {
         break;
       case "commands":
         setCommands(msg.commands);
+        break;
+      case "questionnaire":
+        setQuestionnaire(msg.questionnaire);
+        break;
+      case "questionnaireCleared":
+        setQuestionnaire(null);
         break;
       case "notice": {
         const id = ++noticeSeq;
@@ -83,6 +95,26 @@ export default function App() {
     vscode.postMessage({ type: "ready" });
     return () => window.removeEventListener("message", handleMessage);
   }, [handleMessage]);
+
+  // 新对话框卡片：强制滚入视野 + 按方法聚焦输入/首选项（webview 不可见时跳过）
+  useEffect(() => {
+    if (!focusDialogId) {
+      return;
+    }
+    const el = document.querySelector<HTMLElement>(`[data-dialog-id="${focusDialogId}"]`);
+    if (el && document.hasFocus()) {
+      el.scrollIntoView({ block: "nearest" });
+      const target =
+        el.querySelector<HTMLElement>("input, textarea") ?? el.querySelector<HTMLElement>("button");
+      target?.focus();
+      // 同步 stickToBottom（防后续消息更新把视图拉回或停住）
+      const sc = scrollRef.current;
+      if (sc) {
+        stickToBottom.current = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 40;
+      }
+    }
+    setFocusDialogId(null);
+  }, [focusDialogId]);
 
   const dismissNotice = useCallback((id: number) => {
     setNotices((prev) => prev.filter((n) => n.id !== id));
@@ -133,6 +165,7 @@ export default function App() {
           />
         )}
         <UiDialogs requests={pendingUi} />
+        {questionnaire && <Questionnaire questionnaire={questionnaire} />}
       </div>
       {todos.length > 0 && <TodoPanel todos={todos} />}
       <Composer status={status} commands={commands} />

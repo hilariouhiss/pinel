@@ -8,6 +8,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- 问卷确认流程：`ask_user_question` 问卷以整卷形式一次展示（题目/选项/多选/自定义答案），自动聚焦首个未答题；答完最后一题弹出确认面板，可「修改」任一题重新作答，确认后自动按序回填给 Pi（含多选数字与哨兵自定义答案的跟进输入）；Esc 放弃整卷；新对话框自动滚动聚焦（所有 ctx.ui 对话框）
+- 待办面板移到输入框上方（限高 30vh 内部滚动）
 - `/` 命令自动补全：输入框键入 `/` 弹出候选下拉列表（数据源为 pi 的 `get_commands`：扩展命令/提示模板/技能，含描述与来源徽标；启动/agent 空闲/重启时刷新）；↑↓ 选择、Enter/Tab 接受、Esc 关闭（与中断/清空分层）、鼠标可点；接受后插入 `/命令 ` 留在输入框继续输入参数；中文输入法组合输入期间不拦截快捷键
 - 扩展 UI 交互：`ctx.ui.*` 对话框（select/confirm/input/editor，如 ask_user_question 插件问卷）渲染为聊天流内联卡片，用户作答/取消后回传 agent
 - 待办面板：todo 工具任务列表（适配 rpiv-todo）在聊天流顶部固定面板展示（可折叠）

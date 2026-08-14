@@ -27,11 +27,28 @@ interface WebviewReadyMessage {
   type: "ready";
 }
 
+interface WebviewQuestionnaireAnswerMessage {
+  type: "questionnaireAnswer";
+  questionIndex: number;
+  answer: unknown;
+}
+
+interface WebviewQuestionnaireConfirmMessage {
+  type: "questionnaireConfirm";
+}
+
+interface WebviewQuestionnaireCancelMessage {
+  type: "questionnaireCancel";
+}
+
 type WebviewInMessage =
   | WebviewPromptMessage
   | WebviewAbortMessage
   | WebviewRestartMessage
   | WebviewUiResponseMessage
+  | WebviewQuestionnaireAnswerMessage
+  | WebviewQuestionnaireConfirmMessage
+  | WebviewQuestionnaireCancelMessage
   | WebviewReadyMessage;
 
 /**
@@ -102,6 +119,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           confirmed: msg.confirmed,
           cancelled: msg.cancelled,
         });
+        break;
+      case "questionnaireAnswer":
+        this.controller.handleQuestionnaireAnswer(msg.questionIndex, msg.answer);
+        break;
+      case "questionnaireConfirm":
+        this.controller.handleQuestionnaireConfirm();
+        break;
+      case "questionnaireCancel":
+        this.controller.handleQuestionnaireCancel();
         break;
     }
   }

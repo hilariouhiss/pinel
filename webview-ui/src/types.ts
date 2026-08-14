@@ -89,8 +89,30 @@ export interface SlashCommand {
   source?: string;
 }
 
+/** 问卷题目（ask_user_question 工具参数防御解析后）。 */
+export interface QuestionnaireQuestion {
+  question: string;
+  header?: string;
+  options: Array<{ label: string; description?: string; preview?: string }>;
+  multiSelect: boolean;
+}
+
+export type QuestionnaireAnswer =
+  | { kind: "option"; optionIndex: number }
+  | { kind: "multi"; optionIndices: number[] }
+  | { kind: "custom"; text: string };
+
+export type QuestionnairePhase = "answering" | "reviewing" | "submitting" | "submitted";
+
+/** 问卷视图（宿主权威状态的镜像）。 */
+export interface QuestionnaireView {
+  questions: QuestionnaireQuestion[];
+  answers: Array<QuestionnaireAnswer | null>;
+  phase: QuestionnairePhase;
+}
+
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[] }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "tool"; tool: ToolCard }
@@ -100,6 +122,8 @@ export type HostMessage =
   | { type: "uiCleared" }
   | { type: "todos"; todos: TodoTask[] }
   | { type: "commands"; commands: SlashCommand[] }
+  | { type: "questionnaire"; questionnaire: QuestionnaireView }
+  | { type: "questionnaireCleared" }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {

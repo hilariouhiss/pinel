@@ -32,6 +32,18 @@ function logRecordsWith(records: Array<Record<string, unknown>>, dir: string, ty
   });
 }
 
+/** 截取 marker 对应 prompt 入站之后的日志（fake-pi 日志跨测试累积，按 prompt 边界切片）。 */
+function recordsAfterPrompt(records: Array<Record<string, unknown>>, marker: string): Array<Record<string, unknown>> {
+  let startIndex = -1;
+  for (let i = 0; i < records.length; i++) {
+    const rec = records[i].record as { dir?: string; record?: { message?: string } } | undefined;
+    if (rec?.dir === "in" && typeof rec.record?.message === "string" && rec.record.message.includes(marker)) {
+      startIndex = i;
+    }
+  }
+  return startIndex >= 0 ? records.slice(startIndex) : records;
+}
+
 async function waitFor(predicate: () => boolean, timeoutMs: number, what: string): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -466,5 +478,114 @@ suite("Pinel 集成测试（假 pi）", () => {
       delete process.env.PINEL_FAKE_PI_SCENARIO;
       await api.restart(); // 恢复默认场景供后续测试
     }
+  });
+
+  test("问卷全链路：本地整卷 → 确认后按序回填（多选数字 + 哨兵自定义 + 修改重答）", async function () {
+    this.timeout(60000);
+    const marker = `QUESTIONNAIRE-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+
+    // 问卷模式进入：3 题（来自 tool_execution_start 参数）
+    await waitFor(() => (api.getQuestionnaire()?.questions.length ?? 0) === 3, 10000, "问卷进入");
+    const q = api.getQuestionnaire()!;
+    assert.strictEqual(q.phase, "answering");
+    assert.strictEqual(q.questions[0].question, "问题一？");
+    assert.strictEqual(q.questions[1].multiSelect, true);
+
+    // 答题：Q1 选 A、Q2 多选 1/3、Q3 自定义
+    api.questionnaireAnswer(0, { kind: "option", optionIndex: 0 });
+    api.questionnaireAnswer(1, { kind: "multi", optionIndices: [2, 0] });
+    api.questionnaireAnswer(2, { kind: "custom", text: "自定义三" });
+    await waitFor(() => api.getQuestionnaire()?.phase === "reviewing", 5000, "全答完转 reviewing");
+
+    // 确认前修改：Q1 改答 B（最终答案为准）
+    api.questionnaireAnswer(0, { kind: "option", optionIndex: 1 });
+    assert.strictEqual(api.getQuestionnaire()?.phase, "reviewing", "修改不改变 reviewing 阶段");
+
+    api.questionnaireConfirm();
+    await waitFor(() => api.getQuestionnaire()?.phase === "submitted", 15000, "回填完成转 submitted");
+    await api.waitForSettled(30000, baseline);
+    await waitFor(() => api.getQuestionnaire() === null, 5000, "settle 后清卷");
+
+    // 回填断言（fake-pi 逐题响应日志；按 prompt 边界切片防跨测试累积）
+    const records = recordsAfterPrompt(readFakePiLog(logPath), marker);
+    const responseFor = (id: string): { value?: string; cancelled?: boolean } => {
+      const hits = records.filter((r) => {
+        const rec = r.record as { dir?: string; id?: string };
+        return rec?.dir === "ui-response" && rec?.id === id;
+      });
+      assert.strictEqual(hits.length, 1, `必须恰好收到一次 ${id} 响应`);
+      return (hits[0].record as { response?: { value?: string; cancelled?: boolean } }).response ?? {};
+    };
+    assert.strictEqual(responseFor("qna-1").value, "2. B — 选项 B", "Q1 必须回最终修改后的答案");
+    assert.strictEqual(responseFor("qna-2").value, "1,3", "Q2 多选必须回 1 基升序数字串");
+    assert.strictEqual(responseFor("qna-3").value, "3. Type something.", "Q3 自定义必须先回哨兵行");
+    assert.strictEqual(responseFor("qna-3i").value, "自定义三", "Q3 跟进 input 必须回自定义文本");
+  });
+
+  test("问卷取消：缓冲帧回 cancelled，插件放弃后续题目", async function () {
+    this.timeout(60000);
+    const marker = `QUESTIONNAIRE-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+    await waitFor(() => (api.getQuestionnaire()?.questions.length ?? 0) === 3, 10000, "问卷进入");
+
+    api.questionnaireAnswer(0, { kind: "option", optionIndex: 0 });
+    api.questionnaireCancel();
+    await waitFor(() => api.getQuestionnaire() === null, 5000, "取消后清卷");
+    await api.waitForSettled(30000, baseline);
+
+    const records = recordsAfterPrompt(readFakePiLog(logPath), marker);
+    const qna1 = records.filter((r) => {
+      const rec = r.record as { dir?: string; id?: string; response?: { cancelled?: boolean } };
+      return rec?.dir === "ui-response" && rec?.id === "qna-1";
+    });
+    assert.strictEqual(qna1.length, 1, "qna-1 必须收到 cancelled");
+    assert.strictEqual(
+      (qna1[0].record as { response?: { cancelled?: boolean } }).response?.cancelled,
+      true,
+    );
+    const qna2 = records.filter(
+      (r) => ((r.record as { id?: string })?.id ?? "") === "qna-2",
+    );
+    assert.strictEqual(qna2.length, 0, "取消后插件不得再发后续题目");
+  });
+
+  test("问卷期间通用对话框走逐卡路径（标题门控不误缓冲）", async function () {
+    this.timeout(60000);
+    const marker = `QUESTIONNAIRE-GENERIC-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+    await waitFor(() => (api.getQuestionnaire()?.questions.length ?? 0) === 3, 10000, "问卷进入");
+
+    // 问卷期间穿插的通用 select（标题不匹配任何题目）→ 逐卡广播
+    await waitFor(() => api.getPendingUi().length > 0, 10000, "通用对话框逐卡广播");
+    const pending = api.getPendingUi()[0];
+    assert.strictEqual(pending.id, "ui-generic-1", "必须广播通用对话框而非缓冲");
+    assert.notStrictEqual(api.getQuestionnaire(), null, "问卷保持活动");
+    api.uiRespond(pending.id, { value: "1. Yes" });
+
+    // 完成问卷（Q2 多选空选择 → 回空串）
+    api.questionnaireAnswer(0, { kind: "option", optionIndex: 0 });
+    api.questionnaireAnswer(1, { kind: "multi", optionIndices: [] });
+    api.questionnaireAnswer(2, { kind: "option", optionIndex: 0 });
+    await waitFor(() => api.getQuestionnaire()?.phase === "reviewing", 5000, "reviewing");
+    api.questionnaireConfirm();
+    await api.waitForSettled(30000, baseline);
+
+    const records = recordsAfterPrompt(readFakePiLog(logPath), marker);
+    const responseFor = (id: string): { value?: string; cancelled?: boolean } => {
+      const hits = records.filter((r) => {
+        const rec = r.record as { dir?: string; id?: string };
+        return rec?.dir === "ui-response" && rec?.id === id;
+      });
+      assert.strictEqual(hits.length, 1, `必须恰好收到一次 ${id} 响应`);
+      return (hits[0].record as { response?: { value?: string; cancelled?: boolean } }).response ?? {};
+    };
+    assert.strictEqual(responseFor("ui-generic-1").value, "1. Yes", "通用对话框回复必须送达");
+    assert.strictEqual(responseFor("qna-2").value, "", "多选空选择必须回空串");
+    assert.strictEqual(responseFor("qna-1").value, "1. A — 选项 A");
+    assert.strictEqual(responseFor("qna-3").value, "1. M — 选项 M");
   });
 });

@@ -40,7 +40,7 @@ function DialogCard({ request }: { request: UiRequest }) {
       return <TextCard request={request} multiline={request.method === "editor"} onCancel={cancel} />;
     default:
       return (
-        <div className="uidialog">
+        <div className="uidialog" data-dialog-id={request.id}>
           <DialogTitle request={request} />
           <div className="uidialog-actions">
             <button className="uidialog-btn" onClick={cancel}>
@@ -66,7 +66,7 @@ function DialogTitle({ request }: { request: UiRequest }) {
 function SelectCard({ request, onCancel }: { request: UiRequest; onCancel: () => void }) {
   const options = request.options ?? [];
   return (
-    <div className="uidialog">
+    <div className="uidialog" data-dialog-id={request.id}>
       <DialogTitle request={request} />
       {options.length > 0 ? (
         <div className="uidialog-options">
@@ -94,7 +94,7 @@ function SelectCard({ request, onCancel }: { request: UiRequest; onCancel: () =>
 
 function ConfirmCard({ request, onCancel }: { request: UiRequest; onCancel: () => void }) {
   return (
-    <div className="uidialog">
+    <div className="uidialog" data-dialog-id={request.id}>
       <DialogTitle request={request} />
       {request.message && <div className="uidialog-message">{request.message}</div>}
       <div className="uidialog-actions">
@@ -143,7 +143,7 @@ function TextCard({
   };
 
   return (
-    <div className="uidialog">
+    <div className="uidialog" data-dialog-id={request.id}>
       <DialogTitle request={request} />
       {multiline ? (
         <textarea

@@ -395,6 +395,153 @@ body {
   color: var(--vscode-descriptionForeground);
 }
 
+/* ---------------------------------------------------------------- 问卷 */
+.qna {
+  margin: 10px 0;
+  border: 1px solid var(--vscode-focusBorder, var(--vscode-button-background));
+  border-radius: 6px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--vscode-input-background) 40%, transparent);
+}
+
+.qna-head {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 6px;
+  color: var(--vscode-foreground);
+}
+
+.qna-question {
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  background: var(--vscode-editor-background);
+}
+
+.qna-question-title {
+  margin-bottom: 6px;
+}
+
+.qna-question-header {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-right: 6px;
+}
+
+.qna-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.qna-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-align: left;
+  padding: 5px 8px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+  overflow-wrap: anywhere;
+}
+
+.qna-option:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+.qna-option.selected {
+  border-color: var(--vscode-focusBorder, #007acc);
+  background: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 18%, transparent);
+}
+
+.qna-check {
+  flex-shrink: 0;
+  color: var(--vscode-textLink-foreground);
+}
+
+.qna-option-label {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.qna-option-desc {
+  color: var(--vscode-descriptionForeground);
+}
+
+.qna-preview {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--vscode-input-border);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.qna-preview summary {
+  cursor: pointer;
+  color: var(--vscode-textLink-foreground);
+}
+
+.qna-custom {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.qna-custom .uidialog-input {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.qna-review {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--vscode-input-border);
+}
+
+.qna-review-title {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.qna-review-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.qna-review-q {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.qna-review-a {
+  flex-shrink: 0;
+  color: var(--vscode-descriptionForeground);
+  max-width: 40%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.qna-review-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 /* ---------------------------------------------------------------- 待办面板 */
 .todopanel {
   border: 1px solid var(--vscode-input-border);

@@ -22,6 +22,16 @@ import {
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
 import { parseTodoTasks, type TodoTask } from "./todos";
 import { parseCommands } from "./commands";
+import {
+  inputResponseFor,
+  parseQuestionnaireAnswer,
+  parseQuestionnaireArgs,
+  selectResponseFor,
+  titleMatchesQuestion,
+  type QuestionnaireAnswer,
+  type QuestionnaireQuestion,
+  type QuestionnaireView,
+} from "./questionnaire";
 
 export type ProcessState = "stopped" | "starting" | "running" | "error" | "no-workspace";
 
@@ -45,7 +55,7 @@ export interface ToolCard {
 }
 
 export type OutMessage =
-  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[] }
+  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; tool: ToolCard }
@@ -55,11 +65,25 @@ export type OutMessage =
   | { type: "uiCleared" }
   | { type: "todos"; todos: TodoTask[] }
   | { type: "commands"; commands: SlashCommand[] }
+  | { type: "questionnaire"; questionnaire: QuestionnaireView }
+  | { type: "questionnaireCleared" }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
   text: string;
   images?: Array<{ data: string; mimeType: string }>;
+}
+
+/**
+ * 活动问卷（宿主权威状态；webview 只拿 QuestionnaireView 镜像）。
+ * 回填游标：插件逐题串行阻塞，pi 的对话框按题序逐一到达，
+ * cursor 指向下一待回填题目；awaitingFollowup 表示已回哨兵行、
+ * 等待本题的跟进 input（自定义答案）——游标停留本题直至跟进消费。
+ */
+interface ActiveQuestionnaire extends QuestionnaireView {
+  buffered: ExtensionUiRequest[];
+  cursor: number;
+  awaitingFollowup: boolean;
 }
 
 const initialStatus: ChatStatus = {
@@ -122,6 +146,8 @@ export class ChatController {
   private todos: TodoTask[] = [];
   /** 可用斜杠命令（get_commands 结果；空列表=未获取/获取失败，补全弹窗不弹出）。 */
   private commands: SlashCommand[] = [];
+  /** 活动问卷（ask_user_question；null=无问卷，对话框走逐卡路径）。 */
+  private questionnaire: ActiveQuestionnaire | null = null;
 
   constructor(output: vscode.OutputChannel) {
     this.output = output;
@@ -350,12 +376,14 @@ export class ChatController {
       this.pendingUi.clear();
       this.todos = [];
       this.commands = [];
+      this.questionnaire = null;
       // 立即广播重置后的状态 + 清除对话框/待办/命令列表，让 UI 有即时反馈
       //（防止旧卡片在重启窗口内被应答，新进程可能复用同 id）
       this.fire({ type: "status", status: this.status });
       this.fire({ type: "uiCleared" });
       this.fire({ type: "todos", todos: this.todos });
       this.fire({ type: "commands", commands: this.commands });
+      this.fire({ type: "questionnaireCleared" });
       if (old) {
         await old.stop();
       }
@@ -467,6 +495,10 @@ export class ChatController {
           this.pendingUi.clear();
           this.fire({ type: "uiCleared" });
         }
+        // 问卷清理：对残留缓冲帧补 cancelled（插件问卷对话框无 timeout，
+        // pi 侧不会自动解锁，必须主动回复防 agent 永久阻塞——协议硬约束）；
+        // 已提交的答案不可撤回，清卷只影响未答复帧
+        this.clearQuestionnaireWithCancels();
         // 重置装配：abort 等场景下 settle 后仍可能有迟到的 message_update
         //（流序列尾部事件），不应污染下一条消息
         this.partialAssembly = createAssembly();
@@ -522,6 +554,14 @@ export class ChatController {
 
       case "tool_execution_start": {
         const e = event as ToolExecutionStartEvent;
+        // ask_user_question：进入整卷问卷模式（本地渲染 + 确认后回填）
+        if (e.toolName === "ask_user_question") {
+          const questions = parseQuestionnaireArgs(e.args);
+          if (questions) {
+            this.enterQuestionnaire(questions);
+          }
+          // 参数解析失败（插件改名/改协议）：静默回退逐卡路径，不打断工具卡片
+        }
         const tool: ToolCard = {
           toolCallId: e.toolCallId,
           toolName: e.toolName,
@@ -597,9 +637,20 @@ export class ChatController {
       case "extension_ui_request": {
         const req = event as ExtensionUiRequest;
         if (DIALOG_UI_METHODS.has(req.method)) {
-          // 对话框请求：广播给 webview 渲染内联卡片，等待用户作答（uiRespond）。
-          this.pendingUi.set(req.id, req);
-          this.fire({ type: "uiRequest", request: req });
+          const q = this.questionnaire;
+          if (q && this.requestMatchesQuestionnaire(req)) {
+            if (q.phase === "submitting" || q.phase === "submitted") {
+              // 确认后：按游标立即回填（插件在上一题回复后才会发下一题）
+              this.respondQuestionnaireFrame(req);
+            } else {
+              // 答题/确认阶段：缓冲不展示（整卷已在本地渲染）
+              q.buffered.push(req);
+            }
+          } else {
+            // 非问卷对话框：现有逐卡路径
+            this.pendingUi.set(req.id, req);
+            this.fire({ type: "uiRequest", request: req });
+          }
         } else if (req.method === "notify") {
           const level = req.notifyType === "error" ? "error" : req.notifyType === "warning" ? "warning" : "info";
           this.notice(level, String(req.message ?? req.title ?? ""));
@@ -647,6 +698,11 @@ export class ChatController {
     if (this.pendingUi.size > 0) {
       this.pendingUi.clear();
       this.fire({ type: "uiCleared" });
+    }
+    // 问卷随进程死亡：缓冲帧已无接收方，直接清状态广播（无需补 cancelled）
+    if (this.questionnaire) {
+      this.questionnaire = null;
+      this.fire({ type: "questionnaireCleared" });
     }
     // 命令列表是"进程能力描述"：崩溃后旧列表会误导补全（接受后发送报进程不可用），
     // 清空并广播，重启后由新启动流程重新拉取
@@ -707,6 +763,221 @@ export class ChatController {
     this.fire({ type: "uiResolved", id });
   }
 
+  // -------------------------------------------------------------------------
+  // 问卷（ask_user_question：本地整卷渲染 + 确认后回填）
+  // -------------------------------------------------------------------------
+
+  /** 进入问卷模式：重入时对旧卷缓冲帧补 cancelled（pi 对多余回复静默忽略）。 */
+  private enterQuestionnaire(questions: QuestionnaireQuestion[]): void {
+    if (this.questionnaire) {
+      const stale = this.questionnaire.buffered.splice(0);
+      for (const req of stale) {
+        this.client?.writeRaw({ type: "extension_ui_response", id: req.id, cancelled: true });
+      }
+    }
+    this.questionnaire = {
+      questions,
+      answers: questions.map(() => null),
+      phase: "answering",
+      buffered: [],
+      cursor: 0,
+      awaitingFollowup: false,
+    };
+    // 防御：select 先于 tool_execution_start 到达的异常时序——吸收 pendingUi 中
+    // 标题匹配本问卷的未答复帧入缓冲（已作答的由用户卡片路径正常消费）
+    const absorbed: ExtensionUiRequest[] = [];
+    for (const req of this.pendingUi.values()) {
+      if (this.requestMatchesQuestionnaire(req)) {
+        absorbed.push(req);
+      }
+    }
+    if (absorbed.length > 0) {
+      for (const req of absorbed) {
+        this.pendingUi.delete(req.id);
+        this.questionnaire.buffered.push(req);
+      }
+      this.fire({ type: "uiCleared" }); // 吸收走的卡片从 UI 移除
+    }
+    this.broadcastQuestionnaire();
+  }
+
+  /** 入站对话框是否属于当前问卷（标题门控：题面/header 子串）。 */
+  private requestMatchesQuestionnaire(req: ExtensionUiRequest): boolean {
+    const q = this.questionnaire;
+    if (!q) {
+      return false;
+    }
+    return q.questions.some((question) => titleMatchesQuestion(req.title, question));
+  }
+
+  /** 用户答题：校验后写入 journal；全部答完自动转 reviewing。 */
+  handleQuestionnaireAnswer(questionIndex: number, answer: unknown): void {
+    const q = this.questionnaire;
+    if (!q || (q.phase !== "answering" && q.phase !== "reviewing")) {
+      return;
+    }
+    const question = q.questions[questionIndex];
+    if (!question) {
+      return;
+    }
+    const parsed = parseQuestionnaireAnswer(answer, question);
+    if (!parsed) {
+      return;
+    }
+    q.answers[questionIndex] = parsed;
+    if (q.answers.every((a) => a !== null)) {
+      q.phase = "reviewing";
+    }
+    this.broadcastQuestionnaire();
+  }
+
+  /** 确认提交：回填所有已缓冲帧；后续串行对话框由 respondQuestionnaireFrame 即时回填。 */
+  handleQuestionnaireConfirm(): void {
+    const q = this.questionnaire;
+    if (!q || q.phase !== "reviewing") {
+      return;
+    }
+    q.phase = "submitting";
+    this.broadcastQuestionnaire();
+    const buffered = q.buffered.splice(0);
+    for (const req of buffered) {
+      this.respondQuestionnaireFrame(req);
+    }
+  }
+
+  /** 放弃整卷：对缓冲帧补 cancelled 并清卷（插件 walker 收到 cancelled 即中止，不再发新帧）。 */
+  handleQuestionnaireCancel(): void {
+    const q = this.questionnaire;
+    if (!q) {
+      return;
+    }
+    const buffered = q.buffered.splice(0);
+    const client = this.client;
+    for (const req of buffered) {
+      if (client?.isRunning) {
+        client.writeRaw({ type: "extension_ui_response", id: req.id, cancelled: true });
+      }
+    }
+    this.questionnaire = null;
+    this.fire({ type: "questionnaireCleared" });
+  }
+
+  /** 清理问卷（settled 路径）：对残留缓冲帧补 cancelled 后清卷。 */
+  private clearQuestionnaireWithCancels(): void {
+    const q = this.questionnaire;
+    if (!q) {
+      return;
+    }
+    const buffered = q.buffered.splice(0);
+    const client = this.client;
+    for (const req of buffered) {
+      if (client?.isRunning) {
+        client.writeRaw({ type: "extension_ui_response", id: req.id, cancelled: true });
+      }
+    }
+    this.questionnaire = null;
+    this.fire({ type: "questionnaireCleared" });
+  }
+
+  /**
+   * 回填一帧对话框（游标状态机；插件逐题串行，帧序确定）：
+   * - 单选：select 帧 → 回选项原行（游标进下一题）或哨兵行（游标停留本题等跟进 input）
+   * - 多选：input 帧 → 回 "1,3" 数字串/空串/自定义文本（游标进下一题）
+   * - 跟进 input：回自定义文本（游标进下一题）
+   * - 帧类型与预期不符：回 cancelled 防御（插件放弃，不阻塞）
+   */
+  private respondQuestionnaireFrame(req: ExtensionUiRequest): void {
+    const q = this.questionnaire;
+    const client = this.client;
+    if (!q || !client?.isRunning) {
+      return;
+    }
+    const cancelled = (): void => {
+      client.writeRaw({ type: "extension_ui_response", id: req.id, cancelled: true });
+    };
+    if (q.cursor >= q.questions.length) {
+      cancelled(); // 防御：超出游标
+      return;
+    }
+    const question = q.questions[q.cursor];
+    const answer = q.answers[q.cursor];
+    if (q.awaitingFollowup) {
+      // 哨兵跟进 input：回自定义文本
+      if (req.method === "input" && answer?.kind === "custom") {
+        client.writeRaw({ type: "extension_ui_response", id: req.id, value: answer.text });
+      } else {
+        cancelled();
+      }
+      q.awaitingFollowup = false;
+      q.cursor++;
+      this.advanceQuestionnaireCursor();
+      return;
+    }
+    if (question.multiSelect) {
+      if (req.method === "input") {
+        const value = inputResponseFor(question, answer);
+        if (value !== null) {
+          client.writeRaw({ type: "extension_ui_response", id: req.id, value });
+        } else {
+          cancelled();
+        }
+        q.cursor++;
+        this.advanceQuestionnaireCursor();
+        return;
+      }
+      cancelled(); // 异常：多选题收到 select
+      return;
+    }
+    // 单选：期待 select 帧
+    if (req.method === "select") {
+      const res = selectResponseFor(question, answer, req.options ?? []);
+      if (res) {
+        client.writeRaw({ type: "extension_ui_response", id: req.id, value: res.value });
+        if (res.needsFollowup) {
+          q.awaitingFollowup = true; // 游标停留本题等跟进 input
+        } else {
+          q.cursor++;
+          this.advanceQuestionnaireCursor();
+        }
+      } else {
+        cancelled();
+      }
+      return;
+    }
+    cancelled(); // 异常：单选收到非跟进 input
+  }
+
+  /** 回填完最后一题：转 submitted。 */
+  private advanceQuestionnaireCursor(): void {
+    const q = this.questionnaire;
+    if (!q || q.phase !== "submitting") {
+      return;
+    }
+    if (q.cursor >= q.questions.length && !q.awaitingFollowup) {
+      q.phase = "submitted";
+      this.broadcastQuestionnaire();
+    }
+  }
+
+  private questionnaireView(): QuestionnaireView | null {
+    const q = this.questionnaire;
+    if (!q) {
+      return null;
+    }
+    return {
+      questions: q.questions,
+      answers: q.answers.map((a) => (a ? { ...a } : null)),
+      phase: q.phase,
+    };
+  }
+
+  private broadcastQuestionnaire(): void {
+    const view = this.questionnaireView();
+    if (view) {
+      this.fire({ type: "questionnaire", questionnaire: view });
+    }
+  }
+
   /** 全量快照（面板 resolve / 重启后重放）。 */
   fireSnapshot(): void {
     this.fire({
@@ -716,6 +987,7 @@ export class ChatController {
       pendingUi: [...this.pendingUi.values()],
       todos: this.todos,
       commands: this.commands,
+      questionnaire: this.questionnaireView(),
     });
   }
 
@@ -785,6 +1057,11 @@ export class ChatController {
 
   getCommands(): SlashCommand[] {
     return [...this.commands];
+  }
+
+  /** 当前问卷视图（测试断言）。 */
+  getQuestionnaire(): QuestionnaireView | null {
+    return this.questionnaireView();
   }
 
   /** 模型自愈信息（集成测试断言）：最近一次初始同步的尝试次数与是否自动重启过。 */
