@@ -4,26 +4,32 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { RpcClient } from "../rpc/client";
 
+/** 解析 long-running.js 夹具路径（tsc 不复制 fixture 到 out/，从仓库源码目录解析）。 */
+function fixturePath(): string {
+  return path.resolve(__dirname, "..", "..", "src", "test", "fixtures", "long-running.js");
+}
+
+/** 启动夹具并等待 pid 文件写出（进程真正就绪）。 */
+async function startFixture(env: NodeJS.ProcessEnv): Promise<{ client: RpcClient; pid: number }> {
+  const pidFile = path.join(os.tmpdir(), `pinel-stop-${process.pid}-${Date.now()}.pid`);
+  const fixture = fixturePath();
+  const client = new RpcClient();
+  await client.start(`"${process.execPath}" "${fixture}" "${pidFile}"`, os.tmpdir(), env);
+  assert.ok(client.isRunning, "子进程必须已启动");
+  const deadline = Date.now() + 10000;
+  while (!fs.existsSync(pidFile) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.ok(fs.existsSync(pidFile), "fixture 必须写出 pid 文件");
+  const pid = Number(fs.readFileSync(pidFile, "utf8"));
+  return { client, pid };
+}
+
 suite("RpcClient.stop() 等待真实退出", () => {
   test("stop() resolve 时 exit 事件已派发、子进程已死", async () => {
-    // 长命子进程经 shell 分支启动（含空格的完整命令串），fixture 把 pid 写入文件
-    const pidFile = path.join(os.tmpdir(), `pinel-stop-${process.pid}-${Date.now()}.pid`);
-    // tsc 不复制 fixture 到 out/，从仓库源码目录解析（与 extension.test.ts 同理）
-    const fixture = path.resolve(__dirname, "..", "..", "src", "test", "fixtures", "long-running.js");
-    const client = new RpcClient();
+    const { client, pid } = await startFixture(process.env);
 
     try {
-      await client.start(`"${process.execPath}" "${fixture}" "${pidFile}"`, os.tmpdir(), process.env);
-      assert.ok(client.isRunning, "子进程必须已启动");
-
-      // 等 fixture 写出 pid（进程真正就绪）
-      const deadline = Date.now() + 10000;
-      while (!fs.existsSync(pidFile) && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      assert.ok(fs.existsSync(pidFile), "fixture 必须写出 pid 文件");
-      const pid = Number(fs.readFileSync(pidFile, "utf8"));
-
       let exitSeen = false;
       client.on("exit", () => {
         exitSeen = true;
@@ -53,10 +59,77 @@ suite("RpcClient.stop() 等待真实退出", () => {
       } catch {
         // 忽略：清理路径
       }
+    }
+  });
+
+  test("优雅退出路径：stdin EOF 后子进程自行退出（exit code 0）", async () => {
+    const { client, pid } = await startFixture(process.env);
+
+    try {
+      let exitSeen = false;
+      let exitCode: number | null | undefined;
+      client.on("exit", (code) => {
+        exitSeen = true;
+        exitCode = code;
+      });
+
+      await client.stop();
+
+      // 夹具在 stdin EOF 时 process.exit(0)：应走优雅期而非硬杀
+      assert.strictEqual(exitSeen, true, "stop() resolve 前 exit 事件必须已派发");
+      assert.strictEqual(exitCode, 0, `EOF 优雅退出的 exit code 应为 0（实际 ${exitCode}）`);
       try {
-        fs.unlinkSync(pidFile);
+        process.kill(pid, 0);
+        assert.fail(`优雅退出后子进程（pid=${pid}）不应存活`);
       } catch {
-        // 已清理
+        // ESRCH：已死，符合预期
+      }
+    } finally {
+      try {
+        await client.stop();
+      } catch {
+        // 忽略：清理路径
+      }
+    }
+  });
+
+  test("兜底硬杀路径：EOF 后拒不退出 → 强制终止并等待真实退出", async () => {
+    // PINEL_LONG_NO_EOF=1：夹具忽略 stdin EOF 保持常驻，迫使 stop() 走硬杀兜底
+    const env = { ...process.env, PINEL_LONG_NO_EOF: "1" };
+    const { client, pid } = await startFixture(env);
+
+    try {
+      let exitSeen = false;
+      let exitCode: number | null | undefined;
+      let exitSignal: string | null | undefined;
+      client.on("exit", (code, signal) => {
+        exitSeen = true;
+        exitCode = code;
+        exitSignal = signal;
+      });
+
+      await client.stop();
+
+      assert.strictEqual(exitSeen, true, "stop() resolve 前 exit 事件必须已派发");
+      // 硬杀路径：非正常退出（Windows taskkill → code 1；POSIX 信号 → signal 非空）
+      assert.ok(
+        exitCode !== 0 || exitSignal !== null,
+        `硬杀兜底应为非正常退出（code=${exitCode}, signal=${exitSignal}）`,
+      );
+      try {
+        process.kill(pid, 0);
+        if (process.platform === "win32") {
+          assert.fail(`硬杀后子进程（pid=${pid}）仍存活`);
+        }
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // ESRCH：已死，符合预期
+      }
+    } finally {
+      try {
+        await client.stop();
+      } catch {
+        // 忽略：清理路径
       }
     }
   });

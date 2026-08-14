@@ -318,6 +318,60 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.deepStrictEqual(api.getMessages(), [], "快照消息应反映新进程（空历史）");
   });
 
+  test("模型自愈：get_state 前几次为空 → 重试后恢复（无自动重启）", async function () {
+    this.timeout(60000);
+    // NULLMODEL-FIRST：前 2 次 get_state 返回 model:null，第 3 次正常。
+    // 场景经环境变量在 spawn 时激活（首次 get_state 发生在任何 prompt 之前，
+    // prompt 子串标记机制不可用）。
+    process.env.PINEL_FAKE_PI_SCENARIO = "NULLMODEL-FIRST";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "NULLMODEL-FIRST 重试后恢复模型",
+      );
+      const heal = api.getModelHealInfo();
+      assert.strictEqual(heal.autoRestarted, false, "重试恢复不得触发自动重启");
+      assert.strictEqual(heal.attempts, 3, `第 3 次尝试成功（实际 attempts=${heal.attempts}）`);
+    } finally {
+      delete process.env.PINEL_FAKE_PI_SCENARIO;
+      await api.restart(); // 恢复默认场景供后续测试
+    }
+  });
+
+  test("模型自愈：模型持续为空 → 自动重启恰好一次 → 警告态", async function () {
+    this.timeout(90000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "NULLMODEL-FOREVER";
+    try {
+      // restart 链式等待自愈完成：手动重启（4 次尝试耗尽）→ 自动重启一次（短路为单次尝试）
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model === null,
+        30000,
+        "自愈重启后进入警告态（running + model 为空）",
+      );
+      const heal = api.getModelHealInfo();
+      assert.strictEqual(heal.autoRestarted, true, "必须触发过自动重启自愈");
+      assert.strictEqual(heal.attempts, 1, `重启后的进程应短路为单次尝试（实际 ${heal.attempts}）`);
+
+      // 恰好一次：日志中 NULLMODEL-FOREVER 场景的启动记录应恰好 2 个进程
+      //（手动重启 + 自愈自动重启，各一）
+      const startups = readFakePiLog(logPath).filter((r) => {
+        const rec = r.record as { dir?: string; event?: string; scenario?: string };
+        return rec?.dir === "meta" && rec.event === "startup" && rec.scenario === "NULLMODEL-FOREVER";
+      });
+      assert.strictEqual(
+        startups.length,
+        2,
+        `NULLMODEL-FOREVER 场景应恰好启动 2 个进程（实际 ${startups.length}）`,
+      );
+    } finally {
+      delete process.env.PINEL_FAKE_PI_SCENARIO;
+      await api.restart(); // 恢复默认场景供后续测试
+    }
+  });
+
   // 注：「未打开文件夹」友好状态在独立空窗口实例套件覆盖
   //（src/test-no-workspace/no-workspace.test.ts）——主套件内移除全部工作区文件夹
   // 不可逆（VS Code 空窗口不支持 updateWorkspaceFolders 恢复）。

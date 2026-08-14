@@ -23,20 +23,28 @@ export interface PinelTestApi {
   getPendingUi(): ExtensionUiRequest[];
   /** 当前待办任务快照。 */
   getTodos(): TodoTask[];
+  /** 模型自愈信息：最近一次初始同步尝试次数与是否自动重启过。 */
+  getModelHealInfo(): { attempts: number; autoRestarted: boolean };
   /** 答复扩展对话框（模拟用户在 webview 中的操作）。 */
   uiRespond(id: string, response: { value?: string; confirmed?: boolean; cancelled?: boolean }): void;
   /** 轮询等待流结束（agent_settled 后 isStreaming=false）。 */
   waitForSettled(timeoutMs: number, baseline?: number): Promise<void>;
 }
 
+/** 模块级控制器引用：deactivate 显式等待其优雅退出（见下方）。 */
+let controller: ChatController | null = null;
+
 export function activate(context: vscode.ExtensionContext): PinelTestApi {
   const output = vscode.window.createOutputChannel("Pinel");
   context.subscriptions.push(output);
 
-  const controller = new ChatController(output);
-  context.subscriptions.push({ dispose: () => void controller.dispose() });
+  controller = new ChatController(output);
+  const ctrl = controller; // 局部常量供闭包使用（模块级可变引用无法收窄）
+  // dispose 回调返回 Promise：VS Code 对 Thenable dispose 的等待行为无强保证，
+  // deactivate() 中另有显式 await（dispose 幂等，双调用安全）
+  context.subscriptions.push({ dispose: () => controller?.dispose() });
 
-  const panelProvider = new ChatPanelProvider(context.extensionUri, controller);
+  const panelProvider = new ChatPanelProvider(context.extensionUri, ctrl);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ChatPanelProvider.viewType, panelProvider, {
       webviewOptions: { retainContextWhenHidden: false },
@@ -45,37 +53,38 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("pinel.openPanel", async () => {
-      await controller.ensureStarted();
+      await ctrl.ensureStarted();
       await vscode.commands.executeCommand("pinel.chatView.focus");
     }),
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("pinel.abort", () => controller.abort()),
+    vscode.commands.registerCommand("pinel.abort", () => ctrl.abort()),
   );
 
   return {
     openPanel: async () => {
       await vscode.commands.executeCommand("pinel.chatView.focus");
     },
-    sendPrompt: (text: string) => controller.sendPrompt({ text }),
-    abort: () => controller.abort(),
-    restart: () => controller.restart(),
-    getStatus: () => controller.getStatus(),
-    getMessages: () => controller.getMessages(),
-    getTools: () => controller.getTools(),
-    getPartialBlocks: () => controller.getPartialBlocks(),
-    getSettledCount: () => controller.getSettledCount(),
-    getPendingUi: () => controller.getPendingUi(),
-    getTodos: () => controller.getTodos(),
-    uiRespond: (id, response) => controller.uiRespond(id, response),
+    sendPrompt: (text: string) => ctrl.sendPrompt({ text }),
+    abort: () => ctrl.abort(),
+    restart: () => ctrl.restart(),
+    getStatus: () => ctrl.getStatus(),
+    getMessages: () => ctrl.getMessages(),
+    getTools: () => ctrl.getTools(),
+    getPartialBlocks: () => ctrl.getPartialBlocks(),
+    getSettledCount: () => ctrl.getSettledCount(),
+    getPendingUi: () => ctrl.getPendingUi(),
+    getTodos: () => ctrl.getTodos(),
+    getModelHealInfo: () => ctrl.getModelHealInfo(),
+    uiRespond: (id, response) => ctrl.uiRespond(id, response),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {
       const deadline = Date.now() + timeoutMs;
       // 基线在触发动作之前捕获（调用方传入），避免 settled 在基线记录前就被处理
-      const startSettled = baseline ?? controller.getSettledCount();
+      const startSettled = baseline ?? ctrl.getSettledCount();
       let sawStreaming = false;
       while (Date.now() < deadline) {
-        const status = controller.getStatus();
+        const status = ctrl.getStatus();
         if (status.processState === "error") {
           return;
         }
@@ -83,7 +92,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
           sawStreaming = true;
         }
         // 权威信号：settled 计数前进（不依赖轮询恰好捕获 isStreaming 窗口）
-        const settledAdvanced = controller.getSettledCount() > startSettled;
+        const settledAdvanced = ctrl.getSettledCount() > startSettled;
         if (settledAdvanced && !status.isStreaming && !status.isCompacting) {
           return;
         }
@@ -97,8 +106,11 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
   };
 }
 
-export function deactivate(): void {
-  // ChatController.dispose 在 subscription 中处理
+export async function deactivate(): Promise<void> {
+  // 显式等待 pi 优雅退出（stdin EOF → flush 会话/释放锁），避免窗口重载
+  // 时旧 pi 被直接丢弃硬杀；dispose 幂等，与 subscription 双调用安全。
+  await controller?.dispose();
+  controller = null;
 }
 
 function sleep(ms: number): Promise<void> {

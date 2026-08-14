@@ -103,6 +103,10 @@ export class ChatController {
   private restarting = false;
   private disposed = false;
   private workspaceWatcher: vscode.Disposable;
+  /** 是否已触发过自动重启自愈（手动 restart 重置；置位后初始同步短路重试）。 */
+  private modelHealRestarted = false;
+  /** 最近一次初始状态同步中 get_state 的尝试次数（测试钩子）。 */
+  private modelHealAttempts = 0;
   /** 待决的扩展对话框（按 id；同一时刻通常只有一个，pi 侧 dialog 阻塞 agent）。 */
   private pendingUi = new Map<string, ExtensionUiRequest>();
   /** todo 工具维护的任务快照（运行期内存态，restart 后随新进程重置）。 */
@@ -135,6 +139,68 @@ export class ChatController {
     if (this.disposed) {
       return; // dispose 后禁止任何新 spawn（watcher/restart 并发防御）
     }
+    const outcome = await this.startWithHeal();
+    if (outcome === "abandoned") {
+      return;
+    }
+    // ok / exhausted：进程已就绪，置 running（模型仍空时由 StatusBar 推导警告态）
+    if (!this.client?.isRunning) {
+      return; // 进程在同步期间已退出（handleExit 已置 error 态）：不覆盖
+    }
+    this.setProcessState("running");
+
+    const client = this.client;
+    if (!client) {
+      return;
+    }
+    try {
+      const data = await client.send<GetMessagesData>({ type: "get_messages" });
+      this.messages = data.messages ?? [];
+      this.fireSnapshot();
+    } catch (err) {
+      if (this.client !== client) {
+        return; // 已被 restart 取代：静默放弃
+      }
+      this.notice("warning", `获取历史消息失败：${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * 启动 + 初始同步 + 自愈重启循环（至多自动重启一次）。
+   * 自愈在本函数内顺序执行（不受 restarting 守卫限制——自愈常嵌套在手动
+   * 重启链内，若走 restart() 入口会被防重入守卫拦截）；重启前校验本流程
+   * 仍是权威启动（this.client === client），防手动 restart 并发接管。
+   */
+  private async startWithHeal(): Promise<"ok" | "exhausted" | "abandoned"> {
+    for (;;) {
+      const client = await this.spawnClient();
+      if (!client) {
+        return "abandoned";
+      }
+      const outcome = await this.syncInitialState(client);
+      if (outcome !== "heal-needed") {
+        return outcome;
+      }
+      if (this.disposed) {
+        return "abandoned";
+      }
+      // 自愈：模型仍为空且未重启过 → 停止当前进程再启一次
+      //（置位标记：下次同步短路为单次尝试，防止无限重启循环）
+      this.modelHealRestarted = true;
+      this.notice("info", "未获取到模型信息，正在自动重启 pi 以恢复…");
+      if (this.client !== client) {
+        return "abandoned"; // 已被手动重启接管：静默放弃，由新流程自行定论
+      }
+      this.client = null;
+      await client.stop();
+      if (this.disposed || this.client !== null) {
+        return "abandoned"; // dispose 或并发 restart 已接管：不再继续本轮自愈 spawn
+      }
+    }
+  }
+
+  /** spawn 新 RpcClient 并绑定事件处理器。返回 null 表示放弃（no-workspace/spawn 失败/被取代）。 */
+  private async spawnClient(): Promise<RpcClient | null> {
     const root = vscode.workspace.workspaceFolders?.[0];
     if (!root) {
       // 未打开文件夹：不是进程异常，用友好状态提示并引导用户
@@ -145,7 +211,7 @@ export class ChatController {
       };
       this.fire({ type: "status", status: this.status });
       this.notice("info", "未打开文件夹：打开文件夹后 Pi 将自动连接。");
-      return;
+      return null;
     }
     this.workspaceRoot = root.uri.fsPath;
     this.setProcessState("starting");
@@ -183,51 +249,82 @@ export class ChatController {
       if (this.client === client) {
         this.handleSpawnError(err as Error);
       }
-      return;
+      return null;
     }
 
     if (this.client !== client) {
-      // 已被 restart 取代（首次启动进行中点击了重启）：放弃本次启动流程
-      return;
+      return null; // 已被 restart 取代：放弃本次启动流程
     }
+    return client;
+  }
 
-    this.setProcessState("running");
-
-    // 初始同步：状态 + 历史消息
-    try {
-      const state = await client.send<SessionState>({ type: "get_state" });
-      this.status = {
-        ...this.status,
-        model: state.model ?? null,
-        thinkingLevel: state.thinkingLevel ?? this.status.thinkingLevel,
-        isStreaming: Boolean(state.isStreaming),
-        isCompacting: Boolean(state.isCompacting),
-      };
-      this.fire({ type: "status", status: this.status });
-    } catch (err) {
-      if (this.client !== client) {
-        return; // 已被 restart 取代：静默放弃，不发误导性警告
+  /**
+   * 初始状态同步（自愈）：get_state 最多 4 次尝试（间隔 2s/5s/10s），
+   * 给 pi 的认证/模型加载留出时间。已自动重启过则短路为单次尝试。
+   * 结论：ok=拿到模型；heal-needed=尝试耗尽仍无模型（由 startWithHeal 触发重启）；
+   * exhausted=自愈已用尽（进入警告态）；abandoned=放弃（dispose/被取代）。
+   */
+  private async syncInitialState(
+    client: RpcClient,
+  ): Promise<"ok" | "heal-needed" | "exhausted" | "abandoned"> {
+    this.modelHealAttempts = 0;
+    const maxAttempts = this.modelHealRestarted ? 1 : 4;
+    const failures: string[] = [];
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (this.disposed || this.client !== client) {
+        return "abandoned"; // 已销毁/被取代：静默放弃，不发误导性状态
       }
-      this.notice("warning", `获取状态失败：${(err as Error).message}`);
+      try {
+        const state = await client.send<SessionState>({ type: "get_state" });
+        this.modelHealAttempts++;
+        this.status = {
+          ...this.status,
+          model: state.model ?? null,
+          thinkingLevel: state.thinkingLevel ?? this.status.thinkingLevel,
+          isStreaming: Boolean(state.isStreaming),
+          isCompacting: Boolean(state.isCompacting),
+        };
+        this.fire({ type: "status", status: this.status });
+        if (this.status.model) {
+          return "ok";
+        }
+        failures.push("model 为空");
+      } catch (err) {
+        if (this.client !== client) {
+          return "abandoned"; // 已被 restart 取代：静默放弃
+        }
+        this.modelHealAttempts++;
+        failures.push((err as Error).message);
+      }
+      if (attempt < maxAttempts) {
+        await sleep([0, 2000, 5000, 10000][attempt]);
+      }
     }
 
-    try {
-      const data = await client.send<GetMessagesData>({ type: "get_messages" });
-      this.messages = data.messages ?? [];
-      this.fireSnapshot();
-    } catch (err) {
-      if (this.client !== client) {
-        return; // 已被 restart 取代：静默放弃
-      }
-      this.notice("warning", `获取历史消息失败：${(err as Error).message}`);
+    if (this.disposed || this.client !== client) {
+      return "abandoned";
     }
+
+    // 尝试耗尽仍无模型：诊断输出（失败详情只进 Output，不在每次失败时 notice）；
+    // 自愈重启入口由 startWithHeal 触发
+    this.output.appendLine(`[warn] 模型自愈：get_state ${maxAttempts} 次尝试未获得模型（${failures.join("；")}）`);
+    if (this.modelHealRestarted) {
+      this.notice("warning", "未获取到模型信息：请检查 pi 认证（在终端运行 pi 验证），或点击状态栏“重启”重试。");
+      return "exhausted";
+    }
+    return "heal-needed";
   }
 
   /** 重启：杀掉旧进程并重新启动，随后用 get_messages 回放历史。 */
   async restart(): Promise<void> {
+    if (this.disposed) {
+      return; // dispose 后禁止重启（与 start() 的防御一致）
+    }
     if (this.restarting) {
       return; // 防重入：忽略重启进行中的重复点击
     }
+    // 手动重启：重置自愈标记，允许下轮自愈（自愈循环本身在 startWithHeal 内顺序执行）
+    this.modelHealRestarted = false;
     this.restarting = true;
     try {
       const old = this.client;
@@ -620,6 +717,11 @@ export class ChatController {
   getTodos(): TodoTask[] {
     return [...this.todos];
   }
+
+  /** 模型自愈信息（集成测试断言）：最近一次初始同步的尝试次数与是否自动重启过。 */
+  getModelHealInfo(): { attempts: number; autoRestarted: boolean } {
+    return { attempts: this.modelHealAttempts, autoRestarted: this.modelHealRestarted };
+  }
 }
 
 function extractText(content: unknown): string | undefined {
@@ -634,6 +736,10 @@ function extractText(content: unknown): string | undefined {
     }
   }
   return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export type { AgentMessage };

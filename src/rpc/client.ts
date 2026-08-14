@@ -6,6 +6,11 @@ import type { ClientCommand, RpcRecord, RpcResponse } from "./protocol";
 
 const IS_WIN = process.platform === "win32";
 
+/** stop() 优雅期：关闭 stdin 触发 pi 优雅退出（flush 会话/释放锁），等待真实退出。 */
+const STOP_GRACE_MS = 2500;
+/** stop() 总时长契约：优雅期 + 硬杀兜底等待，超时不再挂起。 */
+const STOP_TOTAL_MS = 5000;
+
 /** spawn 解析结果。 */
 export interface SpawnSpec {
   cmd: string;
@@ -161,6 +166,9 @@ export class RpcClient extends EventEmitter {
       }
     });
 
+    // stdin 在子进程退出时可能异步报 EPIPE：挂空监听静默兜底（stop() 另有 try/catch）
+    child.stdin!.on("error", () => {});
+
     let stderrBuf = "";
     child.stderr!.on("data", (chunk: string) => {
       stderrBuf += chunk;
@@ -230,6 +238,12 @@ export class RpcClient extends EventEmitter {
   /**
    * 终止整个进程树，并等待子进程真正退出。
    *
+   * 两级策略（总时长 5s 契约不变）：
+   * 1. 优雅期（≤2.5s）：关闭 stdin 触发 pi 优雅退出（RPC 模式在 stdin EOF
+   *    时自行 flush 会话、释放锁并退出），等待真实退出；
+   * 2. 兜底硬杀（剩余时间）：Windows taskkill /T /F（含 bash 工具子进程），
+   *    POSIX 进程组 SIGTERM → 2s 后 SIGKILL，继续等待真实退出。
+   *
    * 等待退出的必要性：taskkill 同步返回后，子进程的 exit 事件要到下一轮
    * 事件循环才派发；若不等待，restart() 会在新进程启动后收到旧进程的
    * exit 事件，污染状态（见 ChatController 的身份过滤）。
@@ -250,6 +264,23 @@ export class RpcClient extends EventEmitter {
       child.once("exit", () => resolve());
       child.once("error", () => resolve());
     });
+
+    const deadline = Date.now() + STOP_TOTAL_MS;
+
+    // 优雅期：关闭 stdin 让 pi 自行清理退出
+    try {
+      child.stdin?.end();
+    } catch {
+      // stdin 已销毁（进程退出竞态），忽略
+    }
+    const graceTimedOut = await Promise.race([
+      exited.then(() => false),
+      sleep(STOP_GRACE_MS).then(() => true),
+    ]);
+    if (!graceTimedOut) {
+      return; // 已优雅退出
+    }
+
     const kill = (sig: NodeJS.Signals): void => {
       try {
         child.kill(sig);
@@ -286,8 +317,8 @@ export class RpcClient extends EventEmitter {
       void exited.then(() => clearTimeout(sigkillTimer));
     }
 
-    // 超时兜底：进程僵死时不永久挂起 restart（旧事件此后由身份过滤屏蔽）
-    await Promise.race([exited, sleep(5000)]);
+    // 硬杀后继续等待真实退出，至 5s 总截止（进程僵死时不永久挂起 restart）
+    await Promise.race([exited, sleep(Math.max(deadline - Date.now(), 0))]);
   }
 
   private handleLine(line: string): void {
@@ -345,5 +376,8 @@ export class RpcClient extends EventEmitter {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.(); // 仅用于 stop() 竞速等待：不阻止宿主进程退出
+  });
 }

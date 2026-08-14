@@ -67,7 +67,7 @@ npm run package      # 生产构建（minify）
 
 - **测试首次运行**会下载 VS Code 到 `.vscode-test/`（gitignored），约 100MB
 - **F5 调试**：先 `npm run watch`（tasks.json 默认构建任务已含 webview），否则全新 clone 后面板空白
-- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 34/34 通过）
+- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 38/38 通过）
 
 ## Coding Guidelines
 
@@ -94,10 +94,11 @@ npm run package      # 生产构建（minify）
 - 空闲判定用 `agent_settled`（`agent_end` 仅刷新消息列表，之后仍可能有 retry/compaction/排队 continuation）
 - `extension_ui_request` 对话框方法（select/confirm/input/editor）必须回复 `extension_ui_response`，否则 agent 永久阻塞；pinel 渲染内联卡片由用户作答，`agent_settled`/`handleExit`/`restart` 时清空未决请求（清扫正确性依赖「dialog 阻塞期间不 settle」的实测前提）
 - 命令发送带 30s 超时；不带 id 的响应按 `command` 字段兜底关联
+- **模型状态自愈**：初始同步 get_state 最多 4 次尝试（间隔 2s/5s/10s），仍无模型时自动重启 pi 一次（在 `startWithHeal` 内顺序执行，**不走 restart 防重入守卫**——自愈常嵌套在手动重启链内会被守卫拦截）；`modelHealRestarted` 置位后短路为单次尝试，手动 restart 重置；`running` 在首次 get_state 成功后才置位（健康慢启动显示"启动中…"而非假警告）；运行中无模型由 StatusBar 用现有字段推导警告态（⚠ 无可用模型 + 重启按钮），**不新增协议字段**
 
 **Windows 专项约束（有回归测试 `src/test/spawn-spec.test.ts`）**：
 - pi 启动解析：裸命令名经 `where.exe` 并**优先 `.cmd`/`.bat` 行**（PATH 中无扩展名 sh 脚本会遮蔽 shim）；`.cmd` 用 `cmd.exe /d /s /c` 包装且必须 `windowsVerbatimArguments: true`（Node 默认的反斜杠转义引号会破坏 cmd 解析）；cmd 路径用 ComSpec 反斜杠形式
-- 进程终止：Windows `taskkill /pid <pid> /T /F`；POSIX spawn 需 `detached: true` 后负 PID 组 kill——两侧都要杀整棵进程树（bash 工具子进程）
+- 进程终止：**优雅退出优先**——先关闭 stdin（pi RPC 模式在 EOF 时自行 flush 会话/释放锁并退出），优雅期 2.5s 后未退才硬杀：Windows `taskkill /pid <pid> /T /F`；POSIX spawn 需 `detached: true` 后负 PID 组 kill（SIGTERM → 2s 后 SIGKILL）——两侧都要杀整棵进程树（bash 工具子进程）；总时长 5s 契约（永不 reject、exit 事件先于 resolve 派发，`stop.test.ts` 覆盖两条路径）；stdin 需挂空 error 监听防异步 EPIPE
 
 **安全约束**：
 - webview CSP `default-src 'none'` + script nonce；markdown 用 react-markdown 且**不得启用 rehype-raw**
@@ -120,18 +121,18 @@ npm run package      # 生产构建（minify）
 
 ## Testing Guidelines
 
-**已有测试**（34 个，全部必须保持通过）：
+**已有测试**（38 个，全部必须保持通过）：
 - `framing.test.ts`：LF framing（U+2028、`\r\n`、粘包拆包）
 - `stream-assembly.test.ts`：contentIndex 分块装配（多块交替、权威替换、乱序）
 - `spawn-spec.test.ts`：Windows shim 解析（.cmd 包装、verbatim 参数、shell 模式）
-- `stop.test.ts`：`RpcClient.stop()` 等待真实退出（exit 事件在 resolve 前派发、子进程已死）
+- `stop.test.ts`：`RpcClient.stop()` 等待真实退出（exit 事件在 resolve 前派发、子进程已死）+ 优雅退出路径（stdin EOF 自退 exit code 0）+ 兜底硬杀路径（`PINEL_LONG_NO_EOF=1` 拒不退出）
 - `todos.test.ts`：`parseTodoTasks` 防御解析（全量快照、部分损坏跳过、结构不符 null）
-- `extension.test.ts`：集成测试（真实 VS Code + 假 pi：状态同步、端到端流式、abort、UI 自动取消、跨消息不串块、重启竞态回归、崩溃后重启恢复）
+- `extension.test.ts`：集成测试（真实 VS Code + 假 pi：状态同步、端到端流式、abort、UI 自动取消、跨消息不串块、重启竞态回归、崩溃后重启恢复、模型自愈——NULLMODEL-FIRST 重试恢复无重启 / NULLMODEL-FOREVER 自动重启恰好一次后警告态）
 - `src/test-no-workspace/no-workspace.test.ts`：空窗口实例友好状态（no-workspace + 引导文本，不伪装成进程异常）
 
 **新增功能覆盖要求**：
 - 纯逻辑（framing/装配/spawn 解析类）→ 在 `src/test/` 加 mocha 单测，与现有 suite 风格一致
-- 聊天行为/RPC 交互 → 扩展 `fixtures/fake-pi.js` 场景（新增 prompt 标记触发）后加集成测试，经 `PinelTestApi` 断言 controller 状态
+- 聊天行为/RPC 交互 → 扩展 `fixtures/fake-pi.js` 场景（新增 prompt 标记触发）后加集成测试，经 `PinelTestApi` 断言 controller 状态；**作用于首次 get_state 的场景**（如模型自愈）不能用 prompt 子串标记——首次 get_state 发生在任何 prompt 之前，改用环境变量 `PINEL_FAKE_PI_SCENARIO` 在 spawn 时激活（测试内先设 env 再 `api.restart()` 触发新进程，结束恢复 env + restart）
 - 修改 RPC 命令/事件处理必须同步更新 `protocol.ts` 类型与假 pi
 
 **集成测试专项注意（踩坑沉淀）**：
@@ -142,6 +143,7 @@ npm run package      # 生产构建（minify）
 - 两个测试实例共享 `.vscode-test/user-data`：no-workspace 套件（空窗口）退出会把空窗口状态持久化，污染下次运行的 main 实例——`npm test` 已内置清理脚本（scripts/clean-test-userdata.mjs），直接跑 `npx vscode-test` 跳过清理会踩坑
 - 主套件内**不得**用 `updateWorkspaceFolders` 移除全部工作区文件夹：VS Code 空窗口不支持该 API 恢复（实测 add 返回 false，不可逆），no-workspace 场景由独立空窗口实例套件覆盖
 - fake-pi 的 prompt 场景判断注意**子串包含顺序**（如 `UIREQUEST-CRASH` 必须在 `UIREQUEST` 之前）与 `waitForUiResponse` 命中后从数组移除（否则后续同 id 请求命中已 resolve 的旧 waiter 死锁）
+- fake-pi 与 long-running 均在 **stdin EOF 时退出**（与真实 pi 的优雅退出路径一致）：集成测试的 restart 流程不付 2.5s 优雅期等待；long-running 经 `PINEL_LONG_NO_EOF=1` 保持常驻（供 stop 兜底硬杀测试）
 - **待办列表数据源踩坑**：pi 0.84.1 的 RPC 模式对 `setWidget` 组件工厂静默忽略（rpiv-todo 的 todo 面板收不到内容），todo 列表从 `tool_execution_end`（toolName "todo"）的 `result.details.tasks` 全量快照解析——**未文档化字段**，必须防御解析（见 `src/chat/todos.ts`）；若 pi 未来支持字符串数组 widget 或 todo 专用事件，迁移到官方通道
 
 **F5 调试专项注意（踩坑沉淀）**：

@@ -11,7 +11,13 @@
  *   并等待客户端回复（用于验证客户端自动 cancelled 回复）
  * - prompt 含 "TWOMSG"：一个 prompt 产出两条连续助手消息（第一条含 text+thinking，
  *   第二条仅 text 慢速），用于回归测试跨消息 contentIndex 装配重置
+ * - 环境变量 PINEL_FAKE_PI_SCENARIO 在进程启动时读取，作用于 get_state
+ *   （首次 get_state 发生在任何 prompt 之前，prompt 子串标记机制不可用）：
+ *   NULLMODEL-FIRST：前 2 次 get_state 返回 model:null，之后正常
+ *   NULLMODEL-FOREVER：get_state 恒返回 model:null
  * - 所有收到/发出的记录写入日志文件（PINEL_FAKE_PI_LOG 或系统临时目录）
+ * - stdin EOF（父进程关闭管道）时退出：与真实 pi 的优雅退出路径一致，
+ *   保证集成测试的 restart 流程不付 2.5s 优雅期等待
  */
 "use strict";
 const fs = require("node:fs");
@@ -19,6 +25,11 @@ const os = require("node:os");
 const path = require("node:path");
 
 const LOG_PATH = process.env.PINEL_FAKE_PI_LOG || path.join(os.tmpdir(), "pinel-fake-pi.log");
+
+/** 场景开关（进程启动时读取一次）：作用于 get_state 的模型字段。 */
+const SCENARIO = process.env.PINEL_FAKE_PI_SCENARIO || "";
+
+log({ dir: "meta", event: "startup", pid: process.pid, scenario: SCENARIO });
 
 function log(record) {
   try {
@@ -70,9 +81,22 @@ function respond(id, command, success, data, error) {
 
 const MODEL = { id: "fake-model", name: "Fake Model", provider: "fake" };
 
+/** get_state 已响应次数（仅 NULLMODEL 场景统计）。 */
+let getStateCount = 0;
+
 function stateData() {
+  let model = MODEL;
+  if (SCENARIO === "NULLMODEL-FOREVER") {
+    getStateCount++;
+    model = null;
+  } else if (SCENARIO === "NULLMODEL-FIRST") {
+    getStateCount++;
+    if (getStateCount <= 2) {
+      model = null;
+    }
+  }
   return {
-    model: MODEL,
+    model,
     thinkingLevel: "high",
     isStreaming: false,
     isCompacting: false,
@@ -270,6 +294,12 @@ process.stdin.on("data", (chunk) => {
       void handleCommand(JSON.parse(line));
     }
   }
+});
+
+// stdin EOF：父进程关闭管道 → 优雅退出（与真实 pi 的 RPC 优雅退出路径一致）
+process.stdin.on("end", () => {
+  log({ dir: "meta", event: "stdin-end", scenario: SCENARIO });
+  process.exit(0);
 });
 
 async function handleCommand(record) {
