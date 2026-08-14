@@ -32,6 +32,8 @@ export default function App() {
   const [questionnaire, setQuestionnaire] = useState<QuestionnaireView | null>(null);
   /** 新对话框卡片 id：到达时强制滚动+聚焦（快照重放不触发）。 */
   const [focusDialogId, setFocusDialogId] = useState<string | null>(null);
+  /** 问卷推送版本：每次收到 questionnaire 消息（非快照）自增，驱动问卷重新聚焦。 */
+  const [qnaFocusVersion, setQnaFocusVersion] = useState(0);
   const [notices, setNotices] = useState<Array<{ id: number; level: string; text: string }>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -78,6 +80,7 @@ export default function App() {
         break;
       case "questionnaire":
         setQuestionnaire(msg.questionnaire);
+        setQnaFocusVersion((v) => v + 1); // 新问卷推送：触发聚焦（快照恢复不触发）
         break;
       case "questionnaireCleared":
         setQuestionnaire(null);
@@ -165,7 +168,7 @@ export default function App() {
           />
         )}
         <UiDialogs requests={pendingUi} />
-        {questionnaire && <Questionnaire questionnaire={questionnaire} />}
+        {questionnaire && <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />}
       </div>
       {todos.length > 0 && <TodoPanel todos={todos} />}
       <Composer status={status} commands={commands} />

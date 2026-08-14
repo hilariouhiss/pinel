@@ -147,11 +147,15 @@ suite("回填映射单元测试", () => {
     assert.strictEqual(inputResponseFor(single, { kind: "option", optionIndex: 0 }), null);
   });
 
-  test("标题归属：题面/header 子串命中", () => {
+  test("标题归属：题面/header 子串命中；两题同题面时均命中（门控不丢帧，游标兑底）", () => {
     const q = { question: "问题一？", header: "q1", options: [], multiSelect: false };
     assert.strictEqual(titleMatchesQuestion("[q1] 问题一？", q), true);
     assert.strictEqual(titleMatchesQuestion("问题一？\n\nType your answer:", q), true);
     assert.strictEqual(titleMatchesQuestion("另一个问题", q), false);
     assert.strictEqual(titleMatchesQuestion(undefined, q), false);
+    // 两题同题面：标题对两题均命中（缓冲门控用 some()，回填靠游标兑底）
+    const same = { question: "同样的问题", options: [], multiSelect: false };
+    assert.strictEqual(titleMatchesQuestion("同样的问题", same), true);
+    assert.strictEqual(titleMatchesQuestion("同样的问题", { ...same }), true);
   });
 });

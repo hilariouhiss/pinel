@@ -5,6 +5,8 @@ import { Markdown } from "./Markdown";
 
 interface Props {
   questionnaire: QuestionnaireView;
+  /** 宿主每次推送新问卷（非快照）时自增：同阶段重入替换也触发重新聚焦。 */
+  focusVersion: number;
 }
 
 /** 答案摘要（确认面板行显示）。 */
@@ -31,16 +33,21 @@ function answerSummary(question: QuestionnaireQuestion, answer: QuestionnaireAns
  * - 容器级 Esc = 放弃整卷（与 TUI 一致；与 Composer 的 Esc 分层）
  * - 阶段变化自动聚焦：answering → 首个未答题；reviewing → 确认按钮
  */
-export function Questionnaire({ questionnaire: q }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
+export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
   const questionRefs = useRef<Array<HTMLDivElement | null>>([]);
   const reviewRef = useRef<HTMLDivElement>(null);
+  const firstRun = useRef(true);
   // 每题的「自定义答案」草稿
   const [drafts, setDrafts] = useState<Record<number, string>>({});
 
   const answeredCount = q.answers.filter((a) => a !== null).length;
+  // 已提交/回填中：锁定答题控件（controller 已忽略入站，避免无反馈的无效点击）
+  const locked = q.phase === "submitting" || q.phase === "submitted";
 
   const focusQuestion = (index: number) => {
+    if (!document.hasFocus()) {
+      return; // webview 不可见时不强抢焦点
+    }
     const el = questionRefs.current[index];
     if (!el) {
       return;
@@ -52,8 +59,18 @@ export function Questionnaire({ questionnaire: q }: Props) {
     target?.focus();
   };
 
-  // 阶段变化聚焦：answering → 首个未答题；reviewing → 确认面板（确认按钮）
+  // 新问卷替换旧问卷：清空草稿（题目引用变化即重入）
   useEffect(() => {
+    setDrafts({});
+  }, [q.questions]);
+
+  // 阶段变化/新问卷推送聚焦：answering → 首个未答题；reviewing → 确认按钮。
+  // 首帧跳过（挂载即快照恢复，不抢焦点）；focusVersion 覆盖同阶段重入替换。
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
     if (q.phase === "answering") {
       const firstUnanswered = q.answers.findIndex((a) => a === null);
       if (firstUnanswered >= 0) {
@@ -63,8 +80,8 @@ export function Questionnaire({ questionnaire: q }: Props) {
       reviewRef.current?.scrollIntoView({ block: "nearest" });
       reviewRef.current?.querySelector<HTMLElement>("button.qna-confirm")?.focus();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅阶段变化时聚焦
-  }, [q.phase]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅阶段变化/新问卷推送时聚焦
+  }, [q.phase, focusVersion]);
 
   const answer = (i: number, a: QuestionnaireAnswer) =>
     vscode.postMessage({ type: "questionnaireAnswer", questionIndex: i, answer: a });
@@ -74,7 +91,6 @@ export function Questionnaire({ questionnaire: q }: Props) {
   return (
     <div
       className="qna"
-      ref={containerRef}
       onKeyDown={(e) => {
         // 容器级 Esc = 放弃整卷（选项按钮/输入框聚焦时 keydown 冒泡到此）
         if (e.key === "Escape") {
@@ -93,6 +109,7 @@ export function Questionnaire({ questionnaire: q }: Props) {
           question={question}
           answer={q.answers[i]}
           draft={drafts[i] ?? ""}
+          locked={locked}
           onDraftChange={(text) => setDrafts((prev) => ({ ...prev, [i]: text }))}
           onAnswer={(a) => answer(i, a)}
           refCallback={(el) => {
@@ -130,6 +147,7 @@ function QuestionCard({
   question,
   answer,
   draft,
+  locked,
   onDraftChange,
   onAnswer,
   refCallback,
@@ -137,6 +155,7 @@ function QuestionCard({
   question: QuestionnaireQuestion;
   answer: QuestionnaireAnswer | null;
   draft: string;
+  locked: boolean;
   onDraftChange: (text: string) => void;
   onAnswer: (a: QuestionnaireAnswer) => void;
   refCallback: (el: HTMLDivElement | null) => void;
@@ -159,6 +178,7 @@ function QuestionCard({
             <button
               key={oi}
               className={`qna-option${selected ? " selected" : ""}`}
+              disabled={locked}
               onClick={() =>
                 onAnswer(
                   question.multiSelect
@@ -192,11 +212,12 @@ function QuestionCard({
           className="uidialog-input"
           value={draft}
           placeholder="或输入自定义答案（Type something）"
+          disabled={locked}
           onChange={(e) => onDraftChange(e.target.value)}
         />
         <button
           className="uidialog-btn"
-          disabled={draft.trim().length === 0}
+          disabled={locked || draft.trim().length === 0}
           onClick={() => onAnswer({ kind: "custom", text: draft })}
         >
           使用自定义答案

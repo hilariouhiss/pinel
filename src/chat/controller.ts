@@ -376,6 +376,7 @@ export class ChatController {
       this.pendingUi.clear();
       this.todos = [];
       this.commands = [];
+      const staleQuestionnaire = this.questionnaire;
       this.questionnaire = null;
       // 立即广播重置后的状态 + 清除对话框/待办/命令列表，让 UI 有即时反馈
       //（防止旧卡片在重启窗口内被应答，新进程可能复用同 id）
@@ -384,6 +385,14 @@ export class ChatController {
       this.fire({ type: "todos", todos: this.todos });
       this.fire({ type: "commands", commands: this.commands });
       this.fire({ type: "questionnaireCleared" });
+      // 问卷缓冲帧随旧进程死亡前主动补 cancelled（HIGH-2：与 settled 清理同理由，
+      // 插件问卷无 timeout，pi 侧不会自动解锁；进程此刻仍存活，回复有意义）
+      if (old && staleQuestionnaire) {
+        const buffered = staleQuestionnaire.buffered.splice(0);
+        for (const req of buffered) {
+          old.writeRaw({ type: "extension_ui_response", id: req.id, cancelled: true });
+        }
+      }
       if (old) {
         await old.stop();
       }
@@ -795,8 +804,8 @@ export class ChatController {
       for (const req of absorbed) {
         this.pendingUi.delete(req.id);
         this.questionnaire.buffered.push(req);
+        this.fire({ type: "uiResolved", id: req.id }); // 逐条移除吸收走的卡片（不动其他卡片）
       }
-      this.fire({ type: "uiCleared" }); // 吸收走的卡片从 UI 移除
     }
     this.broadcastQuestionnaire();
   }
