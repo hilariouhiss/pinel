@@ -11,6 +11,16 @@ export interface PinelTestApi {
   openPanel(): Promise<void>;
   sendPrompt(text: string): Promise<void>;
   abort(): Promise<void>;
+  /** 循环切换模型（cycle_model）。 */
+  cycleModel(): Promise<void>;
+  /** 循环切换思考强度（cycle_thinking_level）。 */
+  cycleThinkingLevel(): Promise<void>;
+  /** 设置队列模式（set_steering_mode）。 */
+  setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void>;
+  /** 设置跟进模式（set_follow_up_mode）。 */
+  setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void>;
+  /** 设置自动压缩（set_auto_compaction）。 */
+  setAutoCompaction(enabled: boolean): Promise<void>;
   /** 重启 pi 进程（触发 ChatController.restart）。 */
   restart(): Promise<void>;
   getStatus(): ChatStatus;
@@ -81,6 +91,11 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     },
     sendPrompt: (text: string) => ctrl.sendPrompt({ text }),
     abort: () => ctrl.abort(),
+    cycleModel: () => ctrl.cycleModel(),
+    cycleThinkingLevel: () => ctrl.cycleThinkingLevel(),
+    setSteeringMode: (mode) => ctrl.setSteeringMode(mode),
+    setFollowUpMode: (mode) => ctrl.setFollowUpMode(mode),
+    setAutoCompaction: (enabled) => ctrl.setAutoCompaction(enabled),
     restart: () => ctrl.restart(),
     getStatus: () => ctrl.getStatus(),
     getMessages: () => ctrl.getMessages(),

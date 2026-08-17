@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { vscode } from "./index";
 import type { ChatMessage, ChatStatus, HostMessage, QuestionnaireView, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
+import { ConfigPopover } from "./components/ConfigPopover";
 import { MessageView } from "./components/MessageView";
 import { Notices } from "./components/Notices";
 import { StatusBar } from "./components/StatusBar";
@@ -15,6 +16,9 @@ const initialStatus: ChatStatus = {
   isCompacting: false,
   model: null,
   thinkingLevel: "medium",
+  steeringMode: "all",
+  followUpMode: "one-at-a-time",
+  autoCompactionEnabled: true,
   steering: [],
   followUp: [],
 };
@@ -30,6 +34,8 @@ export default function App() {
   const [todos, setTodos] = useState<TodoTask[]>([]);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [questionnaire, setQuestionnaire] = useState<QuestionnaireView | null>(null);
+  /** 配置面板开合（状态栏按钮触发）。 */
+  const [configOpen, setConfigOpen] = useState(false);
   /** 新对话框卡片 id：到达时强制滚动+聚焦（快照重放不触发）。 */
   const [focusDialogId, setFocusDialogId] = useState<string | null>(null);
   /** 问卷推送版本：每次收到 questionnaire 消息（非快照）自增，驱动问卷重新聚焦。 */
@@ -171,8 +177,9 @@ export default function App() {
         {questionnaire && <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />}
       </div>
       {todos.length > 0 && <TodoPanel todos={todos} />}
-      <Composer status={status} commands={commands} />
-      <StatusBar status={status} />
+      <Composer status={status} commands={commands} popoverOpen={configOpen} />
+      <StatusBar status={status} configOpen={configOpen} onOpenConfig={() => setConfigOpen(true)} />
+      <ConfigPopover status={status} open={configOpen} onClose={() => setConfigOpen(false)} />
     </div>
   );
 }

@@ -14,6 +14,8 @@ import type { Attachment, ChatStatus, SlashCommand } from "../types";
 interface Props {
   status: ChatStatus;
   commands: SlashCommand[];
+  /** 配置面板打开时：Esc 让位给面板关闭，不触发中断/清空（双保险，面板侧 capture 已拦截）。 */
+  popoverOpen?: boolean;
 }
 
 /** 来源徽标（中文标签）；未知来源兜底"其他"（pi 未来可能新增 source）。 */
@@ -56,7 +58,7 @@ async function compressImage(
 
 let attachmentSeq = 0;
 
-export function Composer({ status, commands }: Props) {
+export function Composer({ status, commands, popoverOpen = false }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const busy = status.isStreaming || status.isCompacting;
@@ -199,8 +201,12 @@ export function Composer({ status, commands }: Props) {
       e.preventDefault();
       send();
     } else if (e.key === "Escape") {
-      // 流式中 Esc 中断；空闲时清空输入
+      // 配置面板打开：Esc 只关面板（面板侧 capture 监听负责），不中断/清空
       e.preventDefault();
+      if (popoverOpen) {
+        return;
+      }
+      // 流式中 Esc 中断；空闲时清空输入
       if (busy) {
         vscode.postMessage({ type: "abort" });
       } else {

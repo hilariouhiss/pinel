@@ -588,4 +588,230 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.strictEqual(responseFor("qna-1").value, "1. A — 选项 A");
     assert.strictEqual(responseFor("qna-3").value, "1. M — 选项 M");
   });
+
+  // -------------------------------------------------------------------------
+  // 配置面板（模型/思考强度循环 + 队列模式 + 自动压缩）
+  // -------------------------------------------------------------------------
+
+  test("配置面板：cycleModel 切到下一模型（thinkingLevel 同步）", async () => {
+    await api.cycleModel();
+    const s = api.getStatus();
+    assert.strictEqual(s.model?.name, "Fake Model B", "模型必须循环到下一档");
+    assert.strictEqual(s.thinkingLevel, "high", "cycle_model 响应携带的思考等级必须同步应用");
+  });
+
+  test("配置面板：连续 cycle 两模型循环回原点", async () => {
+    // 前序测试后模型为 Fake Model B
+    await api.cycleModel();
+    assert.strictEqual(api.getStatus().model?.name, "Fake Model", "第一次循环回 Fake Model");
+    await api.cycleModel();
+    assert.strictEqual(api.getStatus().model?.name, "Fake Model B", "第二次循环回 Fake Model B");
+    // 切回默认模型，保持后续测试基线
+    await api.cycleModel();
+    assert.strictEqual(api.getStatus().model?.name, "Fake Model", "恢复默认模型");
+  });
+
+  test("配置面板：cycleThinking 循环到下一等级（含回绕）", async () => {
+    const LEVELS = ["off", "minimal", "low", "medium", "high"];
+    const before = api.getStatus().thinkingLevel;
+    await api.cycleThinkingLevel();
+    const idx = LEVELS.indexOf(before);
+    assert.ok(idx >= 0, `已知等级 ${before}`);
+    assert.strictEqual(
+      api.getStatus().thinkingLevel,
+      LEVELS[(idx + 1) % LEVELS.length],
+      "等级必须循环到下一档",
+    );
+    // 回绕回原等级，保持后续测试基线
+    for (let i = 0; i < LEVELS.length - 1; i++) {
+      await api.cycleThinkingLevel();
+    }
+    assert.strictEqual(api.getStatus().thinkingLevel, before, "恢复原等级");
+  });
+
+  test("配置面板：队列模式与自动压缩 set 命令更新状态", async () => {
+    await api.setSteeringMode("one-at-a-time");
+    assert.strictEqual(api.getStatus().steeringMode, "one-at-a-time");
+    await api.setSteeringMode("all");
+    assert.strictEqual(api.getStatus().steeringMode, "all");
+    await api.setFollowUpMode("all");
+    assert.strictEqual(api.getStatus().followUpMode, "all");
+    await api.setFollowUpMode("one-at-a-time");
+    assert.strictEqual(api.getStatus().followUpMode, "one-at-a-time");
+    await api.setAutoCompaction(false);
+    assert.strictEqual(api.getStatus().autoCompactionEnabled, false);
+    await api.setAutoCompaction(true);
+    assert.strictEqual(api.getStatus().autoCompactionEnabled, true);
+  });
+
+  test("配置面板：SINGLE-MODEL 场景 cycle_model 回 null，状态不变", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "SINGLE-MODEL";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "SINGLE-MODEL 场景启动",
+      );
+      const before = api.getStatus();
+      await api.cycleModel();
+      const after = api.getStatus();
+      assert.strictEqual(after.model?.name, before.model?.name, "data:null 时模型不得变化");
+      assert.strictEqual(after.thinkingLevel, before.thinkingLevel, "data:null 时思考等级不得变化");
+    } finally {
+      delete process.env.PINEL_FAKE_PI_SCENARIO;
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "恢复默认场景",
+      );
+    }
+  });
+
+  test("配置面板：NO-THINKING 场景 cycle_thinking_level 回 null，状态不变", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "NO-THINKING";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "NO-THINKING 场景启动",
+      );
+      const before = api.getStatus();
+      await api.cycleThinkingLevel();
+      const after = api.getStatus();
+      assert.strictEqual(after.thinkingLevel, before.thinkingLevel, "data:null 时思考等级不得变化");
+    } finally {
+      delete process.env.PINEL_FAKE_PI_SCENARIO;
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "恢复默认场景",
+      );
+    }
+  });
+
+  test("配置面板：CYCLE-FAIL 场景切换失败，状态不变", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "CYCLE-FAIL";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "CYCLE-FAIL 场景启动",
+      );
+      const before = api.getStatus();
+      await api.cycleModel(); // 内部 catch → notice，不抛异常
+      const after = api.getStatus();
+      assert.strictEqual(after.model?.name, before.model?.name, "success:false 时模型不得变化");
+      assert.strictEqual(api.getStatus().processState, "running", "失败不得影响进程状态");
+    } finally {
+      delete process.env.PINEL_FAKE_PI_SCENARIO;
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "恢复默认场景",
+      );
+    }
+  });
+
+  test("配置面板：get_state 缺配置字段时保留默认值", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "NOSTATE-FIELDS";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "NOSTATE-FIELDS 场景启动",
+      );
+      const s = api.getStatus();
+      assert.strictEqual(s.steeringMode, "all", "缺字段时 steeringMode 保留默认值");
+      assert.strictEqual(s.followUpMode, "one-at-a-time", "缺字段时 followUpMode 保留默认值");
+      assert.strictEqual(s.autoCompactionEnabled, true, "缺字段时 autoCompactionEnabled 保留默认值");
+    } finally {
+      delete process.env.PINEL_FAKE_PI_SCENARIO;
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "恢复默认场景",
+      );
+    }
+  });
+
+  test("配置面板：流式中 cycleModel 状态即时更新且流不中断", async function () {
+    this.timeout(60000);
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(`ABORTME-CONFIG-${Date.now()}`);
+    await waitFor(() => api.getStatus().isStreaming, 10000, "流式开始");
+    await api.cycleModel();
+    assert.strictEqual(api.getStatus().model?.name, "Fake Model B", "流式中模型立即更新");
+    assert.ok(api.getStatus().isStreaming, "切换不得中断流");
+    await api.waitForSettled(30000, baseline);
+    // 切回默认模型，保持后续测试基线
+    await api.cycleModel();
+    assert.strictEqual(api.getStatus().model?.name, "Fake Model", "恢复默认模型");
+  });
+
+  test("配置面板：重启后配置从状态文件恢复（持久化语义）", async function () {
+    this.timeout(90000);
+    // PINEL_FAKE_PI_STATE：假 pi 将配置内存态写入该文件、新进程启动时恢复
+    //（模拟真实 pi 写 settings 的持久化）；唯一路径防跨测试/跨运行污染
+    const statePath = path.join(
+      os.tmpdir(),
+      `pinel-fake-pi-state-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    );
+    process.env.PINEL_FAKE_PI_STATE = statePath;
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "带状态文件启动",
+      );
+      await api.cycleModel();
+      assert.strictEqual(api.getStatus().model?.name, "Fake Model B", "模型循环到 B");
+      await api.cycleThinkingLevel();
+      assert.strictEqual(api.getStatus().thinkingLevel, "off", "思考等级从 high 回绕到 off");
+      await api.setSteeringMode("one-at-a-time");
+      await api.setFollowUpMode("all");
+      await api.setAutoCompaction(false);
+      assert.strictEqual(api.getStatus().steeringMode, "one-at-a-time");
+      assert.strictEqual(api.getStatus().followUpMode, "all");
+      assert.strictEqual(api.getStatus().autoCompactionEnabled, false);
+
+      // 重启：新进程从状态文件恢复配置（重启类场景用 waitFor 轮询）
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model B",
+        30000,
+        "重启后模型从状态文件恢复",
+      );
+      const s = api.getStatus();
+      assert.strictEqual(s.thinkingLevel, "off", "重启后思考等级保留");
+      assert.strictEqual(s.steeringMode, "one-at-a-time", "重启后队列模式保留");
+      assert.strictEqual(s.followUpMode, "all", "重启后跟进模式保留");
+      assert.strictEqual(s.autoCompactionEnabled, false, "重启后自动压缩开关保留");
+    } finally {
+      delete process.env.PINEL_FAKE_PI_STATE;
+      try {
+        fs.unlinkSync(statePath);
+      } catch {
+        // 不存在即可
+      }
+      await api.restart(); // 恢复默认（无状态文件）场景
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "恢复默认场景",
+      );
+    }
+  });
 });

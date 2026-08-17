@@ -15,6 +15,12 @@ export interface ChatStatus {
   isCompacting: boolean;
   model: ModelInfo | null;
   thinkingLevel: string;
+  /** 队列模式（set_steering_mode），默认 all。 */
+  steeringMode: string;
+  /** 跟进模式（set_follow_up_mode），默认 one-at-a-time。 */
+  followUpMode: string;
+  /** 自动压缩（set_auto_compaction），默认 true。 */
+  autoCompactionEnabled: boolean;
   error?: string;
   steering: string[];
   followUp: string[];

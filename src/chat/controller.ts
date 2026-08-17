@@ -4,6 +4,9 @@ import {
   DIALOG_UI_METHODS,
   type AgentMessage,
   type AssistantDeltaEvent,
+  type ClientCommand,
+  type CycleModelData,
+  type CycleThinkingLevelData,
   type ExtensionUiRequest,
   type GetAvailableModelsData,
   type GetCommandsData,
@@ -41,6 +44,12 @@ export interface ChatStatus {
   isCompacting: boolean;
   model: Model | null;
   thinkingLevel: string;
+  /** 队列模式（set_steering_mode），默认 all（docs/rpc.md get_state 示例）。 */
+  steeringMode: string;
+  /** 跟进模式（set_follow_up_mode），默认 one-at-a-time。 */
+  followUpMode: string;
+  /** 自动压缩（set_auto_compaction），默认 true。 */
+  autoCompactionEnabled: boolean;
   error?: string;
   steering: string[];
   followUp: string[];
@@ -92,6 +101,9 @@ const initialStatus: ChatStatus = {
   isCompacting: false,
   model: null,
   thinkingLevel: "medium",
+  steeringMode: "all",
+  followUpMode: "one-at-a-time",
+  autoCompactionEnabled: true,
   steering: [],
   followUp: [],
 };
@@ -320,6 +332,13 @@ export class ChatController {
           ...this.status,
           model: state.model ?? null,
           thinkingLevel: state.thinkingLevel ?? this.status.thinkingLevel,
+          // 配置三字段：get_state 缺字段时保留默认值（防御旧版 pi）
+          steeringMode: typeof state.steeringMode === "string" ? state.steeringMode : this.status.steeringMode,
+          followUpMode: typeof state.followUpMode === "string" ? state.followUpMode : this.status.followUpMode,
+          autoCompactionEnabled:
+            typeof state.autoCompactionEnabled === "boolean"
+              ? state.autoCompactionEnabled
+              : this.status.autoCompactionEnabled,
           isStreaming: Boolean(state.isStreaming),
           isCompacting: Boolean(state.isCompacting),
         };
@@ -468,6 +487,142 @@ export class ChatController {
       await client.send({ type: "abort" });
     } catch (err) {
       this.notice("warning", `中断失败：${(err as Error).message}`);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // 配置切换（状态栏弹出面板）
+  // -------------------------------------------------------------------------
+
+  /**
+   * 循环切换模型（cycle_model）。
+   * pi 切模型时会重新锎制思考等级，响应携带 {model, thinkingLevel, isScoped}，
+   * 两者一并应用；仅一个可用模型时响应为 null。
+   */
+  async cycleModel(): Promise<void> {
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("warning", "pi 进程不可用，无法切换模型");
+      return;
+    }
+    try {
+      const data = await client.send<CycleModelData | null>({ type: "cycle_model" });
+      if (this.client !== client) {
+        return; // restart 竞态：丢弃迟到响应，不污染新进程状态
+      }
+      if (!data) {
+        this.notice("info", "仅有一个可用模型，无法切换");
+        return;
+      }
+      // 防御：响应形状异常（旧版 pi / 协议漂移）→ 仅提示不更新
+      if (typeof data !== "object" || !data.model || typeof data.model !== "object" || Array.isArray(data.model)) {
+        this.notice("warning", "切换模型失败：响应数据异常");
+        return;
+      }
+      this.status = {
+        ...this.status,
+        model: data.model,
+        thinkingLevel: typeof data.thinkingLevel === "string" ? data.thinkingLevel : this.status.thinkingLevel,
+      };
+      this.fire({ type: "status", status: this.status });
+    } catch (err) {
+      if (this.client !== client) {
+        return;
+      }
+      this.notice("error", `切换模型失败：${(err as Error).message}`);
+    }
+  }
+
+  /** 循环切换思考强度（cycle_thinking_level）；模型不支持思考时响应为 null。 */
+  async cycleThinkingLevel(): Promise<void> {
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("warning", "pi 进程不可用，无法切换思考强度");
+      return;
+    }
+    try {
+      const data = await client.send<CycleThinkingLevelData | null>({ type: "cycle_thinking_level" });
+      if (this.client !== client) {
+        return;
+      }
+      if (!data) {
+        // 仅 null：模型不支持思考（rpc-mode.js 回 success+data:null）
+        this.notice("info", "当前模型不支持思考强度切换");
+        return;
+      }
+      // 防御：非 null 的异常形状（旧版 pi / 协议漂移）→ 仅提示不更新
+      if (typeof data !== "object" || typeof data.level !== "string") {
+        this.notice("warning", "切换思考强度失败：响应数据异常");
+        return;
+      }
+      this.status = { ...this.status, thinkingLevel: data.level };
+      this.fire({ type: "status", status: this.status });
+    } catch (err) {
+      if (this.client !== client) {
+        return;
+      }
+      this.notice("error", `切换思考强度失败：${(err as Error).message}`);
+    }
+  }
+
+  async setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void> {
+    await this.applyConfigCommand(
+      { type: "set_steering_mode", mode },
+      () => {
+        this.status = { ...this.status, steeringMode: mode };
+        this.fire({ type: "status", status: this.status });
+      },
+      "设置队列模式失败",
+    );
+  }
+
+  async setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void> {
+    await this.applyConfigCommand(
+      { type: "set_follow_up_mode", mode },
+      () => {
+        this.status = { ...this.status, followUpMode: mode };
+        this.fire({ type: "status", status: this.status });
+      },
+      "设置跟进模式失败",
+    );
+  }
+
+  async setAutoCompaction(enabled: boolean): Promise<void> {
+    await this.applyConfigCommand(
+      { type: "set_auto_compaction", enabled },
+      () => {
+        this.status = { ...this.status, autoCompactionEnabled: enabled };
+        this.fire({ type: "status", status: this.status });
+      },
+      "设置自动压缩失败",
+    );
+  }
+
+  /**
+   * 配置类命令公共路径：client 校验 → send → await 后再次校验 client 身份
+   *（restart 竞态迟到响应丢弃）→ 成功回调应用本地状态；失败 notice。
+   */
+  private async applyConfigCommand(
+    command: ClientCommand,
+    apply: () => void,
+    failText: string,
+  ): Promise<void> {
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("warning", "pi 进程不可用");
+      return;
+    }
+    try {
+      await client.send(command);
+      if (this.client !== client) {
+        return;
+      }
+      apply();
+    } catch (err) {
+      if (this.client !== client) {
+        return;
+      }
+      this.notice("error", `${failText}：${(err as Error).message}`);
     }
   }
 

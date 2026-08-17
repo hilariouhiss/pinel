@@ -18,11 +18,23 @@
  *   cancelled 即放弃后续题目（与插件 walker 一致）
  * - get_commands 返回固定命令集（扩展/模板/技能三类，含 skill: 前缀名）；
  *   prompt 含 "CMDADD" 时向命令集追加一条命令（settle 后刷新可观察）
+ * - cycle_model：在 MODELS 间循环，响应 {model, thinkingLevel, isScoped}；
+ *   场景 SINGLE-MODEL 回 data:null（仅一个模型）、CYCLE-FAIL 回 success:false
+ * - cycle_thinking_level：在 THINKING_LEVELS 间循环，响应 {level}；
+ *   场景 NO-THINKING 回 data:null（模型不支持思考）
+ * - set_steering_mode / set_follow_up_mode / set_auto_compaction：写入内存态
+ *   （get_state 回读，保证“重启后配置恢复”可自动化验证）
+ * - 配置持久化：设 PINEL_FAKE_PI_STATE 时，配置内存态写入该文件并在启动时
+ *   恢复（模拟真实 pi 写 settings 的行为；不设则仅进程内存态）
  * - 环境变量 PINEL_FAKE_PI_SCENARIO 在进程启动时读取，作用于 get_state
  *   （首次 get_state 发生在任何 prompt 之前，prompt 子串标记机制不可用）：
  *   NULLMODEL-FIRST：前 2 次 get_state 返回 model:null，之后正常
  *   NULLMODEL-FOREVER：get_state 恒返回 model:null
  *   NOCOMMANDS：get_commands 回 success:false（模拟旧版 pi 未知命令）
+ *   SINGLE-MODEL：cycle_model 回 data:null（仅一个可用模型）
+ *   NO-THINKING：cycle_thinking_level 回 data:null（模型不支持思考）
+ *   CYCLE-FAIL：cycle_model 回 success:false（切换失败）
+ *   NOSTATE-FIELDS：get_state 不带配置三字段（模拟旧版 pi，客户端应保留默认值）
  * - 所有收到/发出的记录写入日志文件（PINEL_FAKE_PI_LOG 或系统临时目录）
  * - stdin EOF（父进程关闭管道）时退出：与真实 pi 的优雅退出路径一致，
  *   保证集成测试的 restart 流程不付 2.5s 优雅期等待
@@ -89,6 +101,71 @@ function respond(id, command, success, data, error) {
 
 const MODEL = { id: "fake-model", name: "Fake Model", provider: "fake" };
 
+/** 可用模型列表（cycle_model 循环；get_available_models 返回全量）。 */
+const MODELS = [
+  MODEL,
+  { id: "fake-model-b", name: "Fake Model B", provider: "fake" },
+];
+
+/** 思考等级循环表（cycle_thinking_level）。 */
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high"];
+
+/**
+ * 配置内存态：set_* / cycle_* 写入、get_state 回读。
+ * 设 PINEL_FAKE_PI_STATE 时持久化到该文件（模拟真实 pi 写 settings），
+ * 新进程启动时恢复——使“重启后配置恢复”可自动化验证。
+ */
+let currentModelIndex = 0;
+let currentThinkingLevel = "high";
+let steeringMode = "all";
+let followUpMode = "one-at-a-time";
+let autoCompactionEnabled = true;
+
+/** 配置持久化文件（env 指定；未设则仅内存态）。 */
+const STATE_PATH = process.env.PINEL_FAKE_PI_STATE || "";
+
+/** 启动时从状态文件恢复配置（真实 pi 的 settings 行为镜像）。 */
+function loadState() {
+  if (!STATE_PATH) {
+    return;
+  }
+  try {
+    const saved = JSON.parse(fs.readFileSync(STATE_PATH, "utf8"));
+    if (saved && typeof saved === "object") {
+      currentModelIndex = typeof saved.currentModelIndex === "number" ? saved.currentModelIndex : currentModelIndex;
+      currentThinkingLevel = typeof saved.currentThinkingLevel === "string" ? saved.currentThinkingLevel : currentThinkingLevel;
+      steeringMode = typeof saved.steeringMode === "string" ? saved.steeringMode : steeringMode;
+      followUpMode = typeof saved.followUpMode === "string" ? saved.followUpMode : followUpMode;
+      autoCompactionEnabled = typeof saved.autoCompactionEnabled === "boolean" ? saved.autoCompactionEnabled : autoCompactionEnabled;
+    }
+  } catch {
+    // 状态文件不存在/损坏：保持默认值
+  }
+}
+
+/** 每次配置变更后写入状态文件（真实 pi 的 settings 行为镜像）。 */
+function saveState() {
+  if (!STATE_PATH) {
+    return;
+  }
+  try {
+    fs.writeFileSync(
+      STATE_PATH,
+      JSON.stringify({
+        currentModelIndex,
+        currentThinkingLevel,
+        steeringMode,
+        followUpMode,
+        autoCompactionEnabled,
+      }),
+    );
+  } catch {
+    // 保存失败不影响协议
+  }
+}
+
+loadState();
+
 /** get_state 已响应次数（仅 NULLMODEL 场景统计）。 */
 let getStateCount = 0;
 
@@ -103,7 +180,7 @@ const baseCommands = [
 let cmdAdded = false;
 
 function stateData() {
-  let model = MODEL;
+  let model = MODELS[currentModelIndex];
   if (SCENARIO === "NULLMODEL-FOREVER") {
     getStateCount++;
     model = null;
@@ -113,13 +190,27 @@ function stateData() {
       model = null;
     }
   }
+  if (SCENARIO === "NOSTATE-FIELDS") {
+    // 模拟旧版 pi：get_state 不带配置三字段（客户端应保留默认值）
+    return {
+      model,
+      thinkingLevel: currentThinkingLevel,
+      isStreaming: false,
+      isCompacting: false,
+      sessionFile: "/fake/session.jsonl",
+      sessionId: "fake-session",
+      messageCount: messages.length,
+      pendingMessageCount: 0,
+    };
+  }
   return {
     model,
-    thinkingLevel: "high",
+    thinkingLevel: currentThinkingLevel,
     isStreaming: false,
     isCompacting: false,
-    steeringMode: "all",
-    followUpMode: "one-at-a-time",
+    steeringMode,
+    followUpMode,
+    autoCompactionEnabled,
     sessionFile: "/fake/session.jsonl",
     sessionId: "fake-session",
     messageCount: messages.length,
@@ -339,7 +430,58 @@ async function handleCommand(record) {
       break;
 
     case "get_available_models":
-      respond(id, "get_available_models", true, { models: [MODEL] });
+      respond(id, "get_available_models", true, { models: [...MODELS] });
+      break;
+
+    case "cycle_model": {
+      if (SCENARIO === "CYCLE-FAIL") {
+        respond(id, "cycle_model", false, undefined, "model switch failed");
+        break;
+      }
+      if (SCENARIO === "SINGLE-MODEL") {
+        // 仅一个可用模型：cycle_model 回 data:null（客户端应提示且状态不变）
+        respond(id, "cycle_model", true, null);
+        break;
+      }
+      currentModelIndex = (currentModelIndex + 1) % MODELS.length;
+      saveState();
+      respond(id, "cycle_model", true, {
+        model: MODELS[currentModelIndex],
+        thinkingLevel: currentThinkingLevel,
+        isScoped: false,
+      });
+      break;
+    }
+
+    case "cycle_thinking_level": {
+      if (SCENARIO === "NO-THINKING") {
+        // 模型不支持思考：回 data:null（客户端应提示且状态不变）
+        respond(id, "cycle_thinking_level", true, null);
+        break;
+      }
+      const idx = THINKING_LEVELS.indexOf(currentThinkingLevel);
+      currentThinkingLevel = THINKING_LEVELS[(idx + 1) % THINKING_LEVELS.length];
+      saveState();
+      respond(id, "cycle_thinking_level", true, { level: currentThinkingLevel });
+      break;
+    }
+
+    case "set_steering_mode":
+      steeringMode = record.mode;
+      saveState();
+      respond(id, "set_steering_mode", true);
+      break;
+
+    case "set_follow_up_mode":
+      followUpMode = record.mode;
+      saveState();
+      respond(id, "set_follow_up_mode", true);
+      break;
+
+    case "set_auto_compaction":
+      autoCompactionEnabled = Boolean(record.enabled);
+      saveState();
+      respond(id, "set_auto_compaction", true);
       break;
 
     case "get_commands":

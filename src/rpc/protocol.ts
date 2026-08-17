@@ -113,6 +113,29 @@ export interface GetAvailableModelsCommand {
   type: "get_available_models";
 }
 
+export interface CycleModelCommand {
+  type: "cycle_model";
+}
+
+export interface CycleThinkingLevelCommand {
+  type: "cycle_thinking_level";
+}
+
+export interface SetSteeringModeCommand {
+  type: "set_steering_mode";
+  mode: "all" | "one-at-a-time";
+}
+
+export interface SetFollowUpModeCommand {
+  type: "set_follow_up_mode";
+  mode: "all" | "one-at-a-time";
+}
+
+export interface SetAutoCompactionCommand {
+  type: "set_auto_compaction";
+  enabled: boolean;
+}
+
 export interface GetCommandsCommand {
   type: "get_commands";
 }
@@ -124,6 +147,11 @@ export type ClientCommand =
   | GetStateCommand
   | GetMessagesCommand
   | GetAvailableModelsCommand
+  | CycleModelCommand
+  | CycleThinkingLevelCommand
+  | SetSteeringModeCommand
+  | SetFollowUpModeCommand
+  | SetAutoCompactionCommand
   | GetCommandsCommand;
 
 // ---------------------------------------------------------------------------
@@ -152,6 +180,22 @@ export interface GetMessagesData {
 
 export interface GetAvailableModelsData {
   models: Model[];
+}
+
+/**
+ * cycle_model 响应（pi 切换模型时会重新锎制思考等级，需同步更新 thinkingLevel）。
+ * 仅一个可用模型时为 null（rpc-mode.js：cycleModel 返回 undefined → success+data:null）。
+ * isScoped：是否为项目 scoped 模型（类型预留，当前 UI 不渲染）。
+ */
+export interface CycleModelData {
+  model: Model;
+  thinkingLevel: string;
+  isScoped: boolean;
+}
+
+/** cycle_thinking_level 响应；模型不支持思考时为 null。 */
+export interface CycleThinkingLevelData {
+  level: string;
 }
 
 /**

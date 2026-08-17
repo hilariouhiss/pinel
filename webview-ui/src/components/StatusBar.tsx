@@ -3,9 +3,12 @@ import type { ChatStatus } from "../types";
 
 interface Props {
   status: ChatStatus;
+  /** 配置面板是否打开（aria-expanded）；点击模型/思考等级按钮触发。 */
+  configOpen: boolean;
+  onOpenConfig: () => void;
 }
 
-export function StatusBar({ status }: Props) {
+export function StatusBar({ status, configOpen, onOpenConfig }: Props) {
   const queueCount = status.steering.length + status.followUp.length;
   // 进程运行中但无模型：自愈已耗尽，警告态 + 重启按钮（由现有字段推导，不新增协议）
   const modelMissing = status.processState === "running" && status.model === null;
@@ -76,12 +79,28 @@ export function StatusBar({ status }: Props) {
 
   return (
     <div className="statusbar">
-      <span className="status-item" title="当前模型">
-        {modelLabel}
+      <span className="status-item">
+        <button
+          className="status-config-btn"
+          title="当前模型（点击打开配置面板）"
+          aria-haspopup="dialog"
+          aria-expanded={configOpen}
+          onClick={onOpenConfig}
+        >
+          {modelLabel}
+        </button>
       </span>
       {status.model && (
-        <span className="status-item" title="思考等级">
-          {status.thinkingLevel}
+        <span className="status-item">
+          <button
+            className="status-config-btn"
+            title="思考强度（点击打开配置面板）"
+            aria-haspopup="dialog"
+            aria-expanded={configOpen}
+            onClick={onOpenConfig}
+          >
+            {status.thinkingLevel}
+          </button>
         </span>
       )}
       {queueCount > 0 && (

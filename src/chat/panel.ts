@@ -41,6 +41,29 @@ interface WebviewQuestionnaireCancelMessage {
   type: "questionnaireCancel";
 }
 
+interface WebviewCycleModelMessage {
+  type: "cycleModel";
+}
+
+interface WebviewCycleThinkingMessage {
+  type: "cycleThinking";
+}
+
+interface WebviewSetSteeringModeMessage {
+  type: "setSteeringMode";
+  mode: "all" | "one-at-a-time";
+}
+
+interface WebviewSetFollowUpModeMessage {
+  type: "setFollowUpMode";
+  mode: "all" | "one-at-a-time";
+}
+
+interface WebviewSetAutoCompactionMessage {
+  type: "setAutoCompaction";
+  enabled: boolean;
+}
+
 type WebviewInMessage =
   | WebviewPromptMessage
   | WebviewAbortMessage
@@ -49,6 +72,11 @@ type WebviewInMessage =
   | WebviewQuestionnaireAnswerMessage
   | WebviewQuestionnaireConfirmMessage
   | WebviewQuestionnaireCancelMessage
+  | WebviewCycleModelMessage
+  | WebviewCycleThinkingMessage
+  | WebviewSetSteeringModeMessage
+  | WebviewSetFollowUpModeMessage
+  | WebviewSetAutoCompactionMessage
   | WebviewReadyMessage;
 
 /**
@@ -128,6 +156,21 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "questionnaireCancel":
         this.controller.handleQuestionnaireCancel();
+        break;
+      case "cycleModel":
+        void this.controller.cycleModel();
+        break;
+      case "cycleThinking":
+        void this.controller.cycleThinkingLevel();
+        break;
+      case "setSteeringMode":
+        void this.controller.setSteeringMode(msg.mode);
+        break;
+      case "setFollowUpMode":
+        void this.controller.setFollowUpMode(msg.mode);
+        break;
+      case "setAutoCompaction":
+        void this.controller.setAutoCompaction(msg.enabled);
         break;
     }
   }
