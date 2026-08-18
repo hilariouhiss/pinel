@@ -951,8 +951,11 @@ body {
 }
 
 /* ------------------------------------------------------------------ 配置面板 */
-/* 状态栏可点击按钮：继承 status-item 文本样式，仅加交互态 */
+/* 状态栏可点击按钮：继承 status-item 文本样式，仅加交互态；
+   flex 居中：消除 inline-block baseline 对齐机制差异（svg 图标按钮无文本基线会上移） */
 .status-config-btn {
+  display: flex;
+  align-items: center;
   background: none;
   border: none;
   padding: 0;
@@ -982,11 +985,12 @@ body {
   z-index: 90;
 }
 
-/* 面板：绝对定位锚在 .pinel-root（statusbar 上方右对齐）；不进 .pinel-scroll（防 overflow 裁剪） */
+/* 面板：绝对定位锚在 .pinel-root（相对整个侧边栏视口正中心）；不进 .pinel-scroll（防 overflow 裁剪） */
 .config-popover {
   position: absolute;
-  right: 8px;
-  bottom: 30px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   z-index: 100;
   width: min(320px, calc(100% - 16px));
   max-height: 70vh;
