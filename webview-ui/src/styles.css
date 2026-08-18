@@ -840,9 +840,9 @@ body {
 
 .composer-send,
 .composer-stop {
-  width: 30px;
-  /* 首行同高：= textarea 首行盒高（line-height 1.5×字号 + 上下 padding 14px + 边框 2px），
+  /* 正方形，边长 = 首行盒高（= textarea 首行盒高：line-height 1.5×字号 + 上下 padding 14px + 边框 2px），
      随 VS Code 字号自适应；输入框增长时按钮保持贴底（.composer-row 的 align-items:flex-end） */
+  width: calc(var(--vscode-font-size) * 1.5 + 16px);
   height: calc(var(--vscode-font-size) * 1.5 + 16px);
   /* 图标居中（SVG 为块级元素，不受文本 text-align 影响） */
   display: flex;

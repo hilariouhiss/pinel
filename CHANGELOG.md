@@ -26,6 +26,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 输入框改为单行起步（随输入换行增长，8 行封顶后内部滚动）；发送/停止按钮改为正方形（边长随 VS Code 字号自适应，与输入框首行同高）
 - 输入框 placeholder 改为「输入消息或 / 命令」（流式输出中仍显示队列提示）
 - 移除 `/settings` 命令触发设置面板的本地拦截：`/settings` 输入恢复为普通文本发送给模型；设置面板唯一入口为状态栏 ⚙ 设置按钮
 - 未打开文件夹时不再显示「pi 进程异常」，改为友好提示「⚠ 未打开文件夹」；打开文件夹后自动连接 pi

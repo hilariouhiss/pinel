@@ -223,7 +223,8 @@ export function Composer({ status, commands, popoverOpen = false }: Props) {
     e.preventDefault();
   };
 
-  const rows = Math.min(8, Math.max(2, text.split("\n").length));
+  // 起始 1 行（单行高度），随换行增长，上限 8 行封顶后内部滚动
+  const rows = Math.min(8, Math.max(1, text.split("\n").length));
 
   return (
     <div className="composer">
