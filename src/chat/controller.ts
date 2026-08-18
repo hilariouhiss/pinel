@@ -18,6 +18,7 @@ import {
   type RpcEvent,
   type RpcRecord,
   type SessionState,
+  type SessionSwitchData,
   type SlashCommand,
   type ToolExecutionEndEvent,
   type ToolExecutionStartEvent,
@@ -52,6 +53,8 @@ export interface ChatStatus {
   followUpMode: string;
   /** 自动压缩（set_auto_compaction），默认 true。 */
   autoCompactionEnabled: boolean;
+  /** 当前会话文件路径（get_state.sessionFile；会话历史列表高亮用）。 */
+  sessionFile?: string;
   error?: string;
   steering: string[];
   followUp: string[];
@@ -80,6 +83,8 @@ export type OutMessage =
   | { type: "thinkingLevels"; levels: string[] }
   | { type: "questionnaire"; questionnaire: QuestionnaireView }
   | { type: "questionnaireCleared" }
+  | { type: "sessionSwitching"; switching: boolean }
+  | { type: "sessionListChanged" }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
@@ -164,6 +169,8 @@ export class ChatController {
   private commands: SlashCommand[] = [];
   /** 活动问卷（ask_user_question；null=无问卷，对话框走逐卡路径）。 */
   private questionnaire: ActiveQuestionnaire | null = null;
+  /** 会话切换/新建 in-flight（防连点重入）。 */
+  private sessionSwitching = false;
 
   constructor(output: vscode.OutputChannel) {
     this.output = output;
@@ -299,7 +306,11 @@ export class ChatController {
     client.on("stderr", (line) => this.output.appendLine(line));
 
     try {
-      await client.start(command, this.workspaceRoot, process.env);
+      // 自定义会话目录（pinel.sessionDir）：透传给 pi（--session-dir），
+      // 会话历史视图用同一路径扫描（布局为 custom，无 cwd 子目录）
+      const configured = vscode.workspace.getConfiguration("pinel").get<string>("sessionDir")?.trim();
+      const extraArgs = configured ? ["--session-dir", configured] : undefined;
+      await client.start(command, this.workspaceRoot, process.env, extraArgs);
     } catch (err) {
       if (this.client === client) {
         this.handleSpawnError(err as Error);
@@ -480,6 +491,176 @@ export class ChatController {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // 会话历史（切换/新建）
+  // -------------------------------------------------------------------------
+
+  /**
+   * 切换到指定会话文件（会话历史列表选择）。
+   *
+   * 竞态防护（评审 B1 结论）：controller 的 agent_end 无条件替换 messages、
+   * 无代际过滤，旧流迟到事件会覆盖新会话快照——因此流程为
+   * 「abort + 清扫未决 UI → 等待 settle（5s 超时兜底）→ 再发切换命令」，
+   * settle 后旧流事件必已消费完。
+   */
+  async switchSession(sessionPath: string): Promise<void> {
+    if (this.sessionSwitching) {
+      return; // 防重入：切换/新建进行中忽略（在途操作 finally 自行复位）
+    }
+    if (!this.workspaceRoot) {
+      this.notice("warning", "请先打开一个文件夹，再使用 Pinel");
+      // HistoryApp 已本地乐观置位 switching：前置 return 必须补发复位，
+      // 否则历史面板永久卡「切换中」且后续点击被拦截（实测缺陷）
+      this.fire({ type: "sessionSwitching", switching: false });
+      return;
+    }
+    await this.ensureStarted();
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("error", "pi 进程不可用，请点击状态栏的“重启”");
+      this.fire({ type: "sessionSwitching", switching: false });
+      return;
+    }
+    this.sessionSwitching = true;
+    this.fire({ type: "sessionSwitching", switching: true });
+    try {
+      await this.prepareForSessionChange(client);
+      const data = await client.send<SessionSwitchData>({ type: "switch_session", sessionPath });
+      if (this.client !== client) {
+        return; // restart 竞态：丢弃迟到响应，不污染新进程状态
+      }
+      if (data?.cancelled) {
+        this.notice("info", "切换会话已取消");
+        return;
+      }
+      await this.afterSessionSwitch(client);
+    } catch (err) {
+      if (this.client === client) {
+        this.notice("error", `切换会话失败：${(err as Error).message}`);
+      }
+    } finally {
+      this.sessionSwitching = false;
+      this.fire({ type: "sessionSwitching", switching: false });
+    }
+  }
+
+  /** 新建会话（会话历史顶部按钮）。流程与 switchSession 一致。 */
+  async newSession(): Promise<void> {
+    if (this.sessionSwitching) {
+      return; // 防重入（在途操作 finally 自行复位）
+    }
+    if (!this.workspaceRoot) {
+      this.notice("warning", "请先打开一个文件夹，再使用 Pinel");
+      // 同 switchSession：前置 return 补发复位（HistoryApp 本地乐观置位兜底）
+      this.fire({ type: "sessionSwitching", switching: false });
+      return;
+    }
+    await this.ensureStarted();
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("error", "pi 进程不可用，请点击状态栏的“重启”");
+      this.fire({ type: "sessionSwitching", switching: false });
+      return;
+    }
+    this.sessionSwitching = true;
+    this.fire({ type: "sessionSwitching", switching: true });
+    try {
+      await this.prepareForSessionChange(client);
+      const data = await client.send<SessionSwitchData>({ type: "new_session" });
+      if (this.client !== client) {
+        return; // restart 竞态：丢弃迟到响应
+      }
+      if (data?.cancelled) {
+        this.notice("info", "新建会话已取消");
+        return;
+      }
+      await this.afterSessionSwitch(client);
+    } catch (err) {
+      if (this.client === client) {
+        this.notice("error", `新建会话失败：${(err as Error).message}`);
+      }
+    } finally {
+      this.sessionSwitching = false;
+      this.fire({ type: "sessionSwitching", switching: false });
+    }
+  }
+
+  /**
+   * 切换/新建前置：中断进行中的流 + 清扫未决对话框/问卷 + 等待 settle。
+   * baseline 必须在 abort 前捕获（abort 本身会触发 agent_settled）。
+   * 清扫理由：进程存活，未决 extension_ui_request 必须逐帧回 cancelled，
+   * 否则 agent 永久阻塞（AGENTS.md 既有契约；对话框阻塞期间不 settle）。
+   * 仅在有活动回合（流式/对话框/问卷）时等待 settle——否则 settled 计数
+   * 不前进，等待会白耗超时（无竞态风险：没有进行中的事件流）。
+   */
+  private async prepareForSessionChange(client: RpcClient): Promise<void> {
+    const hadActiveTurn = this.status.isStreaming || this.pendingUi.size > 0 || this.questionnaire !== null;
+    const baseline = this.settledCount;
+    if (this.status.isStreaming) {
+      await this.abort();
+    }
+    if (this.pendingUi.size > 0) {
+      for (const req of this.pendingUi.values()) {
+        client.writeRaw({ type: "extension_ui_response", id: req.id, cancelled: true });
+      }
+      this.pendingUi.clear();
+      this.fire({ type: "uiCleared" });
+    }
+    // 问卷缓冲帧同理由补 cancelled（插件问卷无 timeout，pi 侧不会自动解锁）
+    this.clearQuestionnaireWithCancels();
+    if (hadActiveTurn) {
+      await this.waitForSettledCount(baseline, 5000);
+    }
+  }
+
+  /**
+   * 切换/新建成功后：快照替换（消息 + 装配 + 工具卡片清空）+ 状态刷新 + 广播。
+   * get_messages 失败时兜底清空消息列表（避免旧会话消息以新会话身份残留）；
+   * get_state 回读刷新 sessionFile/sessionName（App 端按 sessionFile 变化
+   * 清空本地消息与工具卡片重渲染）。
+   */
+  private async afterSessionSwitch(client: RpcClient): Promise<void> {
+    this.partialAssembly = createAssembly();
+    this.partialBlocks = [];
+    this.tools.clear();
+    try {
+      const data = await client.send<GetMessagesData>({ type: "get_messages" });
+      if (this.client !== client) {
+        return;
+      }
+      this.messages = data.messages ?? [];
+    } catch (err) {
+      if (this.client === client) {
+        this.notice("warning", `获取会话消息失败：${(err as Error).message}`);
+        this.messages = [];
+      }
+    }
+    try {
+      const state = await client.send<SessionState>({ type: "get_state" });
+      if (this.client !== client) {
+        return;
+      }
+      this.applySessionState(state);
+    } catch (err) {
+      if (this.client === client) {
+        this.notice("warning", `会话状态回读失败：${(err as Error).message}`);
+      }
+    }
+    this.fireSnapshot();
+    this.fire({ type: "sessionListChanged" });
+  }
+
+  /** 等待 settled 计数前进且流停止（timeoutMs 超时兜底，超时继续不阻塞调用方）。 */
+  private async waitForSettledCount(baseline: number, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (this.settledCount > baseline && !this.status.isStreaming) {
+        return;
+      }
+      await sleep(100);
+    }
+  }
+
   /**
    * get_state 响应应用到本地状态（缺字段保留旧值，防御旧版 pi 的配置三字段缺失）。
    * 初始同步与切换后回读共用，保证字段合并逻辑一致。
@@ -498,6 +679,7 @@ export class ChatController {
           : this.status.autoCompactionEnabled,
       isStreaming: Boolean(state.isStreaming),
       isCompacting: Boolean(state.isCompacting),
+      sessionFile: typeof state.sessionFile === "string" ? state.sessionFile : this.status.sessionFile,
     };
     this.fire({ type: "status", status: this.status });
   }
@@ -808,6 +990,14 @@ export class ChatController {
         break;
 
       case "agent_end": {
+        // 会话代际防护（评审 B1）：settle 后迟到的旧流 agent_end（切换/abort
+        // 竞态乱序）必须丢弃——正常时序 agent_end 在 agent_settled 之前到达
+        //（isStreaming 仍为 true）；若已 settle（isStreaming=false）则事件
+        // 属于已终结回合，其 messages 快照会覆盖新会话消息。
+        // 权威消息列表由 settle 后的 get_messages 同步兜底。
+        if (!this.status.isStreaming) {
+          break;
+        }
         // 仅刷新消息列表；空闲判定以 agent_settled 为准
         if (Array.isArray(event.messages) && event.messages.length > 0) {
           this.messages = event.messages as AgentMessage[];
@@ -842,6 +1032,8 @@ export class ChatController {
         //（扩展可能在运行中注册新命令）
         void this.syncMessages();
         void this.fetchCommands();
+        // 会话数据可能已更新（名称/消息）：通知历史视图刷新（provider 内部节流）
+        this.fire({ type: "sessionListChanged" });
         break;
       }
 
@@ -870,6 +1062,11 @@ export class ChatController {
         break;
 
       case "message_end": {
+        // 同 agent_end 的代际防护：settle 后迟到的 message_end 丢弃
+        //（消息权威走 get_messages 快照）
+        if (!this.status.isStreaming) {
+          break;
+        }
         const msg = event.message as AgentMessage;
         if (msg.role === "user") {
           // pi 对用户消息也发 message_end：webview 已有乐观渲染的用户消息，

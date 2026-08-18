@@ -55,6 +55,13 @@
  *   SETMODEL-READBACKFAIL：set_model 成功后下一次 get_state 失败一次
  *   SETTHINK-CLAMP：set_thinking_level clamp（如 off → minimal）
  *   SETTHINK-FAIL：set_thinking_level 回 success:false（设置失败）
+ *   SWITCH-CANCEL：switch_session 回 data.cancelled:true（扩展钩子取消）
+ *   SWITCH-LATE-END：switch_session 正常响应后延迟 ~400ms 补发旧流的
+ *     agent_end（携带切换前旧消息）——模拟真实 pi 的异步乱序，验证客户端
+ *     settle 后迟到事件的代际防护（agent_end 在 isStreaming=false 时丢弃）
+ * - switch_session / new_session：默认行为（真实 pi 镜像）——switch_session
+ *   把当前会话文件回显为传入 sessionPath 并重置消息为 B 会话数据；
+ *   new_session 清空消息并生成新会话文件（get_state/get_messages 回读）
  * - 所有收到/发出的记录写入日志文件（PINEL_FAKE_PI_LOG 或系统临时目录）
  * - stdin EOF（父进程关闭管道）时退出：与真实 pi 的优雅退出路径一致，
  *   保证集成测试的 restart 流程不付 2.5s 优雅期等待
@@ -89,6 +96,20 @@ function out(record) {
 }
 
 let messages = [];
+
+/**
+ * 会话内存态：switch_session/new_session 修改、get_state/get_messages 回读。
+ * 默认会话与 stateData() 历史行为一致（/fake/session.jsonl）。
+ */
+let currentSessionFile = "/fake/session.jsonl";
+let currentSessionId = "fake-session";
+let newSessionCount = 0;
+
+/** B 会话数据（switch_session 后重置为的消息集合，与默认会话可区分）。 */
+const sessionBMessages = [
+  { role: "user", content: "B 会话的问题" },
+  { role: "assistant", content: [{ type: "text", text: "B 会话的回答" }] },
+];
 
 /**
  * 中断代际：每次 abort 自增。流在启动时记录当前代际，每个异步步骤后先检查
@@ -221,8 +242,8 @@ function stateData() {
       // 流式中回真实 streaming 状态（真实 pi 行为；客户端回读依赖它）
       isStreaming: streaming,
       isCompacting: false,
-      sessionFile: "/fake/session.jsonl",
-      sessionId: "fake-session",
+      sessionFile: currentSessionFile,
+      sessionId: currentSessionId,
       messageCount: messages.length,
       pendingMessageCount: 0,
     };
@@ -235,8 +256,8 @@ function stateData() {
     steeringMode,
     followUpMode,
     autoCompactionEnabled,
-    sessionFile: "/fake/session.jsonl",
-    sessionId: "fake-session",
+    sessionFile: currentSessionFile,
+    sessionId: currentSessionId,
     messageCount: messages.length,
     pendingMessageCount: 0,
   };
@@ -592,6 +613,37 @@ async function handleCommand(record) {
         respond(id, "get_commands", true, { commands: [...baseCommands, ...extra] });
       }
       break;
+
+    case "switch_session": {
+      if (SCENARIO === "SWITCH-CANCEL") {
+        // 扩展钩子取消切换：状态不变
+        respond(id, "switch_session", true, { cancelled: true });
+        break;
+      }
+      const sessionPath = String(record.sessionPath ?? "");
+      const oldMessages = [...messages];
+      currentSessionFile = sessionPath;
+      currentSessionId = "switched-session";
+      messages = sessionBMessages;
+      respond(id, "switch_session", true, { cancelled: false });
+      if (SCENARIO === "SWITCH-LATE-END") {
+        // 模拟真实 pi 的异步乱序：切换响应后延迟补发旧流的 agent_end
+        //（携带切换前旧消息）——验证客户端 settle 后迟到事件的代际防护
+        setTimeout(() => {
+          out({ type: "agent_end", messages: oldMessages, willRetry: false });
+        }, 400);
+      }
+      break;
+    }
+
+    case "new_session": {
+      newSessionCount++;
+      currentSessionFile = `/fake/session-new-${newSessionCount}.jsonl`;
+      currentSessionId = "new-session";
+      messages = [];
+      respond(id, "new_session", true, { cancelled: false });
+      break;
+    }
 
     case "prompt": {
       respond(id, "prompt", true);

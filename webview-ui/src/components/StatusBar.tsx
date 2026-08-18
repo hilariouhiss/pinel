@@ -3,9 +3,6 @@ import type { ChatStatus } from "../types";
 
 interface Props {
   status: ChatStatus;
-  /** ⚙ 设置面板是否打开（aria-expanded）；由设置按钮触发。 */
-  configOpen: boolean;
-  onOpenConfig: () => void;
   /** 模型/思考等级下拉列表是否打开（aria-expanded）；由各自按钮触发。 */
   modelListOpen: boolean;
   thinkingListOpen: boolean;
@@ -18,8 +15,6 @@ interface Props {
 
 export function StatusBar({
   status,
-  configOpen,
-  onOpenConfig,
   modelListOpen,
   thinkingListOpen,
   onOpenModelList,
@@ -129,17 +124,6 @@ export function StatusBar({
         </span>
       )}
       <span className="status-spacer" />
-      <span className="status-item">
-        <button
-          className="status-config-btn status-gear"
-          title="设置"
-          aria-haspopup="dialog"
-          aria-expanded={configOpen}
-          onClick={onOpenConfig}
-        >
-          ⚙
-        </button>
-      </span>
       {stateEl}
     </div>
   );

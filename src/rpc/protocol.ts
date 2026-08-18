@@ -157,6 +157,22 @@ export interface GetCommandsCommand {
   type: "get_commands";
 }
 
+/** 切换到指定会话文件（会话历史列表选择；可被 session_before_switch 扩展钩子取消）。 */
+export interface SwitchSessionCommand {
+  type: "switch_session";
+  sessionPath: string;
+}
+
+/** 新建会话（可被 session_before_switch 扩展钩子取消）。 */
+export interface NewSessionCommand {
+  type: "new_session";
+}
+
+/** switch_session/new_session 响应（data.cancelled：扩展钩子取消时 true）。 */
+export interface SessionSwitchData {
+  cancelled: boolean;
+}
+
 export type ClientCommand =
   | PromptCommand
   | SteerCommand
@@ -172,7 +188,9 @@ export type ClientCommand =
   | SetSteeringModeCommand
   | SetFollowUpModeCommand
   | SetAutoCompactionCommand
-  | GetCommandsCommand;
+  | GetCommandsCommand
+  | SwitchSessionCommand
+  | NewSessionCommand;
 
 // ---------------------------------------------------------------------------
 // 状态

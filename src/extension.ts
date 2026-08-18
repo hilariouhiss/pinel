@@ -1,15 +1,18 @@
 import * as vscode from "vscode";
 import { ChatController, type ChatStatus, type ToolCard } from "./chat/controller";
 import { ChatPanelProvider } from "./chat/panel";
+import { SessionHistoryProvider, revealChatView, type SessionListItem } from "./chat/session-history-provider";
 import type { AgentMessage, ExtensionUiRequest, Model, SlashCommand } from "./rpc/protocol";
 import type { TodoTask } from "./chat/todos";
 import type { QuestionnaireView } from "./chat/questionnaire";
 
-/** 事件记录（测试断言用）：notice / models / thinkingLevels。 */
+/** 事件记录（测试断言用）：notice / models / thinkingLevels / sessionSwitching。 */
 export interface TestEventLog {
   notices: Array<{ level: "info" | "warning" | "error"; text: string }>;
   lastModels: Model[] | undefined;
   lastThinkingLevels: string[] | undefined;
+  /** 最近一次会话切换状态广播（newSession/switchSession 复位断言）。 */
+  lastSessionSwitching: boolean | undefined;
 }
 
 /** 暴露给集成测试的钩子接口（通过扩展 exports 获取）。 */
@@ -38,6 +41,16 @@ export interface PinelTestApi {
   setAutoCompaction(enabled: boolean): Promise<void>;
   /** 重启 pi 进程（触发 ChatController.restart）。 */
   restart(): Promise<void>;
+  /** 切换到指定会话文件（会话历史列表选择）。 */
+  switchSession(sessionPath: string): Promise<void>;
+  /** 新建会话（会话历史顶部按钮）。 */
+  newSession(): Promise<void>;
+  /** 当前会话文件路径（get_state.sessionFile；切换/新建断言用）。 */
+  getCurrentSessionFile(): string | undefined;
+  /** 会话历史列表（最近一次扫描结果；测试断言，不依赖 DOM）。 */
+  getSessionList(): SessionListItem[];
+  /** 最近一次广播的当前会话文件（高亮断言）。 */
+  getLastCurrentSessionFile(): string | undefined;
   getStatus(): ChatStatus;
   getMessages(): AgentMessage[];
   getTools(): Map<string, ToolCard>;
@@ -91,6 +104,13 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     }),
   );
 
+  const historyProvider = new SessionHistoryProvider(context.extensionUri, ctrl);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(SessionHistoryProvider.viewType, historyProvider, {
+      webviewOptions: { retainContextWhenHidden: false },
+    }),
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand("pinel.openPanel", async () => {
       await ctrl.ensureStarted();
@@ -102,11 +122,20 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     vscode.commands.registerCommand("pinel.abort", () => ctrl.abort()),
   );
 
+  // 新会话（会话历史顶部按钮/命令面板）：新建成功后聊天视图已在次侧边栏显示
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pinel.newSession", async () => {
+      await ctrl.newSession();
+      await revealChatView();
+    }),
+  );
+
   // 测试事件记录：notice / models / thinkingLevels 环形缓冲（最近 100 条），
   // 供集成测试断言（UI 链路不可控，controller 事件即权威）。
   const notices: Array<{ level: "info" | "warning" | "error"; text: string }> = [];
   let lastModels: Model[] | undefined;
   let lastThinkingLevels: string[] | undefined;
+  let lastSessionSwitching: boolean | undefined;
   ctrl.onChange.event((msg) => {
     if (msg.type === "notice") {
       notices.push({ level: msg.level, text: msg.text });
@@ -117,6 +146,8 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       lastModels = msg.models;
     } else if (msg.type === "thinkingLevels") {
       lastThinkingLevels = msg.levels;
+    } else if (msg.type === "sessionSwitching") {
+      lastSessionSwitching = msg.switching;
     }
   });
 
@@ -136,6 +167,11 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     setFollowUpMode: (mode) => ctrl.setFollowUpMode(mode),
     setAutoCompaction: (enabled) => ctrl.setAutoCompaction(enabled),
     restart: () => ctrl.restart(),
+    switchSession: (sessionPath: string) => ctrl.switchSession(sessionPath),
+    newSession: () => ctrl.newSession(),
+    getCurrentSessionFile: () => ctrl.getStatus().sessionFile,
+    getSessionList: () => historyProvider.getLastList(),
+    getLastCurrentSessionFile: () => historyProvider.getLastCurrentSessionFile(),
     getStatus: () => ctrl.getStatus(),
     getMessages: () => ctrl.getMessages(),
     getTools: () => ctrl.getTools(),
@@ -155,6 +191,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       notices: [...notices],
       lastModels,
       lastThinkingLevels,
+      lastSessionSwitching,
     }),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {
       const deadline = Date.now() + timeoutMs;

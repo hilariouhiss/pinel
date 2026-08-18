@@ -18,6 +18,11 @@ export interface SpawnSpec {
   options: SpawnOptions;
 }
 
+/** 拼接进 shell 命令串的参数转义：含空白时加引号（cmd.exe / shell 模式）。 */
+function quoteIfNeeded(arg: string): string {
+  return /\s/.test(arg) ? `"${arg}"` : arg;
+}
+
 /**
  * 解析 pi 启动方式（Windows shim 处理）。
  *
@@ -44,9 +49,10 @@ export function resolveSpawnSpec(command: string, rpcArgs: string[], cwd: string
 
   if (looksLikePath && !fs.existsSync(command)) {
     // 完整命令字符串（含参数），交给 shell 执行——用于测试/自定义脚本场景。
-    // 注意：把 --mode rpc 拼入命令串（shell 模式不使用独立 args 数组）
+    // 注意：把 --mode rpc 拼入命令串（shell 模式不使用独立 args 数组）；
+    // 含空白的参数（如 --session-dir 的路径）加引号防解析破坏
     return {
-      cmd: `${command} ${rpcArgs.join(" ")}`,
+      cmd: `${command} ${rpcArgs.map(quoteIfNeeded).join(" ")}`,
       args: [],
       options: { cwd, shell: true, windowsHide: true },
     };
@@ -86,10 +92,11 @@ function specForExistingPath(filePath: string, rpcArgs: string[], cwd: string): 
     // - 必须用 windowsVerbatimArguments：Node 默认会用反斜杠转义参数中的引号，
     //   而 cmd.exe 不解析该转义，会导致整个命令串被当作命令名；
     // - /s /c 后整条命令用双重引号包裹（/s 会剥离首尾引号）；
-    // - cmd 路径用 ComSpec（反斜杠形式）；实测正斜杠路径会破坏 cmd 参数解析。
+    // - cmd 路径用 ComSpec（反斜杠形式）；实测正斜杠路径会破坏 cmd 参数解析；
+    // - 含空白的参数（--session-dir 路径）加引号防解析破坏
     return {
       cmd: process.env.ComSpec ?? "cmd.exe",
-      args: ["/d", "/s", "/c", `""${filePath}" ${rpcArgs.join(" ")}"`],
+      args: ["/d", "/s", "/c", `""${filePath}" ${rpcArgs.map(quoteIfNeeded).join(" ")}"`],
       options: { cwd, windowsHide: true, windowsVerbatimArguments: true },
     };
   }
@@ -141,14 +148,14 @@ export class RpcClient extends EventEmitter {
     return this.child?.pid;
   }
 
-  /** 启动子进程（重复调用前需先 stop）。 */
-  async start(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<void> {
+  /** 启动子进程（重复调用前需先 stop）。extraArgs 追加到 `--mode rpc` 之后。 */
+  async start(command: string, cwd: string, env: NodeJS.ProcessEnv, extraArgs?: string[]): Promise<void> {
     if (this.isRunning) {
       return;
     }
     this.stoppedIntentionally = false;
     this.decoder = new JsonlDecoder();
-    const spec = resolveSpawnSpec(command, ["--mode", "rpc"], cwd);
+    const spec = resolveSpawnSpec(command, ["--mode", "rpc", ...(extraArgs ?? [])], cwd);
     const options: SpawnOptions = { ...spec.options, env, stdio: ["pipe", "pipe", "pipe"] };
     if (!IS_WIN && !options.shell) {
       // POSIX：独立进程组，使 stop() 的负 PID 组 kill 生效（bash 工具子进程随组终止）

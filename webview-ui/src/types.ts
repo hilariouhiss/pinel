@@ -21,6 +21,8 @@ export interface ChatStatus {
   followUpMode: string;
   /** 自动压缩（set_auto_compaction），默认 true。 */
   autoCompactionEnabled: boolean;
+  /** 当前会话文件路径（get_state.sessionFile；会话历史高亮用）。 */
+  sessionFile?: string;
   error?: string;
   steering: string[];
   followUp: string[];
@@ -117,6 +119,17 @@ export interface QuestionnaireView {
   phase: QuestionnairePhase;
 }
 
+/** 会话列表项（宿主 SessionHistoryProvider 镜像）。 */
+export interface SessionListItem {
+  path: string;
+  id: string;
+  created?: number;
+  modified: number;
+  name?: string;
+  preview?: string;
+  truncated: boolean;
+}
+
 export type HostMessage =
   | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null }
   | { type: "stream"; blocks: StreamBlock[] }
@@ -132,6 +145,9 @@ export type HostMessage =
   | { type: "thinkingLevels"; levels: string[] }
   | { type: "questionnaire"; questionnaire: QuestionnaireView }
   | { type: "questionnaireCleared" }
+  | { type: "sessionSwitching"; switching: boolean }
+  | { type: "sessionListChanged" }
+  | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {

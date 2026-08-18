@@ -1084,4 +1084,215 @@ suite("Pinel 集成测试（假 pi）", () => {
     await api.setModel("fake", "fake-model");
     await waitFor(() => api.getStatus().model?.name === "Fake Model", 10000, "恢复默认模型");
   });
+
+  // ---------------------------------------------------------------------------
+  // 会话历史：列表扫描 / 切换 / 新建（假会话文件 + 临时 sessionDir）
+  // ---------------------------------------------------------------------------
+
+  /** 会话文件 header（假元信息）。 */
+  function sessionHeader(id: string, timestamp: string): string {
+    return JSON.stringify({ type: "session", version: 3, id, timestamp, cwd: "/fake/project" });
+  }
+
+  suite("会话历史：列表/切换/新建（假会话文件）", () => {
+    let sessionDir: string;
+    let sessionA: string;
+    let sessionB: string;
+    let sessionBroken: string;
+
+    suiteSetup(async function () {
+      this.timeout(120000);
+      // 临时会话目录（唯一路径防跨运行污染）+ 假会话文件
+      sessionDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pinel-session-dir-"));
+      sessionA = path.join(sessionDir, "2026-08-17T01-00-00-000Z_aaaa.jsonl");
+      sessionB = path.join(sessionDir, "2026-08-18T01-00-00-000Z_bbbb.jsonl");
+      sessionBroken = path.join(sessionDir, "2026-08-16T01-00-00-000Z_cccc.jsonl");
+      await fs.promises.writeFile(
+        sessionA,
+        [
+          sessionHeader("session-a", "2026-08-17T01:00:00.000Z"),
+          JSON.stringify({
+            type: "session_info",
+            id: "a1",
+            parentId: null,
+            timestamp: "2026-08-17T01:01:00.000Z",
+            name: "重构认证模块",
+          }),
+          JSON.stringify({
+            type: "message",
+            id: "a2",
+            parentId: null,
+            timestamp: "2026-08-17T01:02:00.000Z",
+            message: { role: "user", content: "帮我重构认证模块" },
+          }),
+        ].join("\n"),
+      );
+      await fs.promises.writeFile(
+        sessionB,
+        [
+          sessionHeader("session-b", "2026-08-18T01:00:00.000Z"),
+          JSON.stringify({
+            type: "message",
+            id: "b1",
+            parentId: null,
+            timestamp: "2026-08-18T01:02:00.000Z",
+            message: {
+              role: "user",
+              content: [
+                { type: "image", data: "x", mimeType: "image/png" },
+                { type: "text", text: "看图说话" },
+              ],
+            },
+          }),
+        ].join("\n"),
+      );
+      await fs.promises.writeFile(sessionBroken, "{broken header");
+      // mtime 排序控制：B 最新、A 次之（损坏文件本就跳过）
+      const now = Date.now();
+      await fs.promises.utimes(sessionB, new Date(now), new Date(now));
+      await fs.promises.utimes(sessionA, new Date(now - 60_000), new Date(now - 60_000));
+
+      // 配置扩展扫描自定义会话目录（fake-pi 忽略 --session-dir 参数，无影响）。
+      // 注意：config.update 的 thenable 在主进程持久化完成时 resolve，扩展宿主
+      // 的配置缓存经 IPC 广播刷新（onDidChangeConfiguration）——立即 focus 会
+      // 读到旧缓存导致扫默认目录。轮询值验证（验证的正是 provider 依赖的
+      // 确切条件，无事件先于监听注册发出而落空的死角）。
+      const config = vscode.workspace.getConfiguration("pinel");
+      await config.update("sessionDir", sessionDir, vscode.ConfigurationTarget.Global);
+      await waitFor(
+        () => vscode.workspace.getConfiguration("pinel").get<string>("sessionDir") === sessionDir,
+        5000,
+        "sessionDir 配置传播到扩展宿主",
+      );
+      // 打开历史视图触发 provider resolve + 首次扫描
+      await vscode.commands.executeCommand("pinel.sessionHistory.focus");
+    });
+
+    suiteTeardown(async () => {
+      const config = vscode.workspace.getConfiguration("pinel");
+      await config.update("sessionDir", "", vscode.ConfigurationTarget.Global);
+      await fs.promises.rm(sessionDir, { recursive: true, force: true });
+    });
+
+    test("列表送达：扫描自定义目录 + mtime 排序 + 元信息 + 损坏文件跳过", async () => {
+      await waitFor(() => api.getSessionList().length >= 2, 10000, "历史列表送达");
+      const list = api.getSessionList();
+      assert.strictEqual(list[0].path, sessionB, "mtime 最新在前");
+      assert.strictEqual(list[1].path, sessionA);
+      assert.ok(!list.some((i) => i.path === sessionBroken), "损坏文件必须跳过");
+      const a = list.find((i) => i.path === sessionA);
+      assert.strictEqual(a?.name, "重构认证模块", "session_info 名称解析");
+      assert.ok(a?.preview?.includes("帮我重构认证模块"), "首条 user 消息预览");
+      assert.ok(a?.truncated === false, "短文件不标记 truncated");
+      const b = list.find((i) => i.path === sessionB);
+      assert.ok(b?.preview?.includes("看图说话"), "数组形态 content 提取");
+    });
+
+    test("切换会话：switch_session 送达 + 消息替换 + 高亮更新", async function () {
+      this.timeout(60000);
+      // 制造默认会话消息（切换后应被替换为 fake-pi 的 B 会话数据）
+      const baseline = api.getSettledCount();
+      await api.sendPrompt(`SWITCHME-${Date.now()}`);
+      await api.waitForSettled(30000, baseline);
+      assert.ok(api.getMessages().length >= 2, "默认会话必须有消息");
+
+      await api.switchSession(sessionA);
+      await waitFor(() => api.getCurrentSessionFile() === sessionA, 10000, "切换后 sessionFile 回显");
+      // 消息替换为 B 会话数据（非旧会话残留）
+      const msgs = api.getMessages();
+      assert.strictEqual(msgs.length, 2, "B 会话消息条数");
+      assert.strictEqual(msgs[0].content, "B 会话的问题", "B 会话首条消息");
+      // 高亮：provider 广播的当前会话文件指向 sessionA
+      await waitFor(() => api.getLastCurrentSessionFile() === sessionA, 10000, "高亮更新");
+      // 命令送达（fake-pi 日志跨测试累积，取最近一条 switch_session 断言 sessionPath）
+      const records = readFakePiLog(logPath);
+      const switches = records.filter((r) => {
+        const rec = r.record as { dir?: string; record?: { type?: string; sessionPath?: string } } | undefined;
+        return rec?.dir === "in" && rec?.record?.type === "switch_session" && rec?.record?.sessionPath === sessionA;
+      });
+      assert.ok(switches.length >= 1, "switch_session 必须携带 sessionPath");
+    });
+
+    test("新建会话：new_session 送达 + 消息清空 + 新会话文件", async function () {
+      this.timeout(60000);
+      // 当前可能是前序测试切换后的 B 会话：直接制造新消息再新建
+      const baseline = api.getSettledCount();
+      await api.sendPrompt(`NEWME-${Date.now()}`);
+      await api.waitForSettled(30000, baseline);
+      assert.ok(api.getMessages().length > 0, "新建前必须有消息");
+      const oldFile = api.getCurrentSessionFile();
+
+      await api.newSession();
+      await waitFor(
+        () => api.getCurrentSessionFile() !== undefined && api.getCurrentSessionFile() !== oldFile,
+        10000,
+        "新会话文件生成",
+      );
+      assert.deepStrictEqual(api.getMessages(), [], "新建后消息清空");
+      // 切换状态复位断言：主流程 finally 必发 sessionSwitching:false
+      //（HistoryApp 本地乐观置位依赖宿主复位，否则历史面板卡「切换中」）
+      assert.strictEqual(api.getTestEventLog().lastSessionSwitching, false, "新建后必须广播 switching:false");
+      const records = readFakePiLog(logPath);
+      const news = logRecordsWith(records, "in", "new_session");
+      assert.ok(news.length >= 1, "new_session 命令送达");
+    });
+
+    test("SWITCH-CANCEL：切换被取消 → 状态保持 + info notice", async function () {
+      this.timeout(60000);
+      process.env.PINEL_FAKE_PI_SCENARIO = "SWITCH-CANCEL";
+      try {
+        await api.restart();
+        await waitFor(
+          () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+          30000,
+          "SWITCH-CANCEL 场景启动",
+        );
+        const baseline = api.getSettledCount();
+        await api.sendPrompt(`CANCELME-${Date.now()}`);
+        await api.waitForSettled(30000, baseline);
+        const beforeCount = api.getMessages().length;
+        const beforeFile = api.getCurrentSessionFile();
+
+        await api.switchSession(sessionA);
+        // cancelled：命令往返已完成，状态必须保持
+        assert.strictEqual(api.getCurrentSessionFile(), beforeFile, "取消后会话不得切换");
+        assert.strictEqual(api.getMessages().length, beforeCount, "取消后消息不得替换");
+        const log = api.getTestEventLog();
+        assert.ok(
+          log.notices.some((n) => n.text.includes("切换会话已取消")),
+          "必须弹出取消提示",
+        );
+      } finally {
+        await restoreDefaultScenario();
+      }
+    });
+
+    test("SWITCH-LATE-END：切换后迟到的旧流 agent_end 不污染新会话", async function () {
+      this.timeout(60000);
+      process.env.PINEL_FAKE_PI_SCENARIO = "SWITCH-LATE-END";
+      try {
+        await api.restart();
+        await waitFor(
+          () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+          30000,
+          "SWITCH-LATE-END 场景启动",
+        );
+        // 制造消息（旧流快照非空才有污染风险）
+        const baseline = api.getSettledCount();
+        await api.sendPrompt(`LATEEND-${Date.now()}`);
+        await api.waitForSettled(30000, baseline);
+        assert.ok(api.getMessages().length >= 2, "旧会话必须有消息");
+
+        await api.switchSession(sessionA);
+        await waitFor(() => api.getCurrentSessionFile() === sessionA, 10000, "切换完成");
+        // 等待 fake-pi 延迟 400ms 补发的旧 agent_end 到达并被防护丢弃
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        const msgs = api.getMessages();
+        assert.strictEqual(msgs.length, 2, "迟到 agent_end 不得覆盖为旧消息");
+        assert.strictEqual(msgs[0].content, "B 会话的问题", "消息保持 B 会话数据");
+      } finally {
+        await restoreDefaultScenario();
+      }
+    });
+  });
 });

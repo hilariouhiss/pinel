@@ -13,7 +13,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:pinel.chatView"
+    "onView:pinel.chatView",
+    "onView:pinel.sessionHistory"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -27,6 +28,11 @@
         "command": "pinel.abort",
         "title": "Pinel: 中断当前操作",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "pinel.newSession",
+        "title": "Pinel: 新会话",
+        "icon": "$(add)"
       }
     ],
     "viewsContainers": {
@@ -36,10 +42,25 @@
           "title": "Pinel",
           "icon": "media/pinel-icon.svg"
         }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "pinel-chat",
+          "title": "Pinel",
+          "icon": "media/pinel-icon.svg"
+        }
       ]
     },
     "views": {
       "pinel": [
+        {
+          "type": "webview",
+          "id": "pinel.sessionHistory",
+          "name": "会话历史",
+          "icon": "media/pinel-icon.svg"
+        }
+      ],
+      "pinel-chat": [
         {
           "type": "webview",
           "id": "pinel.chatView",
@@ -55,6 +76,11 @@
           "type": "string",
           "default": "",
           "markdownDescription": "pi CLI 可执行文件路径（留空则自动在 PATH 中查找）。例如 `C:/Users/you/AppData/Roaming/npm/pi.cmd`。修改后需重新加载窗口生效。"
+        },
+        "pinel.sessionDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "pi 会话存储目录（留空则使用 pi 默认 `~/.pi/agent/sessions/`）。自定义目录下会话文件直接存放（不按工作目录分子目录），会话历史列表也扫描此目录。"
         }
       }
     }

@@ -127,7 +127,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "media")],
     };
-    webviewView.webview.html = getHtml(webviewView.webview, this.extensionUri);
+    webviewView.webview.html = getPanelHtml(webviewView.webview, this.extensionUri, "chat");
 
     webviewView.webview.onDidReceiveMessage((msg: WebviewInMessage) => this.handleMessage(msg));
 
@@ -211,7 +211,13 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   }
 }
 
-function getHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
+/**
+ * 共享 webview HTML（聊天/会话历史双视图）。
+ * - body data-pinel-view 标记视图类型，webview bundle 挂载时按此分支渲染
+ * - 内联 #boot-loader 主题化加载动画（webview 挂载前防空白闪烁，
+ *   React 挂载后移除）；颜色用 VS Code 主题 CSS 变量随主题变化
+ */
+export function getPanelHtml(webview: vscode.Webview, extensionUri: vscode.Uri, view: "chat" | "history"): string {
   const nonce = getNonce();
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "webview.js"));
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "webview.css"));
@@ -233,8 +239,23 @@ function getHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="${styleUri}" />
   <title>Pinel</title>
+  <style>
+    #boot-loader {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--vscode-editor-background);
+    }
+    #boot-loader .boot-spinner {
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 3px solid var(--vscode-editorWidget-background);
+      border-top-color: var(--vscode-progressBar-background);
+      animation: boot-spin 0.8s linear infinite;
+    }
+    @keyframes boot-spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
-<body>
+<body data-pinel-view="${view}">
+  <div id="boot-loader"><div class="boot-spinner"></div></div>
   <div id="root"></div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>

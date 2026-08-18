@@ -16,6 +16,8 @@ interface Props {
   commands: SlashCommand[];
   /** 配置面板打开时：Esc 让位给面板关闭，不触发中断/清空（双保险，面板侧 capture 已拦截）。 */
   popoverOpen?: boolean;
+  /** 输入 /settings 回车触发（pinel 本地命令：打开设置面板，不发送给模型）。 */
+  onSettings?: () => void;
 }
 
 /** 来源徽标（中文标签）；未知来源兜底"其他"（pi 未来可能新增 source）。 */
@@ -58,7 +60,7 @@ async function compressImage(
 
 let attachmentSeq = 0;
 
-export function Composer({ status, commands, popoverOpen = false }: Props) {
+export function Composer({ status, commands, popoverOpen = false, onSettings }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const busy = status.isStreaming || status.isCompacting;
@@ -116,6 +118,14 @@ export function Composer({ status, commands, popoverOpen = false }: Props) {
 
   const send = () => {
     const trimmed = text.trim();
+    // pinel 本地命令 /settings：不发送给模型（实证：RPC 模式下 /settings 是
+    // pi 内置 TUI 命令，发送会被当作普通文本给模型），改为打开设置面板
+    if (trimmed === "/settings") {
+      onSettings?.();
+      setText("");
+      setAttachments([]);
+      return;
+    }
     if (!trimmed && attachments.length === 0) {
       return;
     }

@@ -54,6 +54,10 @@ export default function App() {
   /** 列表锚定：状态栏按钮元素引用（ListPopover 定位/焦点还原依赖）。 */
   const modelBtnRef = useRef<HTMLButtonElement>(null);
   const thinkingBtnRef = useRef<HTMLButtonElement>(null);
+  /** 当前会话文件（快照替换语义：会话变化时清空本地 tools）。 */
+  const sessionFileRef = useRef<string | undefined>(undefined);
+  /** 会话切换/新建进行中（切换遮罩）。 */
+  const [switching, setSwitching] = useState(false);
   /** 新对话框卡片 id：到达时强制滚动+聚焦（快照重放不触发）。 */
   const [focusDialogId, setFocusDialogId] = useState<string | null>(null);
   /** 问卷推送版本：每次收到 questionnaire 消息（非快照）自增，驱动问卷重新聚焦。 */
@@ -66,6 +70,12 @@ export default function App() {
     const msg = event.data;
     switch (msg.type) {
       case "snapshot":
+        // 快照替换语义：会话文件变化（切换/新建/重启后）→ 清空本地工具卡片
+        //（旧 toolCallId 可能在新会话同 id 消息上错配工具卡片）
+        if (msg.status.sessionFile !== sessionFileRef.current) {
+          setTools({});
+          sessionFileRef.current = msg.status.sessionFile;
+        }
         setMessages(msg.messages);
         setStreamBlocks([]);
         setStatus(msg.status);
@@ -128,6 +138,15 @@ export default function App() {
       case "questionnaireCleared":
         setQuestionnaire(null);
         break;
+      case "sessionSwitching":
+        setSwitching(msg.switching);
+        if (msg.switching) {
+          setPopover(null); // 切换期间关闭弹窗（互斥枚举置空）
+        }
+        break;
+      case "sessionListChanged":
+        // 仅会话历史视图消费；聊天视图忽略
+        break;
       case "notice": {
         const id = ++noticeSeq;
         setNotices((prev) => [...prev, { id, level: msg.level, text: msg.text }]);
@@ -185,6 +204,11 @@ export default function App() {
 
   const hasConversation = messages.length > 0 || streamBlocks.length > 0;
 
+  // 启动动画（阶段 2）：pi 启动/重启期间且无会话内容；error（错误横幅）与
+  // no-workspace（引导文案）态有各自 UI，不覆盖
+  const showBootAnimation =
+    !hasConversation && (status.processState === "starting" || status.processState === "stopped");
+
   // 模型列表：点击时拉取（每次点击重新请求，保证与 pi 配置同步）
   const openModelList = () => {
     setPopover((prev) => (prev === "model" ? null : "model")); // 已开则关闭（toggle）
@@ -226,6 +250,18 @@ export default function App() {
   return (
     <div className="pinel-root">
       <Notices notices={notices} onDismiss={dismissNotice} />
+      {showBootAnimation && (
+        <div className="session-boot-overlay">
+          <div className="boot-spinner" />
+          <div className="session-boot-text">正在启动 Pi…</div>
+        </div>
+      )}
+      {switching && (
+        <div className="session-switch-overlay">
+          <div className="boot-spinner" />
+          <div className="session-boot-text">正在切换会话…</div>
+        </div>
+      )}
       <div className="pinel-scroll" ref={scrollRef} onScroll={onScroll}>
         {!hasConversation && (
           <div className="pinel-empty">
@@ -252,11 +288,14 @@ export default function App() {
         {questionnaire && <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />}
       </div>
       {todos.length > 0 && <TodoPanel todos={todos} />}
-      <Composer status={status} commands={commands} popoverOpen={popover !== null} />
+      <Composer
+        status={status}
+        commands={commands}
+        popoverOpen={popover !== null}
+        onSettings={openConfig}
+      />
       <StatusBar
         status={status}
-        configOpen={popover === "config"}
-        onOpenConfig={openConfig}
         modelListOpen={popover === "model"}
         thinkingListOpen={popover === "thinking"}
         onOpenModelList={openModelList}
