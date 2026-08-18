@@ -62,6 +62,10 @@ export default function App() {
   const [focusDialogId, setFocusDialogId] = useState<string | null>(null);
   /** 问卷推送版本：每次收到 questionnaire 消息（非快照）自增，驱动问卷重新聚焦。 */
   const [qnaFocusVersion, setQnaFocusVersion] = useState(0);
+  /** Ctrl+G 编辑器保存回填（seq 递增驱动 Composer 重复回填）。 */
+  const [fill, setFill] = useState<{ seq: number; text: string }>({ seq: 0, text: "" });
+  /** Ctrl+G 命令触发版本（宿主 pinel.editPrompt 命令广播；webview 取输入内容发起编辑）。 */
+  const [editPromptTrigger, setEditPromptTrigger] = useState(0);
   const [notices, setNotices] = useState<Array<{ id: number; level: string; text: string }>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -146,6 +150,12 @@ export default function App() {
         break;
       case "sessionListChanged":
         // 仅会话历史视图消费；聊天视图忽略
+        break;
+      case "triggerEditPrompt":
+        setEditPromptTrigger((v) => v + 1);
+        break;
+      case "fillPrompt":
+        setFill((prev) => ({ seq: prev.seq + 1, text: msg.text }));
         break;
       case "notice": {
         const id = ++noticeSeq;
@@ -288,7 +298,13 @@ export default function App() {
         {questionnaire && <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />}
       </div>
       {todos.length > 0 && <TodoPanel todos={todos} />}
-      <Composer status={status} commands={commands} popoverOpen={popover !== null} />
+      <Composer
+        status={status}
+        commands={commands}
+        popoverOpen={popover !== null}
+        fill={fill}
+        editPromptTrigger={editPromptTrigger}
+      />
       <StatusBar
         status={status}
         modelListOpen={popover === "model"}

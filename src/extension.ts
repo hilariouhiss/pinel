@@ -6,13 +6,15 @@ import type { AgentMessage, ExtensionUiRequest, Model, SlashCommand } from "./rp
 import type { TodoTask } from "./chat/todos";
 import type { QuestionnaireView } from "./chat/questionnaire";
 
-/** 事件记录（测试断言用）：notice / models / thinkingLevels / sessionSwitching。 */
+/** 事件记录（测试断言用）：notice / models / thinkingLevels / sessionSwitching / fillPrompt。 */
 export interface TestEventLog {
   notices: Array<{ level: "info" | "warning" | "error"; text: string }>;
   lastModels: Model[] | undefined;
   lastThinkingLevels: string[] | undefined;
   /** 最近一次会话切换状态广播（newSession/switchSession 复位断言）。 */
   lastSessionSwitching: boolean | undefined;
+  /** 最近一次提示词编辑器保存回填（fillPrompt 广播）。 */
+  lastFillPrompt: string | undefined;
 }
 
 /** 暴露给集成测试的钩子接口（通过扩展 exports 获取）。 */
@@ -41,6 +43,10 @@ export interface PinelTestApi {
   setAutoCompaction(enabled: boolean): Promise<void>;
   /** 重启 pi 进程（触发 ChatController.restart）。 */
   restart(): Promise<void>;
+  /** Ctrl+G 提示词编辑：以 text 为初始内容打开 VS Code 编辑器（await 编辑器就绪）。 */
+  editPrompt(text: string): Promise<void>;
+  /** 当前待决提示词临时文件路径（未编辑/已清理为 undefined）。 */
+  getPendingPromptUriPath(): string | undefined;
   /** 切换到指定会话文件（会话历史列表选择）。 */
   switchSession(sessionPath: string): Promise<void>;
   /** 新建会话（会话历史顶部按钮）。 */
@@ -130,12 +136,19 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     }),
   );
 
+  // Ctrl+G 提示词编辑命令（keybinding when: pinel.inputFocused 限定输入框聚焦）：
+  // 通知 webview 取当前输入内容并回发 editPrompt（宿主不维护输入状态）
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pinel.editPrompt", () => ctrl.triggerEditPrompt()),
+  );
+
   // 测试事件记录：notice / models / thinkingLevels 环形缓冲（最近 100 条），
   // 供集成测试断言（UI 链路不可控，controller 事件即权威）。
   const notices: Array<{ level: "info" | "warning" | "error"; text: string }> = [];
   let lastModels: Model[] | undefined;
   let lastThinkingLevels: string[] | undefined;
   let lastSessionSwitching: boolean | undefined;
+  let lastFillPrompt: string | undefined;
   ctrl.onChange.event((msg) => {
     if (msg.type === "notice") {
       notices.push({ level: msg.level, text: msg.text });
@@ -148,6 +161,8 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       lastThinkingLevels = msg.levels;
     } else if (msg.type === "sessionSwitching") {
       lastSessionSwitching = msg.switching;
+    } else if (msg.type === "fillPrompt") {
+      lastFillPrompt = msg.text;
     }
   });
 
@@ -167,6 +182,8 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     setFollowUpMode: (mode) => ctrl.setFollowUpMode(mode),
     setAutoCompaction: (enabled) => ctrl.setAutoCompaction(enabled),
     restart: () => ctrl.restart(),
+    editPrompt: (text: string) => ctrl.editPrompt(text),
+    getPendingPromptUriPath: () => ctrl.getPendingPromptUri()?.fsPath,
     switchSession: (sessionPath: string) => ctrl.switchSession(sessionPath),
     newSession: () => ctrl.newSession(),
     getCurrentSessionFile: () => ctrl.getStatus().sessionFile,
@@ -192,6 +209,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       lastModels,
       lastThinkingLevels,
       lastSessionSwitching,
+      lastFillPrompt,
     }),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {
       const deadline = Date.now() + timeoutMs;

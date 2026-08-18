@@ -33,6 +33,17 @@
         "command": "pinel.newSession",
         "title": "Pinel: 新会话",
         "icon": "$(add)"
+      },
+      {
+        "command": "pinel.editPrompt",
+        "title": "Pinel: 在编辑器中编辑提示词"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "pinel.editPrompt",
+        "key": "ctrl+g",
+        "when": "pinel.inputFocused"
       }
     ],
     "viewsContainers": {

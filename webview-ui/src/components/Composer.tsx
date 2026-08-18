@@ -19,6 +19,10 @@ interface Props {
   commands: SlashCommand[];
   /** 配置面板打开时：Esc 让位给面板关闭，不触发中断/清空（双保险，面板侧 capture 已拦截）。 */
   popoverOpen?: boolean;
+  /** Ctrl+G 编辑器保存回填（seq 驱动重复回填）。 */
+  fill?: { seq: number; text: string };
+  /** Ctrl+G 命令触发版本（每次递增：webview 取当前输入内容发起编辑）。 */
+  editPromptTrigger?: number;
 }
 
 /** 来源徽标（中文标签）；未知来源兜底"其他"（pi 未来可能新增 source）。 */
@@ -61,7 +65,7 @@ async function compressImage(
 
 let attachmentSeq = 0;
 
-export function Composer({ status, commands, popoverOpen = false }: Props) {
+export function Composer({ status, commands, popoverOpen = false, fill, editPromptTrigger = 0 }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const busy = status.isStreaming || status.isCompacting;
@@ -69,6 +73,8 @@ export function Composer({ status, commands, popoverOpen = false }: Props) {
   const [suggestDismissed, setSuggestDismissed] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** 当前输入文本引用（Ctrl+G 触发 effect 需最新值，避免绑定 text 依赖重复触发）。 */
+  const textRef = useRef("");
   /** 候选弹窗容器（滚动同步用）。 */
   const suggestRef = useRef<HTMLDivElement>(null);
   /** 接受补全后把光标置于文本末尾（受控 setState 后需显式设置选区）。 */
@@ -109,6 +115,29 @@ export function Composer({ status, commands, popoverOpen = false }: Props) {
       ta.setSelectionRange(ta.value.length, ta.value.length);
     }
   }, [text]);
+
+  // 当前输入文本同步到 ref（Ctrl+G 触发 effect 读最新值）
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
+
+  // Ctrl+G 命令触发（keybinding when: pinel.inputFocused 已限定输入框聚焦）：
+  // 取当前输入内容发起编辑（宿主不维护输入状态，内容必须往返）
+  useEffect(() => {
+    if (editPromptTrigger === 0) {
+      return;
+    }
+    vscode.postMessage({ type: "editPrompt", text: textRef.current });
+  }, [editPromptTrigger]);
+
+  // 编辑器保存回填：替换输入内容（caretAtEnd 效果负责聚焦+光标末尾）
+  useEffect(() => {
+    if (!fill || fill.seq === 0) {
+      return;
+    }
+    setText(fill.text);
+    caretAtEnd.current = true;
+  }, [fill?.seq]);
 
   const accept = (cmd: SlashCommand) => {
     // 插入 /命令 + 尾部空格，留在输入框继续编辑（首词仍在输入中，直接整体替换）
@@ -282,6 +311,8 @@ export function Composer({ status, commands, popoverOpen = false }: Props) {
           }}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
+          onFocus={() => vscode.postMessage({ type: "inputFocus", focused: true })}
+          onBlur={() => vscode.postMessage({ type: "inputFocus", focused: false })}
         />
         {busy ? (
           <button

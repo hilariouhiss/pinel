@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { RpcClient } from "../rpc/client";
+import { PromptEditorManager } from "./prompt-editor";
 import {
   DIALOG_UI_METHODS,
   type AgentMessage,
@@ -85,6 +86,8 @@ export type OutMessage =
   | { type: "questionnaireCleared" }
   | { type: "sessionSwitching"; switching: boolean }
   | { type: "sessionListChanged" }
+  | { type: "triggerEditPrompt" }
+  | { type: "fillPrompt"; text: string }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
@@ -171,9 +174,13 @@ export class ChatController {
   private questionnaire: ActiveQuestionnaire | null = null;
   /** 会话切换/新建 in-flight（防连点重入）。 */
   private sessionSwitching = false;
+  /** 提示词编辑器管理（Ctrl+G：VS Code 原生编辑器编辑提示词并回填）。 */
+  private promptEditor: PromptEditorManager;
 
   constructor(output: vscode.OutputChannel) {
     this.output = output;
+    // 保存回填：临时文件保存 → 内容广播回输入框（fillPrompt）
+    this.promptEditor = new PromptEditorManager((text) => this.fire({ type: "fillPrompt", text }));
     // 未打开文件夹时提示用户；打开文件夹后自动连接
     this.workspaceWatcher = vscode.workspace.onDidChangeWorkspaceFolders(() => {
       if (this.status.processState === "no-workspace" && vscode.workspace.workspaceFolders?.length) {
@@ -432,6 +439,7 @@ export class ChatController {
       await client.stop();
     }
     this.workspaceWatcher.dispose();
+    this.promptEditor.dispose();
     this.onChange.dispose();
   }
 
@@ -440,6 +448,8 @@ export class ChatController {
   // -------------------------------------------------------------------------
 
   async sendPrompt(input: PromptInput): Promise<void> {
+    // 收到发送即清理提示词编辑器（含下方早退分支；回填文本保留在输入框可重试）
+    void this.promptEditor.disposeForSend();
     if (!this.workspaceRoot) {
       this.notice("warning", "请先打开一个文件夹，再使用 Pinel");
       return;
@@ -489,6 +499,30 @@ export class ChatController {
     } catch (err) {
       this.notice("warning", `中断失败：${(err as Error).message}`);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // 提示词编辑器（Ctrl+G）
+  // -------------------------------------------------------------------------
+
+  /** Ctrl+G：在 VS Code 原生编辑器中编辑提示词（输入框当前内容作初始内容）。 */
+  editPrompt(text: string): Promise<void> {
+    return this.promptEditor.edit(text);
+  }
+
+  /** 输入框聚焦状态同步（keybinding when 上下文 pinel.inputFocused）。 */
+  setInputFocused(focused: boolean): void {
+    void vscode.commands.executeCommand("setContext", "pinel.inputFocused", focused);
+  }
+
+  /** pinel.editPrompt 命令：通知 webview 取当前输入内容并发起编辑（宿主不维护输入状态）。 */
+  triggerEditPrompt(): void {
+    this.fire({ type: "triggerEditPrompt" });
+  }
+
+  /** 测试钩子：当前待决提示词临时文件路径。 */
+  getPendingPromptUri(): vscode.Uri | undefined {
+    return this.promptEditor.getPendingUri();
   }
 
   // -------------------------------------------------------------------------

@@ -83,6 +83,16 @@ interface WebviewSetAutoCompactionMessage {
   enabled: boolean;
 }
 
+interface WebviewEditPromptMessage {
+  type: "editPrompt";
+  text: string;
+}
+
+interface WebviewInputFocusMessage {
+  type: "inputFocus";
+  focused: boolean;
+}
+
 type WebviewInMessage =
   | WebviewPromptMessage
   | WebviewAbortMessage
@@ -100,6 +110,8 @@ type WebviewInMessage =
   | WebviewSetSteeringModeMessage
   | WebviewSetFollowUpModeMessage
   | WebviewSetAutoCompactionMessage
+  | WebviewEditPromptMessage
+  | WebviewInputFocusMessage
   | WebviewReadyMessage;
 
 /**
@@ -206,6 +218,12 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "setAutoCompaction":
         void this.controller.setAutoCompaction(msg.enabled);
+        break;
+      case "editPrompt":
+        void this.controller.editPrompt(msg.text);
+        break;
+      case "inputFocus":
+        this.controller.setInputFocused(msg.focused);
         break;
     }
   }

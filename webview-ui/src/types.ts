@@ -148,6 +148,8 @@ export type HostMessage =
   | { type: "sessionSwitching"; switching: boolean }
   | { type: "sessionListChanged" }
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
+  | { type: "triggerEditPrompt" }
+  | { type: "fillPrompt"; text: string }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {

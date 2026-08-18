@@ -19,7 +19,7 @@
 | 模块 | 职责 |
 |---|---|
 | `src/rpc/` | RPC 协议层：`protocol.ts`（协议类型，对齐 docs/rpc.md）、`framing.ts`（严格 LF JSONL 编解码）、`client.ts`（子进程生命周期 + 请求/响应关联） |
-| `src/chat/` | 聊天层：`controller.ts`（会话控制器：事件映射/流装配/状态广播）、`panel.ts`（WebviewViewProvider + postMessage 协议 + CSP HTML）、`stream-assembly.ts`（contentIndex 分块装配纯函数）、`todos.ts`（todo 工具结果快照解析纯函数）、`commands.ts`（get_commands 响应防御解析纯函数）、`models.ts`（get_available_models/get_available_thinking_levels 响应防御解析纯函数）、`questionnaire.ts`（ask_user_question 问卷参数解析与回填映射纯函数） |
+| `src/chat/` | 聊天层：`controller.ts`（会话控制器：事件映射/流装配/状态广播）、`panel.ts`（WebviewViewProvider + postMessage 协议 + CSP HTML）、`stream-assembly.ts`（contentIndex 分块装配纯函数）、`todos.ts`（todo 工具结果快照解析纯函数）、`commands.ts`（get_commands 响应防御解析纯函数）、`models.ts`（get_available_models/get_available_thinking_levels 响应防御解析纯函数）、`questionnaire.ts`（ask_user_question 问卷参数解析与回填映射纯函数）、`prompt-editor.ts`（Ctrl+G 提示词编辑器：临时文件 + 保存回填 + 发送清理） |
 | `src/extension.ts` | 入口：activate/deactivate、命令注册、面板注册、导出 `PinelTestApi` 测试钩子 |
 | `src/test/` | 单元测试 + 集成测试 + `fixtures/fake-pi.js`（按 rpc.md 实现的假 pi）、`fixtures/long-running.js`（stop 测试用长命进程） |
 | `src/test-no-workspace/` | 空窗口实例集成测试（独立 .vscode-test.mjs 配置，不传 workspaceFolder 启动） |
@@ -34,7 +34,7 @@ pinel/
 ├─ src/                    # 扩展宿主源码（TypeScript，CJS，仅此目录参与宿主 bundle）
 │  ├─ extension.ts         # 激活入口 + 测试 API 导出
 │  ├─ rpc/                 # RPC 客户端与协议（不含 vscode 依赖，纯逻辑可单测）
-│  ├─ chat/                # 控制器/面板/流式装配（依赖 vscode API 与 rpc 层）
+│  ├─ chat/                # 控制器/面板/流式装配/提示词编辑器（依赖 vscode API 与 rpc 层）
 │  └─ test/                # 测试（.test.ts 单测 + extension.test.ts 集成 + fixtures/ 假 pi）
 ├─ src/test-no-workspace/  # 空窗口实例集成测试（独立测试套件）
 ├─ scripts/                # 测试辅助脚本（clean-test-userdata.mjs）
@@ -68,7 +68,7 @@ npm run package      # 生产构建（minify）
 
 - **测试首次运行**会下载 VS Code 到 `.vscode-test/`（gitignored），约 100MB
 - **F5 调试**：先 `npm run watch`（tasks.json 默认构建任务已含 webview），否则全新 clone 后面板空白
-- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 116/116 通过：主套件 114 + 空窗口套件 2）
+- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 119/119 通过：主套件 116 + 空窗口套件 3）
 
 ## Coding Guidelines
 
@@ -96,6 +96,7 @@ npm run package      # 生产构建（minify）
 - `extension_ui_request` 对话框方法（select/confirm/input/editor）必须回复 `extension_ui_response`，否则 agent 永久阻塞；pinel 渲染内联卡片由用户作答，`agent_settled`/`handleExit`/`restart` 时清空未决请求（清扫正确性依赖「dialog 阻塞期间不 settle」的实测前提）
 - 命令发送带 30s 超时；不带 id 的响应按 `command` 字段兜底关联
 - **命令补全数据链路**：`get_commands` 一律 fire-and-forget（`void fetchCommands()`，内部 try/catch + client 身份校验）——旧版 pi 回 success:false 会 reject，await 在启动关键路径会把面板挂起至 30s；失败静默保持空列表（仅 Output 记录，不弹 notice），补全弹窗对空列表永不弹出；`restart`/`handleExit` 必须清空并广播空命令列表（旧进程的命令会误导补全）；响应字段以实测实现为准（name/description/source/sourceInfo，docs/rpc.md 示例的 path/location 已漂移），防御解析在 `src/chat/commands.ts`；webview 触发谓词 `text.startsWith('/')` 且首词无空白（与 pi 的执行判定解耦，提示层关闭不影响 pi 展开）
+- **提示词编辑器链路（Ctrl+G）**：键位经 package.json keybinding 注册（`ctrl+g → pinel.editPrompt`，when `pinel.inputFocused` 由 webview textarea focus/blur 事件 → `inputFocus` 消息 → 宿主 setContext 维护）——**webview 内 keydown 捕获不可行**（Ctrl+G 是 VS Code 默认全局键 gotoLine，工作台 capture 阶段拦截，vscode#320435/#139163）；命令执行 → `triggerEditPrompt` → webview 回发 `editPrompt{text}`（宿主不维护输入状态）→ `PromptEditorManager.edit` 开临时文件（`os.tmpdir()/pinel-prompt-<ts>.md`，preview:false 固定标签）；**载体必须真实文件**（untitled 保存不触发 onDidSaveTextDocument，vscode#25729）；保存 → `fillPrompt{text}` 回填输入框（**行尾规范化 `\r\n`→LF**——Windows 编辑器保存自动转换）；发送（sendPrompt 含早退分支）→ `disposeForSend`（先清 pendingUri 防双删竞态 → tabGroups.close → fs.rm 带 maxRetries 防 Windows 句柄占用）；**标签页关闭监听必须用 `tabGroups.onDidChangeTabs`（event.closed）而非 `onDidCloseTextDocument`**（后者跟踪文档对象生命周期，延迟数分钟，vscode#199282/#84505）；已确认坑：tabGroups.close 是 TabGroups 方法不是 TabGroup 方法；测试驱动 api.editPrompt + TestEventLog lastFillPrompt；F5 需验证 keybinding when 覆盖默认 gotoLine 是否生效（失效降级 Ctrl+Alt+G 已备）
 - **问卷链路（ask_user_question）**：插件逐题串行阻塞、已提交答案不可撤回——pinel 从 `tool_execution_start`（toolName `ask_user_question`）的完整参数在本地渲染整卷问卷，pi 发来的串行 select/input **标题门控后缓冲不展示**（不匹配题目的对话框走逐卡路径），用户答完确认后按游标自动回填（单选：选项原行/哨兵行+跟进 input；多选：`"1,3"` 数字串或空串；哨兵取 `request.options` 末项不硬编码文案）；**settled/handleExit/restart 清理时必须先对残留缓冲帧逐帧回 cancelled**（插件问卷无 timeout，pi 侧不会自动解锁，否则 agent 永久阻塞）；用户消息事件（pi 也发 message_start/message_end）必须门控跳过防重复显示（乐观渲染保留，权威列表走快照）
 - **配置面板链路**：状态栏模型显示左侧 ⚙ 设置按钮（`status-settings-btn`，settings.svg 图标）触发 ConfigPopover（2026-08-18 回归——此前因 emoji ⚙ 图标过小改为 `/settings` 命令触发，现以正式 SVG 图标恢复按钮入口，`/settings` 本地拦截逻辑已移除、输入恢复为普通文本发送）；webview 本地开合，点击外部/Esc 关闭，Esc 在 window capture 阶段拦截并 stopPropagation 让位于 Composer 的中断/清空分支；面板只含队列模式双值点选（`set_steering_mode`/`set_follow_up_mode`）与自动压缩开关（`set_auto_compaction`）
 - **SVG 图标链路（send/settings/stop.svg）**：文件入库 `media/`（`.gitignore` 仅忽略 webview.js/css/map）；webview 侧经 esbuild `--loader:.svg=text` 以原始文本内联进 bundle（`webview-ui/esbuild.js` 的 loader 配置 + `global.d.ts` 的 `declare module "*.svg"`），`dangerouslySetInnerHTML` 渲染进 DOM（静态自有文件，无注入风险；CSP `img-src data:` 不涉及）；主题自适应靠 **path 级 CSS 选择器**覆盖（`.composer-send .icon path` → `--vscode-button-foreground`、`.composer-stop .icon path` → `--vscode-errorForeground`、`.status-settings-btn .icon path` → `--vscode-descriptionForeground`）——fill 是 `<path>` 上的 presentation attribute，**根元素级选择器无法通过继承覆盖**，必须直接命中 path（specificity 0-2-1）；文件内 `#707070` 保留作兜底；图标 16px 由作用域化规则覆写（文件内硬编码 200px）
@@ -136,7 +137,7 @@ npm run package      # 生产构建（minify）
 - `commands.test.ts`：`parseCommands` 防御解析（get_commands 响应：全量合法、部分损坏跳过、结构不符空列表、未知 source 兜底）
 - `models.test.ts`：`parseModels`/`parseThinkingLevels` 防御解析（全量合法、部分损坏跳过、结构不符空列表、["off"] 原样解析）
 - `questionnaire.test.ts`：`parseQuestionnaireArgs` 防御解析 + `parseQuestionnaireAnswer` 校验 + 回填映射（select 选项行/哨兵跟进标记、input 多选数字串/空串/自定义、标题归属）
-- `extension.test.ts`：集成测试（真实 VS Code + 假 pi：状态同步、端到端流式、abort、UI 自动取消、跨消息不串块、重启竞态回归、崩溃后重启恢复、模型自愈——NULLMODEL-FIRST 重试恢复无重启 / NULLMODEL-FOREVER 自动重启恰好一次后警告态、命令补全链路——启动送达/CMDADD settle 刷新/重启恢复不残留/NOCOMMANDS 旧版失败静默、问卷链路——整卷全链路含修改重答/取消无残留/通用对话框标题门控、用户消息去重——pi 的 user 事件不重复推送、配置面板——cycleModel 切下一模型且 thinkingLevel 同步/两模型循环回原点/cycleThinking 循环回绕/SINGLE-MODEL 回 null 不更新/NO-THINKING 回 null 不更新/CYCLE-FAIL 失败不更新/三种 set 命令状态更新/流式中切换不中断流/NOSTATE-FIELDS 缺字段保留默认值/重启后配置从状态文件恢复、模型/思考列表链路——getModels 送达全量/getThinkingLevels 送达/setModel 切换且思考等级经 get_state 回读（SETMODEL-CLAMP 同步为 medium）/setThinkingLevel 生效/SETMODEL-MISS 与 SETTHINK-FAIL error notice 状态不变/MODELS-FAIL 与 THINKLEVELS-FAIL warning notice 且空数组失败信号/THINKLEVELS-OFF 回 [off]/SETTHINK-CLAMP clamp 后回读确认/SETMODEL-READBACKFAIL 回读失败保留 set_model 结果/SETMODEL-SLOW 迟到响应 restart 不残留/流式中 setModel 不中断流）
+- `extension.test.ts`：集成测试（真实 VS Code + 假 pi：状态同步、端到端流式、abort、UI 自动取消、跨消息不串块、重启竞态回归、崩溃后重启恢复、模型自愈——NULLMODEL-FIRST 重试恢复无重启 / NULLMODEL-FOREVER 自动重启恰好一次后警告态、命令补全链路——启动送达/CMDADD settle 刷新/重启恢复不残留/NOCOMMANDS 旧版失败静默、问卷链路——整卷全链路含修改重答/取消无残留/通用对话框标题门控、用户消息去重——pi 的 user 事件不重复推送、配置面板——cycleModel 切下一模型且 thinkingLevel 同步/两模型循环回原点/cycleThinking 循环回绕/SINGLE-MODEL 回 null 不更新/NO-THINKING 回 null 不更新/CYCLE-FAIL 失败不更新/三种 set 命令状态更新/流式中切换不中断流/NOSTATE-FIELDS 缺字段保留默认值/重启后配置从状态文件恢复、模型/思考列表链路——getModels 送达全量/getThinkingLevels 送达/setModel 切换且思考等级经 get_state 回读（SETMODEL-CLAMP 同步为 medium）/setThinkingLevel 生效/SETMODEL-MISS 与 SETTHINK-FAIL error notice 状态不变/MODELS-FAIL 与 THINKLEVELS-FAIL warning notice 且空数组失败信号/THINKLEVELS-OFF 回 [off]/SETTHINK-CLAMP clamp 后回读确认/SETMODEL-READBACKFAIL 回读失败保留 set_model 结果/SETMODEL-SLOW 迟到响应 restart 不残留/流式中 setModel 不中断流、提示词编辑器——编辑→保存→回填→发送→关闭清理全链路/手动关标签页清理不回填/重复 Ctrl+G 关旧建新）
 - `src/test-no-workspace/no-workspace.test.ts`：空窗口实例友好状态（no-workspace + 引导文本，不伪装成进程异常）
 
 **新增功能覆盖要求**：

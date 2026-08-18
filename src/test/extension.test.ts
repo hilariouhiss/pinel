@@ -1295,4 +1295,95 @@ suite("Pinel 集成测试（假 pi）", () => {
       }
     });
   });
+
+  suite("提示词编辑器（Ctrl+G 编辑/回填/清理）", () => {
+    /** 指定路径的临时文件标签页是否打开。 */
+    function pendingTabOpen(pendingPath: string): boolean {
+      return vscode.window.tabGroups.all.some((g) =>
+        g.tabs.some((t) => t.input instanceof vscode.TabInputText && t.input.uri.fsPath === pendingPath),
+      );
+    }
+
+    /** 关闭指定路径的临时文件标签页（干净 tab，避免 dirty 关闭弹保存确认）。 */
+    async function closeTabFor(pendingPath: string): Promise<void> {
+      for (const group of vscode.window.tabGroups.all) {
+        const tab = group.tabs.find(
+          (t) => t.input instanceof vscode.TabInputText && t.input.uri.fsPath === pendingPath,
+        );
+        if (tab) {
+          await vscode.window.tabGroups.close(tab);
+          return;
+        }
+      }
+      assert.fail(`标签页不存在: ${pendingPath}`);
+    }
+
+    test("编辑→保存→回填→发送→关闭清理 全链路", async function () {
+      this.timeout(60000);
+      // 编辑：打开编辑器并带入初始内容
+      await api.editPrompt("初始提示词");
+      const pendingPath = api.getPendingPromptUriPath();
+      assert.ok(pendingPath, "临时文件路径必须存在");
+      assert.ok(fs.existsSync(pendingPath), "临时文件必须已创建");
+      assert.ok(pendingTabOpen(pendingPath), "编辑器标签页必须打开");
+      const editor = vscode.window.activeTextEditor;
+      assert.ok(editor && editor.document.uri.fsPath === pendingPath, "编辑器必须激活且指向临时文件");
+      assert.strictEqual(editor.document.getText(), "初始提示词", "初始内容必须带入");
+
+      // 编辑并保存 → 保存事件回填广播
+      await editor.edit((eb) => {
+        const doc = editor.document;
+        eb.replace(
+          new vscode.Range(new vscode.Position(0, 0), doc.positionAt(doc.getText().length)),
+          "编辑后的提示词\n第二行",
+        );
+      });
+      await vscode.commands.executeCommand("workbench.action.files.save");
+      await waitFor(
+        () => api.getTestEventLog().lastFillPrompt === "编辑后的提示词\n第二行",
+        10000,
+        "保存后回填广播",
+      );
+
+      // 发送 → 关闭编辑器标签页 + 删除临时文件（disposeForSend 为异步 fire-and-forget，
+      // pendingUri 同步清空，文件/tab 清理需轮询等待）
+      await api.sendPrompt("编辑后的提示词\n第二行");
+      await waitFor(() => api.getPendingPromptUriPath() === undefined, 10000, "发送后清理 pending");
+      await waitFor(() => !fs.existsSync(pendingPath), 10000, "临时文件删除");
+      await waitFor(() => !pendingTabOpen(pendingPath), 10000, "编辑器标签页关闭");
+    });
+
+    test("手动关闭标签页：清理文件但不触发回填", async function () {
+      this.timeout(60000);
+      await api.editPrompt("草稿内容");
+      const pendingPath = api.getPendingPromptUriPath();
+      assert.ok(pendingPath && fs.existsSync(pendingPath), "临时文件必须存在");
+      const before = api.getTestEventLog().lastFillPrompt;
+
+      await closeTabFor(pendingPath);
+      await waitFor(() => api.getPendingPromptUriPath() === undefined, 10000, "关闭后清理 pending");
+      assert.ok(!fs.existsSync(pendingPath), "临时文件必须删除");
+      assert.strictEqual(api.getTestEventLog().lastFillPrompt, before, "未保存不得回填（广播不变）");
+    });
+
+    test("重复 Ctrl+G：关闭旧编辑器并新建（旧文件清理）", async function () {
+      this.timeout(60000);
+      await api.editPrompt("第一版");
+      const firstPath = api.getPendingPromptUriPath();
+      assert.ok(firstPath, "第一次临时文件必须存在");
+
+      await api.editPrompt("第二版");
+      const secondPath = api.getPendingPromptUriPath();
+      assert.ok(secondPath && secondPath !== firstPath, "第二次必须新建临时文件");
+      assert.ok(!fs.existsSync(firstPath), "旧临时文件必须删除");
+      assert.ok(!pendingTabOpen(firstPath), "旧编辑器标签页必须关闭");
+      const editor = vscode.window.activeTextEditor;
+      assert.ok(editor && editor.document.uri.fsPath === secondPath, "新编辑器必须激活");
+      assert.strictEqual(editor.document.getText(), "第二版", "新内容必须带入");
+
+      // 收尾：手动关闭新标签页，保持 pending 干净（后续测试无残留）
+      await closeTabFor(secondPath);
+      await waitFor(() => api.getPendingPromptUriPath() === undefined, 10000, "收尾清理");
+    });
+  });
 });
