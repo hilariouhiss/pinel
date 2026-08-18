@@ -16,6 +16,10 @@ async function main() {
     sourcesContent: false,
     outfile: "media/webview.js",
     logLevel: "silent",
+    // SVG 图标以 text 内联进 bundle（webview 内 DOM 渲染，CSS 可覆盖 fill 实现主题自适应）
+    loader: {
+      ".svg": "text",
+    },
     define: {
       "process.env.NODE_ENV": production ? '"production"' : '"development"',
     },

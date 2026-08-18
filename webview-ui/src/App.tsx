@@ -288,18 +288,15 @@ export default function App() {
         {questionnaire && <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />}
       </div>
       {todos.length > 0 && <TodoPanel todos={todos} />}
-      <Composer
-        status={status}
-        commands={commands}
-        popoverOpen={popover !== null}
-        onSettings={openConfig}
-      />
+      <Composer status={status} commands={commands} popoverOpen={popover !== null} />
       <StatusBar
         status={status}
         modelListOpen={popover === "model"}
         thinkingListOpen={popover === "thinking"}
+        settingsOpen={popover === "config"}
         onOpenModelList={openModelList}
         onOpenThinkingList={openThinkingList}
+        onOpenSettings={openConfig}
         modelBtnRef={modelBtnRef}
         thinkingBtnRef={thinkingBtnRef}
       />

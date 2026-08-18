@@ -8,6 +8,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- 状态栏设置按钮回归：模型显示左侧新增 ⚙ 设置按钮（settings.svg 图标，颜色随主题自适应），点击打开配置面板（队列模式/自动压缩）——此前因 emoji ⚙ 图标过小改为 `/settings` 命令触发，现以正式 SVG 图标恢复按钮入口
+- 发送/停止按钮换用 SVG 图标（send.svg/stop.svg，主题自适应：发送图标随按钮前景色、停止图标保持红色警示语义）
 - 会话历史（主侧边栏）：点击活动栏 Pinel 图标展示会话历史列表（顶部「新会话」按钮；会话卡片显示名称/首条消息摘要/相对时间/当前会话标记，按最近活动排序；仅显示当前工作目录的会话；损坏文件跳过）；点击会话或「新会话」后聊天界面出现在**次侧边栏（右侧）**（容器 `pinel-chat`；关闭后自动重新打开）；支持 `pinel.sessionDir` 自定义会话目录
 - 加载动画三阶段：webview 挂载前主题化 spinner（防空白闪烁）、pi 启动阶段全屏「正在启动 Pi…」动画、会话切换/新建期间半透明遮罩（禁用输入）
 - 模型/思考强度下拉选择：状态栏模型名/思考等级点击后弹出下拉列表（数据源 `get_available_models`/`get_available_thinking_levels`，每次点击时拉取，失败提示并关闭），选中即切换（`set_model`/`set_thinking_level`；模型切换后思考等级经 `get_state` 回读同步——pi 切模型会重新钳制思考等级；思考等级有 clamp 语义，回读确认实际生效值；流式中可切换、自下一回合生效；选择由 pi 持久化，重启后保留）
@@ -24,6 +26,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 输入框 placeholder 改为「输入消息或 / 命令」（流式输出中仍显示队列提示）
+- 移除 `/settings` 命令触发设置面板的本地拦截：`/settings` 输入恢复为普通文本发送给模型；设置面板唯一入口为状态栏 ⚙ 设置按钮
 - 未打开文件夹时不再显示「pi 进程异常」，改为友好提示「⚠ 未打开文件夹」；打开文件夹后自动连接 pi
 - pi 停止改为优雅退出优先：先关闭 stdin 让 pi 自行 flush 会话/释放锁（优雅期 2.5s），超时后硬杀兜底（总时长 5s 契约不变）；窗口关闭/重载时等待退出完成
 - 状态栏 `running` 态延后到首次状态同步成功后置位（慢启动期间显示「启动中…」而非假警告）；模型为空时隐藏思考等级显示

@@ -25,7 +25,7 @@
 | `src/test-no-workspace/` | 空窗口实例集成测试（独立 .vscode-test.mjs 配置，不传 workspaceFolder 启动） |
 | `scripts/` | 测试辅助脚本（clean-test-userdata.mjs：每次 npm test 前清理 .vscode-test/user-data） |
 | `webview-ui/` | React 聊天 UI（独立 tsconfig 与 esbuild 配置，与宿主完全隔离） |
-| `media/` | 图标（入库）；webview 构建产物（gitignored，构建生成） |
+| `media/` | 图标（send/settings/stop.svg 经 esbuild text loader 内联进 webview bundle、pinel-icon.svg 为扩展图标，均入库）；webview 构建产物（gitignored，构建生成） |
 
 ## Repository Structure
 
@@ -97,7 +97,8 @@ npm run package      # 生产构建（minify）
 - 命令发送带 30s 超时；不带 id 的响应按 `command` 字段兜底关联
 - **命令补全数据链路**：`get_commands` 一律 fire-and-forget（`void fetchCommands()`，内部 try/catch + client 身份校验）——旧版 pi 回 success:false 会 reject，await 在启动关键路径会把面板挂起至 30s；失败静默保持空列表（仅 Output 记录，不弹 notice），补全弹窗对空列表永不弹出；`restart`/`handleExit` 必须清空并广播空命令列表（旧进程的命令会误导补全）；响应字段以实测实现为准（name/description/source/sourceInfo，docs/rpc.md 示例的 path/location 已漂移），防御解析在 `src/chat/commands.ts`；webview 触发谓词 `text.startsWith('/')` 且首词无空白（与 pi 的执行判定解耦，提示层关闭不影响 pi 展开）
 - **问卷链路（ask_user_question）**：插件逐题串行阻塞、已提交答案不可撤回——pinel 从 `tool_execution_start`（toolName `ask_user_question`）的完整参数在本地渲染整卷问卷，pi 发来的串行 select/input **标题门控后缓冲不展示**（不匹配题目的对话框走逐卡路径），用户答完确认后按游标自动回填（单选：选项原行/哨兵行+跟进 input；多选：`"1,3"` 数字串或空串；哨兵取 `request.options` 末项不硬编码文案）；**settled/handleExit/restart 清理时必须先对残留缓冲帧逐帧回 cancelled**（插件问卷无 timeout，pi 侧不会自动解锁，否则 agent 永久阻塞）；用户消息事件（pi 也发 message_start/message_end）必须门控跳过防重复显示（乐观渲染保留，权威列表走快照）
-- **配置面板链路**：输入框发送 `/settings` 命令触发 ConfigPopover（pinel 本地拦截：`text.trim() === "/settings"` 时不发送给模型——pi 的 `/settings` 是 TUI 内置命令，RPC 模式下发送会被当作普通文本；webview 本地开合，点击外部/Esc 关闭，Esc 在 window capture 阶段拦截并 stopPropagation 让位于 Composer 的中断/清空分支）；面板只含队列模式双值点选（`set_steering_mode`/`set_follow_up_mode`）与自动压缩开关（`set_auto_compaction`）
+- **配置面板链路**：状态栏模型显示左侧 ⚙ 设置按钮（`status-settings-btn`，settings.svg 图标）触发 ConfigPopover（2026-08-18 回归——此前因 emoji ⚙ 图标过小改为 `/settings` 命令触发，现以正式 SVG 图标恢复按钮入口，`/settings` 本地拦截逻辑已移除、输入恢复为普通文本发送）；webview 本地开合，点击外部/Esc 关闭，Esc 在 window capture 阶段拦截并 stopPropagation 让位于 Composer 的中断/清空分支；面板只含队列模式双值点选（`set_steering_mode`/`set_follow_up_mode`）与自动压缩开关（`set_auto_compaction`）
+- **SVG 图标链路（send/settings/stop.svg）**：文件入库 `media/`（`.gitignore` 仅忽略 webview.js/css/map）；webview 侧经 esbuild `--loader:.svg=text` 以原始文本内联进 bundle（`webview-ui/esbuild.js` 的 loader 配置 + `global.d.ts` 的 `declare module "*.svg"`），`dangerouslySetInnerHTML` 渲染进 DOM（静态自有文件，无注入风险；CSP `img-src data:` 不涉及）；主题自适应靠 **path 级 CSS 选择器**覆盖（`.composer-send .icon path` → `--vscode-button-foreground`、`.composer-stop .icon path` → `--vscode-errorForeground`、`.status-settings-btn .icon path` → `--vscode-descriptionForeground`）——fill 是 `<path>` 上的 presentation attribute，**根元素级选择器无法通过继承覆盖**，必须直接命中 path（specificity 0-2-1）；文件内 `#707070` 保留作兜底；图标 16px 由作用域化规则覆写（文件内硬编码 200px）
 - **模型/思考等级列表链路**：状态栏模型名/思考等级点击弹出下拉列表（`ListPopover`，锚定按钮定位：下方优先空间不足翻转、左对齐超右缘右对齐；方向键+Enter 选择、Esc/点击外部关闭、选中项✓）；数据**每次点击时拉取**（`get_available_models`/`get_available_thinking_levels`，30s 超时；失败 notice + fire 空数组作为失败信号，webview 收到空数组即关弹窗不展示）；选中发 `set_model{provider,modelId}`/`set_thinking_level{level}`；**set_model 响应只有 Model 对象（不含 thinkingLevel）**——pi 切模型会重新钳制思考等级并持久化 settings，必须先应用响应 model 再 `get_state` 回读刷新 model+thinkingLevel（回读失败 notice，保留 set_model 结果）；**set_thinking_level 响应无 data 且 pi 有 clamp 语义**——成功后同样 `get_state` 回读确认实际生效值；响应应用前必须校验 `this.client === client`（restart 竞态迟到响应丢弃）；防御解析在 `src/chat/models.ts`（模型项须 id/name/provider 非空字符串——set_model 依赖 provider+modelId 复合键，跨 provider 的 id 可能重复，webview 列表项用复合键）；流式中允许切换（变更自下一回合生效）；三个弹窗（模型/思考/设置）互斥（App 单一枚举）；`cycle_model`/`cycle_thinking_level` 保留供测试覆盖（UI 不再使用）
 - **模型状态自愈**：初始同步 get_state 最多 4 次尝试（间隔 2s/5s/10s），仍无模型时自动重启 pi 一次（在 `startWithHeal` 内顺序执行，**不走 restart 防重入守卫**——自愈常嵌套在手动重启链内会被守卫拦截）；`modelHealRestarted` 置位后短路为单次尝试，手动 restart 重置；`running` 在首次 get_state 成功后才置位（健康慢启动显示"启动中…"而非假警告）；运行中无模型由 StatusBar 用现有字段推导警告态（⚠ 无可用模型 + 重启按钮），**不新增协议字段**；get_state 的 steeringMode/followUpMode/autoCompactionEnabled 三字段缺字段时保留默认值（all / one-at-a-time / true）
 
@@ -109,7 +110,7 @@ npm run package      # 生产构建（minify）
 - webview CSP `default-src 'none'` + script nonce；markdown 用 react-markdown 且**不得启用 rehype-raw**
 - 不把用户输入拼进 shell 命令字符串（piPath 配置除外——它本就是用户显式指定的本地命令）
 
-**范围纪律**：以下功能属于 v0.2+，非明确需求不得提前实现：会话列表/切换/重命名、Plan Mode、edit diff 预览、@提及、检查点/回退。注：交互 UI（对话框卡片 + 待办面板）、/命令自动补全、问卷确认流程（ask_user_question 整卷 + 确认前修改 + 自动回填）、配置面板（`/settings` 命令触发 + 队列模式/自动压缩）与模型/思考等级下拉列表（`get_available_models`/`get_available_thinking_levels`/`set_model`/`set_thinking_level`，2026-08 实现）均经用户明确要求提前实现（见 `src/chat/todos.ts`、`src/chat/questionnaire.ts`、`src/chat/models.ts`、`UiDialogs.tsx`、`Questionnaire.tsx`、`ConfigPopover.tsx`、`ListPopover.tsx` 与 `webview-ui/src/command-match.ts`）。
+**范围纪律**：以下功能属于 v0.2+，非明确需求不得提前实现：会话列表/切换/重命名、Plan Mode、edit diff 预览、@提及、检查点/回退。注：交互 UI（对话框卡片 + 待办面板）、/命令自动补全、问卷确认流程（ask_user_question 整卷 + 确认前修改 + 自动回填）、配置面板（状态栏 ⚙ 设置按钮触发 + 队列模式/自动压缩，2026-08-18 起替代 `/settings` 命令入口）与模型/思考等级下拉列表（`get_available_models`/`get_available_thinking_levels`/`set_model`/`set_thinking_level`，2026-08 实现）均经用户明确要求提前实现（见 `src/chat/todos.ts`、`src/chat/questionnaire.ts`、`src/chat/models.ts`、`UiDialogs.tsx`、`Questionnaire.tsx`、`ConfigPopover.tsx`、`ListPopover.tsx` 与 `webview-ui/src/command-match.ts`）。
 
 ## Development Workflow
 

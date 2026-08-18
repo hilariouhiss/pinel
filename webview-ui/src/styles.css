@@ -844,6 +844,10 @@ body {
   /* 首行同高：= textarea 首行盒高（line-height 1.5×字号 + 上下 padding 14px + 边框 2px），
      随 VS Code 字号自适应；输入框增长时按钮保持贴底（.composer-row 的 align-items:flex-end） */
   height: calc(var(--vscode-font-size) * 1.5 + 16px);
+  /* 图标居中（SVG 为块级元素，不受文本 text-align 影响） */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 6px;
   border: 1px solid var(--vscode-input-border);
   background: var(--vscode-button-background);
@@ -855,6 +859,24 @@ body {
 .composer-send:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* SVG 图标：尺寸覆写（文件内硬编码 200px）+ 主题色（fill 在 <path> 上，必须 path 级
+   选择器才能覆盖 presentation attribute；文件内 #707070 保留作兜底） */
+.composer-send .icon,
+.composer-stop .icon,
+.status-settings-btn .icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.composer-send .icon path {
+  fill: var(--vscode-button-foreground);
+}
+
+.composer-stop .icon path {
+  fill: var(--vscode-errorForeground);
 }
 
 .composer-stop {
@@ -946,6 +968,11 @@ body {
 
 .status-config-btn:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
+}
+
+/* 设置按钮图标：随状态栏文字色（fill 在 <path> 上，path 级选择器覆盖） */
+.status-settings-btn .icon path {
+  fill: var(--vscode-descriptionForeground);
 }
 
 /* 遮罩层：点击外部关闭（fixed 覆盖整个 webview） */

@@ -1,13 +1,18 @@
 import { vscode } from "../index";
 import type { ChatStatus } from "../types";
+// SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
+import settingsIcon from "../../../media/settings.svg";
 
 interface Props {
   status: ChatStatus;
   /** 模型/思考等级下拉列表是否打开（aria-expanded）；由各自按钮触发。 */
   modelListOpen: boolean;
   thinkingListOpen: boolean;
+  /** 设置面板是否打开（aria-expanded）。 */
+  settingsOpen: boolean;
   onOpenModelList: () => void;
   onOpenThinkingList: () => void;
+  onOpenSettings: () => void;
   /** 按钮元素引用（App 侧 ListPopover 锚定定位/焦点还原依赖）。 */
   modelBtnRef?: React.Ref<HTMLButtonElement>;
   thinkingBtnRef?: React.Ref<HTMLButtonElement>;
@@ -17,8 +22,10 @@ export function StatusBar({
   status,
   modelListOpen,
   thinkingListOpen,
+  settingsOpen,
   onOpenModelList,
   onOpenThinkingList,
+  onOpenSettings,
   modelBtnRef,
   thinkingBtnRef,
 }: Props) {
@@ -92,6 +99,17 @@ export function StatusBar({
 
   return (
     <div className="statusbar">
+      <span className="status-item">
+        <button
+          className="status-config-btn status-settings-btn"
+          title="设置"
+          aria-label="设置"
+          aria-haspopup="dialog"
+          aria-expanded={settingsOpen}
+          onClick={onOpenSettings}
+          dangerouslySetInnerHTML={{ __html: settingsIcon }}
+        />
+      </span>
       <span className="status-item">
         <button
           ref={modelBtnRef}

@@ -10,14 +10,15 @@ import {
 import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
 import type { Attachment, ChatStatus, SlashCommand } from "../types";
+// SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
+import sendIcon from "../../../media/send.svg";
+import stopIcon from "../../../media/stop.svg";
 
 interface Props {
   status: ChatStatus;
   commands: SlashCommand[];
   /** 配置面板打开时：Esc 让位给面板关闭，不触发中断/清空（双保险，面板侧 capture 已拦截）。 */
   popoverOpen?: boolean;
-  /** 输入 /settings 回车触发（pinel 本地命令：打开设置面板，不发送给模型）。 */
-  onSettings?: () => void;
 }
 
 /** 来源徽标（中文标签）；未知来源兜底"其他"（pi 未来可能新增 source）。 */
@@ -60,7 +61,7 @@ async function compressImage(
 
 let attachmentSeq = 0;
 
-export function Composer({ status, commands, popoverOpen = false, onSettings }: Props) {
+export function Composer({ status, commands, popoverOpen = false }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const busy = status.isStreaming || status.isCompacting;
@@ -118,14 +119,6 @@ export function Composer({ status, commands, popoverOpen = false, onSettings }: 
 
   const send = () => {
     const trimmed = text.trim();
-    // pinel 本地命令 /settings：不发送给模型（实证：RPC 模式下 /settings 是
-    // pi 内置 TUI 命令，发送会被当作普通文本给模型），改为打开设置面板
-    if (trimmed === "/settings") {
-      onSettings?.();
-      setText("");
-      setAttachments([]);
-      return;
-    }
     if (!trimmed && attachments.length === 0) {
       return;
     }
@@ -278,7 +271,7 @@ export function Composer({ status, commands, popoverOpen = false, onSettings }: 
           placeholder={
             busy
               ? "流式输出中——发送将加入队列（steer）"
-              : "给 Pi 发送消息（Enter 发送，Shift+Enter 换行，Esc 中断，/ 补全命令）"
+              : "输入消息或 / 命令"
           }
           rows={rows}
           value={text}
@@ -290,13 +283,20 @@ export function Composer({ status, commands, popoverOpen = false, onSettings }: 
           onPaste={onPaste}
         />
         {busy ? (
-          <button className="composer-stop" title="中断当前操作 (Esc)" onClick={() => vscode.postMessage({ type: "abort" })}>
-            ⏹
-          </button>
+          <button
+            className="composer-stop"
+            title="中断当前操作 (Esc)"
+            onClick={() => vscode.postMessage({ type: "abort" })}
+            dangerouslySetInnerHTML={{ __html: stopIcon }}
+          />
         ) : (
-          <button className="composer-send" title="发送 (Enter)" onClick={send} disabled={!text.trim() && attachments.length === 0}>
-            ➤
-          </button>
+          <button
+            className="composer-send"
+            title="发送 (Enter)"
+            onClick={send}
+            disabled={!text.trim() && attachments.length === 0}
+            dangerouslySetInnerHTML={{ __html: sendIcon }}
+          />
         )}
       </div>
     </div>
