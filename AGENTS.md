@@ -19,7 +19,7 @@
 | 模块 | 职责 |
 |---|---|
 | `src/rpc/` | RPC 协议层：`protocol.ts`（协议类型，对齐 docs/rpc.md）、`framing.ts`（严格 LF JSONL 编解码）、`client.ts`（子进程生命周期 + 请求/响应关联） |
-| `src/chat/` | 聊天层：`controller.ts`（会话控制器：事件映射/流装配/状态广播）、`panel.ts`（WebviewViewProvider + postMessage 协议 + CSP HTML）、`stream-assembly.ts`（contentIndex 分块装配纯函数）、`todos.ts`（todo 工具结果快照解析纯函数）、`commands.ts`（get_commands 响应防御解析纯函数）、`questionnaire.ts`（ask_user_question 问卷参数解析与回填映射纯函数） |
+| `src/chat/` | 聊天层：`controller.ts`（会话控制器：事件映射/流装配/状态广播）、`panel.ts`（WebviewViewProvider + postMessage 协议 + CSP HTML）、`stream-assembly.ts`（contentIndex 分块装配纯函数）、`todos.ts`（todo 工具结果快照解析纯函数）、`commands.ts`（get_commands 响应防御解析纯函数）、`models.ts`（get_available_models/get_available_thinking_levels 响应防御解析纯函数）、`questionnaire.ts`（ask_user_question 问卷参数解析与回填映射纯函数） |
 | `src/extension.ts` | 入口：activate/deactivate、命令注册、面板注册、导出 `PinelTestApi` 测试钩子 |
 | `src/test/` | 单元测试 + 集成测试 + `fixtures/fake-pi.js`（按 rpc.md 实现的假 pi）、`fixtures/long-running.js`（stop 测试用长命进程） |
 | `src/test-no-workspace/` | 空窗口实例集成测试（独立 .vscode-test.mjs 配置，不传 workspaceFolder 启动） |
@@ -39,7 +39,7 @@ pinel/
 ├─ src/test-no-workspace/  # 空窗口实例集成测试（独立测试套件）
 ├─ scripts/                # 测试辅助脚本（clean-test-userdata.mjs）
 ├─ webview-ui/             # React webview 源码（browser 平台，不得 import 宿主代码或 vscode API）
-│  ├─ src/components/      # Composer / MessageView / Markdown / Notices / StatusBar / UiDialogs / TodoPanel / Questionnaire / ConfigPopover
+│  ├─ src/components/      # Composer / MessageView / Markdown / Notices / StatusBar / UiDialogs / TodoPanel / Questionnaire / ConfigPopover / ListPopover
 │  ├─ src/command-match.ts # /命令补全匹配纯函数（前缀>子串>描述，skill 裸名命中）
 │  ├─ src/types.ts         # 宿主消息协议镜像（与 controller OutMessage 手工同步）
 │  └─ esbuild.js           # webview 打包脚本（根目录运行：node webview-ui/esbuild.js）
@@ -68,7 +68,7 @@ npm run package      # 生产构建（minify）
 
 - **测试首次运行**会下载 VS Code 到 `.vscode-test/`（gitignored），约 100MB
 - **F5 调试**：先 `npm run watch`（tasks.json 默认构建任务已含 webview），否则全新 clone 后面板空白
-- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 69/69 通过：主套件 68 + 空窗口套件 1）
+- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 89/89 通过：主套件 88 + 空窗口套件 1）
 
 ## Coding Guidelines
 
@@ -97,7 +97,8 @@ npm run package      # 生产构建（minify）
 - 命令发送带 30s 超时；不带 id 的响应按 `command` 字段兜底关联
 - **命令补全数据链路**：`get_commands` 一律 fire-and-forget（`void fetchCommands()`，内部 try/catch + client 身份校验）——旧版 pi 回 success:false 会 reject，await 在启动关键路径会把面板挂起至 30s；失败静默保持空列表（仅 Output 记录，不弹 notice），补全弹窗对空列表永不弹出；`restart`/`handleExit` 必须清空并广播空命令列表（旧进程的命令会误导补全）；响应字段以实测实现为准（name/description/source/sourceInfo，docs/rpc.md 示例的 path/location 已漂移），防御解析在 `src/chat/commands.ts`；webview 触发谓词 `text.startsWith('/')` 且首词无空白（与 pi 的执行判定解耦，提示层关闭不影响 pi 展开）
 - **问卷链路（ask_user_question）**：插件逐题串行阻塞、已提交答案不可撤回——pinel 从 `tool_execution_start`（toolName `ask_user_question`）的完整参数在本地渲染整卷问卷，pi 发来的串行 select/input **标题门控后缓冲不展示**（不匹配题目的对话框走逐卡路径），用户答完确认后按游标自动回填（单选：选项原行/哨兵行+跟进 input；多选：`"1,3"` 数字串或空串；哨兵取 `request.options` 末项不硬编码文案）；**settled/handleExit/restart 清理时必须先对残留缓冲帧逐帧回 cancelled**（插件问卷无 timeout，pi 侧不会自动解锁，否则 agent 永久阻塞）；用户消息事件（pi 也发 message_start/message_end）必须门控跳过防重复显示（乐观渲染保留，权威列表走快照）
-- **配置面板链路**：状态栏模型/思考等级为可点击按钮，弹出 ConfigPopover（webview 本地开合，点击外部/Esc 关闭，Esc 在 window capture 阶段拦截并 stopPropagation 让位于 Composer 的中断/清空分支）；模型/思考强度点击循环（`cycle_model`/`cycle_thinking_level`），队列模式双值点选（`set_steering_mode`/`set_follow_up_mode`），自动压缩开关（`set_auto_compaction`）；**cycle_model 响应同时更新 model 与 thinkingLevel**（pi 切模型会重新锎制思考等级）；响应应用前必须校验 `this.client === client`（restart 竞态迟到响应丢弃，参照 fetchCommands）；`data:null`（仅一个模型/不支持思考）与异常形状只 notice 不更新，缺失字段保留旧值；流式中允许切换（变更自下一回合生效）；pi 侧 set_model/cycle 持久化到 settings（重启后保留，Pinel 无需自行持久化）；webview 切换按钮 500ms 本地防连点；**配置切换不拉 `get_available_models`**（用户选定点击循环交互，该命令仍保持未使用）
+- **配置面板链路**：状态栏右侧「⚙ 设置」按钮触发 ConfigPopover（webview 本地开合，点击外部/Esc 关闭，Esc 在 window capture 阶段拦截并 stopPropagation 让位于 Composer 的中断/清空分支）；面板只含队列模式双值点选（`set_steering_mode`/`set_follow_up_mode`）与自动压缩开关（`set_auto_compaction`）
+- **模型/思考等级列表链路**：状态栏模型名/思考等级点击弹出下拉列表（`ListPopover`，锚定按钮定位：下方优先空间不足翻转、左对齐超右缘右对齐；方向键+Enter 选择、Esc/点击外部关闭、选中项✓）；数据**每次点击时拉取**（`get_available_models`/`get_available_thinking_levels`，30s 超时；失败 notice + fire 空数组作为失败信号，webview 收到空数组即关弹窗不展示）；选中发 `set_model{provider,modelId}`/`set_thinking_level{level}`；**set_model 响应只有 Model 对象（不含 thinkingLevel）**——pi 切模型会重新钳制思考等级并持久化 settings，必须先应用响应 model 再 `get_state` 回读刷新 model+thinkingLevel（回读失败 notice，保留 set_model 结果）；**set_thinking_level 响应无 data 且 pi 有 clamp 语义**——成功后同样 `get_state` 回读确认实际生效值；响应应用前必须校验 `this.client === client`（restart 竞态迟到响应丢弃）；防御解析在 `src/chat/models.ts`（模型项须 id/name/provider 非空字符串——set_model 依赖 provider+modelId 复合键，跨 provider 的 id 可能重复，webview 列表项用复合键）；流式中允许切换（变更自下一回合生效）；三个弹窗（模型/思考/设置）互斥（App 单一枚举）；`cycle_model`/`cycle_thinking_level` 保留供测试覆盖（UI 不再使用）
 - **模型状态自愈**：初始同步 get_state 最多 4 次尝试（间隔 2s/5s/10s），仍无模型时自动重启 pi 一次（在 `startWithHeal` 内顺序执行，**不走 restart 防重入守卫**——自愈常嵌套在手动重启链内会被守卫拦截）；`modelHealRestarted` 置位后短路为单次尝试，手动 restart 重置；`running` 在首次 get_state 成功后才置位（健康慢启动显示"启动中…"而非假警告）；运行中无模型由 StatusBar 用现有字段推导警告态（⚠ 无可用模型 + 重启按钮），**不新增协议字段**；get_state 的 steeringMode/followUpMode/autoCompactionEnabled 三字段缺字段时保留默认值（all / one-at-a-time / true）
 
 **Windows 专项约束（有回归测试 `src/test/spawn-spec.test.ts`）**：
@@ -108,7 +109,7 @@ npm run package      # 生产构建（minify）
 - webview CSP `default-src 'none'` + script nonce；markdown 用 react-markdown 且**不得启用 rehype-raw**
 - 不把用户输入拼进 shell 命令字符串（piPath 配置除外——它本就是用户显式指定的本地命令）
 
-**范围纪律**：以下功能属于 v0.2+，非明确需求不得提前实现：会话列表/切换/重命名、Plan Mode、edit diff 预览、@提及、检查点/回退（`get_available_models` 协议类型已备好但未使用——配置面板切换采用用户选定的点击循环 cycle_model，不拉模型列表）。注：交互 UI（对话框卡片 + 待办面板）、/命令自动补全、问卷确认流程（ask_user_question 整卷 + 确认前修改 + 自动回填）与配置面板（状态栏弹出切换模型/思考强度/队列模式/自动压缩）已于 2026-08 经用户明确要求提前实现（见 `src/chat/todos.ts`、`src/chat/questionnaire.ts`、`UiDialogs.tsx`、`Questionnaire.tsx`、`ConfigPopover.tsx` 与 `webview-ui/src/command-match.ts`）。
+**范围纪律**：以下功能属于 v0.2+，非明确需求不得提前实现：会话列表/切换/重命名、Plan Mode、edit diff 预览、@提及、检查点/回退。注：交互 UI（对话框卡片 + 待办面板）、/命令自动补全、问卷确认流程（ask_user_question 整卷 + 确认前修改 + 自动回填）、配置面板（状态栏 ⚙ 设置按钮 + 队列模式/自动压缩）与模型/思考等级下拉列表（`get_available_models`/`get_available_thinking_levels`/`set_model`/`set_thinking_level`，2026-08 实现）均经用户明确要求提前实现（见 `src/chat/todos.ts`、`src/chat/questionnaire.ts`、`src/chat/models.ts`、`UiDialogs.tsx`、`Questionnaire.tsx`、`ConfigPopover.tsx`、`ListPopover.tsx` 与 `webview-ui/src/command-match.ts`）。
 
 ## Development Workflow
 
@@ -132,15 +133,16 @@ npm run package      # 生产构建（minify）
 - `stop.test.ts`：`RpcClient.stop()` 等待真实退出（exit 事件在 resolve 前派发、子进程已死）+ 优雅退出路径（stdin EOF 自退 exit code 0）+ 兜底硬杀路径（`PINEL_LONG_NO_EOF=1` 拒不退出）
 - `todos.test.ts`：`parseTodoTasks` 防御解析（全量快照、部分损坏跳过、结构不符 null）
 - `commands.test.ts`：`parseCommands` 防御解析（get_commands 响应：全量合法、部分损坏跳过、结构不符空列表、未知 source 兜底）
+- `models.test.ts`：`parseModels`/`parseThinkingLevels` 防御解析（全量合法、部分损坏跳过、结构不符空列表、["off"] 原样解析）
 - `questionnaire.test.ts`：`parseQuestionnaireArgs` 防御解析 + `parseQuestionnaireAnswer` 校验 + 回填映射（select 选项行/哨兵跟进标记、input 多选数字串/空串/自定义、标题归属）
-- `extension.test.ts`：集成测试（真实 VS Code + 假 pi：状态同步、端到端流式、abort、UI 自动取消、跨消息不串块、重启竞态回归、崩溃后重启恢复、模型自愈——NULLMODEL-FIRST 重试恢复无重启 / NULLMODEL-FOREVER 自动重启恰好一次后警告态、命令补全链路——启动送达/CMDADD settle 刷新/重启恢复不残留/NOCOMMANDS 旧版失败静默、问卷链路——整卷全链路含修改重答/取消无残留/通用对话框标题门控、用户消息去重——pi 的 user 事件不重复推送、配置面板——cycleModel 切下一模型且 thinkingLevel 同步/两模型循环回原点/cycleThinking 循环回绕/SINGLE-MODEL 回 null 不更新/NO-THINKING 回 null 不更新/CYCLE-FAIL 失败不更新/三种 set 命令状态更新/流式中切换不中断流/NOSTATE-FIELDS 缺字段保留默认值/重启后配置从状态文件恢复）
+- `extension.test.ts`：集成测试（真实 VS Code + 假 pi：状态同步、端到端流式、abort、UI 自动取消、跨消息不串块、重启竞态回归、崩溃后重启恢复、模型自愈——NULLMODEL-FIRST 重试恢复无重启 / NULLMODEL-FOREVER 自动重启恰好一次后警告态、命令补全链路——启动送达/CMDADD settle 刷新/重启恢复不残留/NOCOMMANDS 旧版失败静默、问卷链路——整卷全链路含修改重答/取消无残留/通用对话框标题门控、用户消息去重——pi 的 user 事件不重复推送、配置面板——cycleModel 切下一模型且 thinkingLevel 同步/两模型循环回原点/cycleThinking 循环回绕/SINGLE-MODEL 回 null 不更新/NO-THINKING 回 null 不更新/CYCLE-FAIL 失败不更新/三种 set 命令状态更新/流式中切换不中断流/NOSTATE-FIELDS 缺字段保留默认值/重启后配置从状态文件恢复、模型/思考列表链路——getModels 送达全量/getThinkingLevels 送达/setModel 切换且思考等级经 get_state 回读（SETMODEL-CLAMP 同步为 medium）/setThinkingLevel 生效/SETMODEL-MISS 与 SETTHINK-FAIL error notice 状态不变/MODELS-FAIL 与 THINKLEVELS-FAIL warning notice 且空数组失败信号/THINKLEVELS-OFF 回 [off]/SETTHINK-CLAMP clamp 后回读确认/SETMODEL-READBACKFAIL 回读失败保留 set_model 结果/SETMODEL-SLOW 迟到响应 restart 不残留/流式中 setModel 不中断流）
 - `src/test-no-workspace/no-workspace.test.ts`：空窗口实例友好状态（no-workspace + 引导文本，不伪装成进程异常）
 
 **新增功能覆盖要求**：
 - 纯逻辑（framing/装配/spawn 解析类）→ 在 `src/test/` 加 mocha 单测，与现有 suite 风格一致
 - 聊天行为/RPC 交互 → 扩展 `fixtures/fake-pi.js` 场景（新增 prompt 标记触发）后加集成测试，经 `PinelTestApi` 断言 controller 状态；**作用于首次 get_state 的场景**（如模型自愈）不能用 prompt 子串标记——首次 get_state 发生在任何 prompt 之前，改用环境变量 `PINEL_FAKE_PI_SCENARIO` 在 spawn 时激活（测试内先设 env 再 `api.restart()` 触发新进程，结束恢复 env + restart）
 - 修改 RPC 命令/事件处理必须同步更新 `protocol.ts` 类型与假 pi
-- 配置切换（cycle_model 等）经 `PINEL_FAKE_PI_SCENARIO` 环境变量场景激活（SINGLE-MODEL/NO-THINKING/CYCLE-FAIL/NOSTATE-FIELDS）；假 pi 的「重启后配置恢复」经 `PINEL_FAKE_PI_STATE` 状态文件模拟 pi 的 settings 持久化（测试用唯一路径防跨运行污染，结束删除文件 + 恢复 env + restart）
+- 配置切换（cycle_model 等）与模型/思考列表（get_available_models/set_model/get_available_thinking_levels/set_thinking_level）经 `PINEL_FAKE_PI_SCENARIO` 环境变量场景激活（SINGLE-MODEL/NO-THINKING/CYCLE-FAIL/NOSTATE-FIELDS/MODELS-FAIL/THINKLEVELS-OFF/THINKLEVELS-FAIL/SETMODEL-CLAMP/SETMODEL-SLOW/SETMODEL-READBACKFAIL/SETTHINK-CLAMP/SETTHINK-FAIL）；假 pi 的「重启后配置恢复」经 `PINEL_FAKE_PI_STATE` 状态文件模拟 pi 的 settings 持久化（测试用唯一路径防跨运行污染，结束删除文件 + 恢复 env + restart）；fake-pi 的 `stateData()` 流式中回真实 `isStreaming`（客户端 set_model/set_thinking_level 后 get_state 回读依赖它，勿改回硬编码 false）
 
 **集成测试专项注意（踩坑沉淀）**：
 - 等待空闲用 `api.waitForSettled(timeoutMs, baseline)` 且 **baseline 必须在触发动作前捕获**（settle 与响应异步到达，基线后置会死等）；重启类测试**不要用** waitForSettled（无新 prompt 时 settled 不前进会挂到超时），改用 `waitFor` 轮询断言

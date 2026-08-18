@@ -814,4 +814,274 @@ suite("Pinel 集成测试（假 pi）", () => {
       );
     }
   });
+
+  // -------------------------------------------------------------------------
+  // 模型/思考强度列表（get_available_models / set_model / 思考等级链路）
+  // -------------------------------------------------------------------------
+
+  /** 场景化测试公共收尾：清 env + 重启 + 等待默认状态（Fake Model / 无场景）。 */
+  async function restoreDefaultScenario(): Promise<void> {
+    delete process.env.PINEL_FAKE_PI_SCENARIO;
+    await api.restart();
+    await waitFor(
+      () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+      30000,
+      "恢复默认场景",
+    );
+  }
+
+  test("模型列表：getModels 送达全量模型（含 provider 复合键所需字段）", async () => {
+    await api.getModels();
+    await waitFor(() => api.getTestEventLog().lastModels !== undefined, 10000, "models 事件送达");
+    const models = api.getTestEventLog().lastModels ?? [];
+    assert.deepStrictEqual(
+      models.map((m) => ({ id: m.id, name: m.name, provider: m.provider })),
+      [
+        { id: "fake-model", name: "Fake Model", provider: "fake" },
+        { id: "fake-model-b", name: "Fake Model B", provider: "fake" },
+      ],
+      "models 事件必须携带 id/name/provider（set_model 依赖 provider+modelId）",
+    );
+  });
+
+  test("模型列表：MODELS-FAIL 场景 notice 且 events 为空数组（失败信号）", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "MODELS-FAIL";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "MODELS-FAIL 场景启动",
+      );
+      await api.getModels();
+      await waitFor(() => api.getTestEventLog().lastModels?.length === 0, 10000, "失败信号（空数组）送达");
+      const log = api.getTestEventLog();
+      assert.ok(
+        log.notices.some((n) => n.level === "warning" && n.text.includes("获取模型列表失败")),
+        "必须弹出获取失败 warning notice",
+      );
+    } finally {
+      await restoreDefaultScenario();
+    }
+  });
+
+  test("模型列表：setModel 切换到指定模型（思考等级经 get_state 回读保持）", async () => {
+    await api.setModel("fake", "fake-model-b");
+    await waitFor(() => api.getStatus().model?.name === "Fake Model B", 10000, "setModel 生效");
+    const s = api.getStatus();
+    assert.strictEqual(s.model?.provider, "fake", "provider 必须同步");
+    assert.strictEqual(s.thinkingLevel, "high", "无 re-clamp 时思考等级保持（get_state 回读）");
+    // 恢复基线
+    await api.setModel("fake", "fake-model");
+    await waitFor(() => api.getStatus().model?.name === "Fake Model", 10000, "恢复默认模型");
+  });
+
+  test("模型列表：SETMODEL-CLAMP 场景切模型后思考等级经 get_state 回读同步", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "SETMODEL-CLAMP";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "SETMODEL-CLAMP 场景启动",
+      );
+      await api.setModel("fake", "fake-model-b");
+      await waitFor(() => api.getStatus().model?.name === "Fake Model B", 10000, "setModel 生效");
+      await waitFor(() => api.getStatus().thinkingLevel === "medium", 10000, "思考等级回读为 medium");
+    } finally {
+      await restoreDefaultScenario();
+    }
+  });
+
+  test("模型列表：SETMODEL-MISS 场景模型未找到 → error notice 状态不变", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "SETMODEL-MISS";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "SETMODEL-MISS 场景启动",
+      );
+      const before = api.getStatus();
+      await api.setModel("fake", "no-such-model");
+      const after = api.getStatus();
+      assert.strictEqual(after.model?.name, before.model?.name, "未找到时模型不得变化");
+      assert.strictEqual(after.thinkingLevel, before.thinkingLevel, "未找到时思考等级不得变化");
+      const log = api.getTestEventLog();
+      assert.ok(
+        log.notices.some((n) => n.level === "error" && n.text.includes("切换模型失败")),
+        "必须弹出 error notice",
+      );
+    } finally {
+      await restoreDefaultScenario();
+    }
+  });
+
+  test("思考列表：getThinkingLevels 送达全量等级；setThinkingLevel 生效", async () => {
+    await api.getThinkingLevels();
+    await waitFor(() => api.getTestEventLog().lastThinkingLevels !== undefined, 10000, "thinkingLevels 事件送达");
+    assert.deepStrictEqual(api.getTestEventLog().lastThinkingLevels, ["off", "minimal", "low", "medium", "high"]);
+
+    await api.setThinkingLevel("low");
+    await waitFor(() => api.getStatus().thinkingLevel === "low", 10000, "setThinkingLevel 生效");
+    // 恢复基线
+    await api.setThinkingLevel("high");
+    await waitFor(() => api.getStatus().thinkingLevel === "high", 10000, "恢复默认等级");
+  });
+
+  test("思考列表：THINKLEVELS-OFF 场景回 [off]（不支持思考的模型）", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "THINKLEVELS-OFF";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "THINKLEVELS-OFF 场景启动",
+      );
+      await api.getThinkingLevels();
+      await waitFor(() => api.getTestEventLog().lastThinkingLevels !== undefined, 10000, "thinkingLevels 事件送达");
+      assert.deepStrictEqual(api.getTestEventLog().lastThinkingLevels, ["off"], "不支持思考时仅 [off]");
+    } finally {
+      await restoreDefaultScenario();
+    }
+  });
+
+  test("思考列表：THINKLEVELS-FAIL 场景 notice 且空数组（失败信号）", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "THINKLEVELS-FAIL";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "THINKLEVELS-FAIL 场景启动",
+      );
+      await api.getThinkingLevels();
+      await waitFor(() => api.getTestEventLog().lastThinkingLevels?.length === 0, 10000, "失败信号（空数组）送达");
+      const log = api.getTestEventLog();
+      assert.ok(
+        log.notices.some((n) => n.level === "warning" && n.text.includes("获取思考强度列表失败")),
+        "必须弹出获取失败 warning notice",
+      );
+    } finally {
+      await restoreDefaultScenario();
+    }
+  });
+
+  test("思考列表：SETTHINK-CLAMP 场景 clamp 后 get_state 确认实际值", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "SETTHINK-CLAMP";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "SETTHINK-CLAMP 场景启动",
+      );
+      await api.setThinkingLevel("ultra"); // 不在支持列表：clamp 到最低支持值
+      await waitFor(() => api.getStatus().thinkingLevel === "off", 10000, "clamp 后的实际值经 get_state 确认");
+      const log = api.getTestEventLog();
+      assert.ok(
+        !log.notices.some((n) => n.level === "error" && n.text.includes("设置思考强度失败")),
+        "clamp 不是失败，不得弹 error notice",
+      );
+    } finally {
+      await restoreDefaultScenario();
+    }
+  });
+
+  test("思考列表：SETTHINK-FAIL 场景 error notice 状态不变", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "SETTHINK-FAIL";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "SETTHINK-FAIL 场景启动",
+      );
+      const before = api.getStatus();
+      await api.setThinkingLevel("low");
+      const after = api.getStatus();
+      assert.strictEqual(after.thinkingLevel, before.thinkingLevel, "success:false 时思考等级不得变化");
+      const log = api.getTestEventLog();
+      assert.ok(
+        log.notices.some((n) => n.level === "error" && n.text.includes("设置思考强度失败")),
+        "必须弹出 error notice",
+      );
+    } finally {
+      await restoreDefaultScenario();
+    }
+  });
+
+  test("模型列表：SETMODEL-READBACKFAIL 回读失败 → notice 且模型保留 set_model 结果", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "SETMODEL-READBACKFAIL";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "SETMODEL-READBACKFAIL 场景启动",
+      );
+      await api.setModel("fake", "fake-model-b");
+      await waitFor(() => api.getStatus().model?.name === "Fake Model B", 10000, "set_model 结果先应用");
+      await waitFor(
+        () =>
+          api
+            .getTestEventLog()
+            .notices.some((n) => n.level === "warning" && n.text.includes("状态回读失败")),
+        10000,
+        "回读失败 warning notice",
+      );
+      assert.strictEqual(api.getStatus().model?.name, "Fake Model B", "回读失败后模型保留 set_model 结果");
+    } finally {
+      await restoreDefaultScenario();
+    }
+  });
+
+  test("模型列表：SETMODEL-SLOW 迟到响应竞态——restart 后不残留旧进程结果", async function () {
+    this.timeout(60000);
+    process.env.PINEL_FAKE_PI_SCENARIO = "SETMODEL-SLOW";
+    try {
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "SETMODEL-SLOW 场景启动",
+      );
+      // fire-and-forget：set_model 在旧进程延时 1.5s 响应，立即 restart
+      void api.setModel("fake", "fake-model-b");
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+        30000,
+        "重启完成",
+      );
+      // 等待超过延时窗口（若迟到响应污染新状态，此时应已可见）
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      assert.strictEqual(api.getStatus().model?.name, "Fake Model", "新进程状态不得残留旧响应");
+      assert.strictEqual(api.getStatus().thinkingLevel, "high", "思考等级也不得被污染");
+    } finally {
+      await restoreDefaultScenario();
+    }
+  });
+
+  test("模型列表：流式中 setModel 状态即时更新且流不中断", async function () {
+    this.timeout(60000);
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(`ABORTME-CONFIG-${Date.now()}`);
+    await waitFor(() => api.getStatus().isStreaming, 10000, "流式开始");
+    await api.setModel("fake", "fake-model-b");
+    await waitFor(() => api.getStatus().model?.name === "Fake Model B", 10000, "流式中 setModel 生效");
+    assert.ok(api.getStatus().isStreaming, "切换不得中断流");
+    await api.waitForSettled(30000, baseline);
+    // 恢复基线
+    await api.setModel("fake", "fake-model");
+    await waitFor(() => api.getStatus().model?.name === "Fake Model", 10000, "恢复默认模型");
+  });
 });

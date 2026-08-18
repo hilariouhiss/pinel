@@ -113,8 +113,25 @@ export interface GetAvailableModelsCommand {
   type: "get_available_models";
 }
 
+/** 切换到指定模型（列表选择；响应为完整 Model 对象，不含 thinkingLevel——
+ * pi 内部会 re-clamp 思考等级并持久化到 settings，客户端需 get_state 回读刷新）。 */
+export interface SetModelCommand {
+  type: "set_model";
+  provider: string;
+  modelId: string;
+}
+
 export interface CycleModelCommand {
   type: "cycle_model";
+}
+
+export interface GetAvailableThinkingLevelsCommand {
+  type: "get_available_thinking_levels";
+}
+
+export interface SetThinkingLevelCommand {
+  type: "set_thinking_level";
+  level: string;
 }
 
 export interface CycleThinkingLevelCommand {
@@ -147,7 +164,10 @@ export type ClientCommand =
   | GetStateCommand
   | GetMessagesCommand
   | GetAvailableModelsCommand
+  | SetModelCommand
   | CycleModelCommand
+  | GetAvailableThinkingLevelsCommand
+  | SetThinkingLevelCommand
   | CycleThinkingLevelCommand
   | SetSteeringModeCommand
   | SetFollowUpModeCommand
@@ -180,6 +200,11 @@ export interface GetMessagesData {
 
 export interface GetAvailableModelsData {
   models: Model[];
+}
+
+/** get_available_thinking_levels 响应；不支持思考的模型返回 ["off"]。 */
+export interface GetAvailableThinkingLevelsData {
+  levels: string[];
 }
 
 /**

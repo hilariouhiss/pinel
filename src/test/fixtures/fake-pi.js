@@ -22,6 +22,18 @@
  *   场景 SINGLE-MODEL 回 data:null（仅一个模型）、CYCLE-FAIL 回 success:false
  * - cycle_thinking_level：在 THINKING_LEVELS 间循环，响应 {level}；
  *   场景 NO-THINKING 回 data:null（模型不支持思考）
+ * - set_model：按 provider+modelId 查 MODELS，命中则写入内存态并返回该模型；
+ *   未命中回 error（Model not found）；场景 SETMODEL-CLAMP 在切换后把
+ *   currentThinkingLevel 重置为 "medium"（合成行为：真实 pi 仅在“新模型不支持
+ *   当前等级”时调整、默认保持，此处仅用于验证客户端 get_state 回读同步）；
+ *   场景 SETMODEL-SLOW 延时 ~1.5s 再响应（供迟到响应竞态测试）；
+ *   场景 SETMODEL-READBACKFAIL 在 set_model 成功后令下一次 get_state 失败一次
+ *   （验证“回读失败 → notice，状态保留 set_model 结果”分支）
+ * - get_available_thinking_levels：返回 THINKING_LEVELS；场景 THINKLEVELS-OFF
+ *   回 ["off"]（模型不支持思考）、THINKLEVELS-FAIL 回 success:false（旧版 pi）
+ * - set_thinking_level：写入内存态并回 success；场景 SETTHINK-CLAMP 把请求
+ *   clamp 到 THINKING_LEVELS 内（如请求 off → minimal，模拟真实 pi clamp）；
+ *   场景 SETTHINK-FAIL 回 success:false（设置失败）
  * - set_steering_mode / set_follow_up_mode / set_auto_compaction：写入内存态
  *   （get_state 回读，保证“重启后配置恢复”可自动化验证）
  * - 配置持久化：设 PINEL_FAKE_PI_STATE 时，配置内存态写入该文件并在启动时
@@ -35,6 +47,14 @@
  *   NO-THINKING：cycle_thinking_level 回 data:null（模型不支持思考）
  *   CYCLE-FAIL：cycle_model 回 success:false（切换失败）
  *   NOSTATE-FIELDS：get_state 不带配置三字段（模拟旧版 pi，客户端应保留默认值）
+ *   THINKLEVELS-OFF：get_available_thinking_levels 回 ["off"]（不支持思考）
+ *   THINKLEVELS-FAIL：get_available_thinking_levels 回 success:false（旧版 pi）
+ *   MODELS-FAIL：get_available_models 回 success:false（旧版 pi）
+ *   SETMODEL-CLAMP：set_model 后重置思考等级为 "medium"（合成行为，见上）
+ *   SETMODEL-SLOW：set_model 延时 ~1.5s 响应（迟到响应竞态）
+ *   SETMODEL-READBACKFAIL：set_model 成功后下一次 get_state 失败一次
+ *   SETTHINK-CLAMP：set_thinking_level clamp（如 off → minimal）
+ *   SETTHINK-FAIL：set_thinking_level 回 success:false（设置失败）
  * - 所有收到/发出的记录写入日志文件（PINEL_FAKE_PI_LOG 或系统临时目录）
  * - stdin EOF（父进程关闭管道）时退出：与真实 pi 的优雅退出路径一致，
  *   保证集成测试的 restart 流程不付 2.5s 优雅期等待
@@ -169,6 +189,9 @@ loadState();
 /** get_state 已响应次数（仅 NULLMODEL 场景统计）。 */
 let getStateCount = 0;
 
+/** SETMODEL-READBACKFAIL：set_model 成功后的下一次 get_state 回失败（一次性）。 */
+let readbackFailPending = false;
+
 /** get_commands 基础命令集（三类来源 + skill: 前缀名，供补全链路测试）。 */
 const baseCommands = [
   { name: "fix", description: "修复测试失败", source: "prompt", sourceInfo: { path: "/fake/prompts/fix.md" } },
@@ -195,7 +218,8 @@ function stateData() {
     return {
       model,
       thinkingLevel: currentThinkingLevel,
-      isStreaming: false,
+      // 流式中回真实 streaming 状态（真实 pi 行为；客户端回读依赖它）
+      isStreaming: streaming,
       isCompacting: false,
       sessionFile: "/fake/session.jsonl",
       sessionId: "fake-session",
@@ -206,7 +230,7 @@ function stateData() {
   return {
     model,
     thinkingLevel: currentThinkingLevel,
-    isStreaming: false,
+    isStreaming: streaming,
     isCompacting: false,
     steeringMode,
     followUpMode,
@@ -422,6 +446,12 @@ async function handleCommand(record) {
 
   switch (type) {
     case "get_state":
+      if (readbackFailPending) {
+        // SETMODEL-READBACKFAIL：模拟回读失败（一次性，之后恢复正常）
+        readbackFailPending = false;
+        respond(id, "get_state", false, undefined, "readback failed (scenario)");
+        break;
+      }
       respond(id, "get_state", true, stateData());
       break;
 
@@ -430,6 +460,11 @@ async function handleCommand(record) {
       break;
 
     case "get_available_models":
+      if (SCENARIO === "MODELS-FAIL") {
+        // 模拟旧版 pi：未知命令（客户端应 notice + 关弹窗）
+        respond(id, "get_available_models", false, undefined, "Unknown command: get_available_models");
+        break;
+      }
       respond(id, "get_available_models", true, { models: [...MODELS] });
       break;
 
@@ -450,6 +485,68 @@ async function handleCommand(record) {
         thinkingLevel: currentThinkingLevel,
         isScoped: false,
       });
+      break;
+    }
+
+    case "set_model": {
+      const model = MODELS.find((m) => m.provider === record.provider && m.id === record.modelId);
+      if (!model) {
+        respond(id, "set_model", false, undefined, `Model not found: ${record.provider}/${record.modelId}`);
+        break;
+      }
+      if (SCENARIO === "SETMODEL-SLOW") {
+        // 迟到响应竞态：延时后响应（测试侧 fire-and-forget 后立即 restart）
+        setTimeout(() => {
+          currentModelIndex = MODELS.indexOf(model);
+          saveState();
+          respond(id, "set_model", true, model);
+        }, 1500);
+        break;
+      }
+      currentModelIndex = MODELS.indexOf(model);
+      saveState();
+      if (SCENARIO === "SETMODEL-CLAMP") {
+        // 合成行为：真实 pi 仅在“新模型不支持当前等级”时 re-clamp、默认保持
+        // 当前等级；此处重置为 medium 仅用于验证客户端 get_state 回读同步
+        currentThinkingLevel = "medium";
+        saveState();
+      }
+      if (SCENARIO === "SETMODEL-READBACKFAIL") {
+        readbackFailPending = true; // 下一次 get_state 失败一次
+      }
+      respond(id, "set_model", true, model);
+      break;
+    }
+
+    case "get_available_thinking_levels": {
+      if (SCENARIO === "THINKLEVELS-FAIL") {
+        respond(id, "get_available_thinking_levels", false, undefined, "Unknown command: get_available_thinking_levels");
+        break;
+      }
+      if (SCENARIO === "THINKLEVELS-OFF") {
+        // 模型不支持思考：仅 ["off"]（真实 pi 行为镜像）
+        respond(id, "get_available_thinking_levels", true, { levels: ["off"] });
+        break;
+      }
+      respond(id, "get_available_thinking_levels", true, { levels: [...THINKING_LEVELS] });
+      break;
+    }
+
+    case "set_thinking_level": {
+      if (SCENARIO === "SETTHINK-FAIL") {
+        respond(id, "set_thinking_level", false, undefined, "set thinking level failed");
+        break;
+      }
+      if (SCENARIO === "SETTHINK-CLAMP") {
+        // 模拟真实 pi 的 clamp 语义：请求的等级不在支持列表内时取最低支持值
+        currentThinkingLevel = THINKING_LEVELS.includes(record.level) ? record.level : THINKING_LEVELS[0];
+        saveState();
+        respond(id, "set_thinking_level", true);
+        break;
+      }
+      currentThinkingLevel = String(record.level);
+      saveState();
+      respond(id, "set_thinking_level", true);
       break;
     }
 

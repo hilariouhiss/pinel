@@ -1,9 +1,16 @@
 import * as vscode from "vscode";
 import { ChatController, type ChatStatus, type ToolCard } from "./chat/controller";
 import { ChatPanelProvider } from "./chat/panel";
-import type { AgentMessage, ExtensionUiRequest, SlashCommand } from "./rpc/protocol";
+import type { AgentMessage, ExtensionUiRequest, Model, SlashCommand } from "./rpc/protocol";
 import type { TodoTask } from "./chat/todos";
 import type { QuestionnaireView } from "./chat/questionnaire";
+
+/** 事件记录（测试断言用）：notice / models / thinkingLevels。 */
+export interface TestEventLog {
+  notices: Array<{ level: "info" | "warning" | "error"; text: string }>;
+  lastModels: Model[] | undefined;
+  lastThinkingLevels: string[] | undefined;
+}
 
 /** 暴露给集成测试的钩子接口（通过扩展 exports 获取）。 */
 export interface PinelTestApi {
@@ -15,6 +22,14 @@ export interface PinelTestApi {
   cycleModel(): Promise<void>;
   /** 循环切换思考强度（cycle_thinking_level）。 */
   cycleThinkingLevel(): Promise<void>;
+  /** 拉取可用模型列表（get_available_models；模型下拉列表）。 */
+  getModels(): Promise<void>;
+  /** 切换到指定模型（set_model；模型下拉列表选择）。 */
+  setModel(provider: string, modelId: string): Promise<void>;
+  /** 拉取思考强度列表（get_available_thinking_levels；思考下拉列表）。 */
+  getThinkingLevels(): Promise<void>;
+  /** 设置思考强度（set_thinking_level；思考下拉列表选择）。 */
+  setThinkingLevel(level: string): Promise<void>;
   /** 设置队列模式（set_steering_mode）。 */
   setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void>;
   /** 设置跟进模式（set_follow_up_mode）。 */
@@ -50,6 +65,8 @@ export interface PinelTestApi {
   getModelHealInfo(): { attempts: number; autoRestarted: boolean };
   /** 答复扩展对话框（模拟用户在 webview 中的操作）。 */
   uiRespond(id: string, response: { value?: string; confirmed?: boolean; cancelled?: boolean }): void;
+  /** 事件记录快照（notice 环形 / 最近 models / 最近 thinkingLevels；测试断言用）。 */
+  getTestEventLog(): TestEventLog;
   /** 轮询等待流结束（agent_settled 后 isStreaming=false）。 */
   waitForSettled(timeoutMs: number, baseline?: number): Promise<void>;
 }
@@ -85,6 +102,24 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     vscode.commands.registerCommand("pinel.abort", () => ctrl.abort()),
   );
 
+  // 测试事件记录：notice / models / thinkingLevels 环形缓冲（最近 100 条），
+  // 供集成测试断言（UI 链路不可控，controller 事件即权威）。
+  const notices: Array<{ level: "info" | "warning" | "error"; text: string }> = [];
+  let lastModels: Model[] | undefined;
+  let lastThinkingLevels: string[] | undefined;
+  ctrl.onChange.event((msg) => {
+    if (msg.type === "notice") {
+      notices.push({ level: msg.level, text: msg.text });
+      if (notices.length > 100) {
+        notices.splice(0, notices.length - 100);
+      }
+    } else if (msg.type === "models") {
+      lastModels = msg.models;
+    } else if (msg.type === "thinkingLevels") {
+      lastThinkingLevels = msg.levels;
+    }
+  });
+
   return {
     openPanel: async () => {
       await vscode.commands.executeCommand("pinel.chatView.focus");
@@ -93,6 +128,10 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     abort: () => ctrl.abort(),
     cycleModel: () => ctrl.cycleModel(),
     cycleThinkingLevel: () => ctrl.cycleThinkingLevel(),
+    getModels: () => ctrl.getModels(),
+    setModel: (provider, modelId) => ctrl.setModel(provider, modelId),
+    getThinkingLevels: () => ctrl.getThinkingLevels(),
+    setThinkingLevel: (level) => ctrl.setThinkingLevel(level),
     setSteeringMode: (mode) => ctrl.setSteeringMode(mode),
     setFollowUpMode: (mode) => ctrl.setFollowUpMode(mode),
     setAutoCompaction: (enabled) => ctrl.setAutoCompaction(enabled),
@@ -112,6 +151,11 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     questionnaireCancel: () => ctrl.handleQuestionnaireCancel(),
     getModelHealInfo: () => ctrl.getModelHealInfo(),
     uiRespond: (id, response) => ctrl.uiRespond(id, response),
+    getTestEventLog: () => ({
+      notices: [...notices],
+      lastModels,
+      lastThinkingLevels,
+    }),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {
       const deadline = Date.now() + timeoutMs;
       // 基线在触发动作之前捕获（调用方传入），避免 settled 在基线记录前就被处理

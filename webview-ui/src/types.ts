@@ -128,6 +128,8 @@ export type HostMessage =
   | { type: "uiCleared" }
   | { type: "todos"; todos: TodoTask[] }
   | { type: "commands"; commands: SlashCommand[] }
+  | { type: "models"; models: ModelInfo[] }
+  | { type: "thinkingLevels"; levels: string[] }
   | { type: "questionnaire"; questionnaire: QuestionnaireView }
   | { type: "questionnaireCleared" }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };

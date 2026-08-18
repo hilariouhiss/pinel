@@ -49,6 +49,25 @@ interface WebviewCycleThinkingMessage {
   type: "cycleThinking";
 }
 
+interface WebviewGetModelsMessage {
+  type: "getModels";
+}
+
+interface WebviewSetModelMessage {
+  type: "setModel";
+  provider: string;
+  modelId: string;
+}
+
+interface WebviewGetThinkingLevelsMessage {
+  type: "getThinkingLevels";
+}
+
+interface WebviewSetThinkingLevelMessage {
+  type: "setThinkingLevel";
+  level: string;
+}
+
 interface WebviewSetSteeringModeMessage {
   type: "setSteeringMode";
   mode: "all" | "one-at-a-time";
@@ -74,6 +93,10 @@ type WebviewInMessage =
   | WebviewQuestionnaireCancelMessage
   | WebviewCycleModelMessage
   | WebviewCycleThinkingMessage
+  | WebviewGetModelsMessage
+  | WebviewSetModelMessage
+  | WebviewGetThinkingLevelsMessage
+  | WebviewSetThinkingLevelMessage
   | WebviewSetSteeringModeMessage
   | WebviewSetFollowUpModeMessage
   | WebviewSetAutoCompactionMessage
@@ -162,6 +185,18 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "cycleThinking":
         void this.controller.cycleThinkingLevel();
+        break;
+      case "getModels":
+        void this.controller.getModels();
+        break;
+      case "setModel":
+        void this.controller.setModel(msg.provider, msg.modelId);
+        break;
+      case "getThinkingLevels":
+        void this.controller.getThinkingLevels();
+        break;
+      case "setThinkingLevel":
+        void this.controller.setThinkingLevel(msg.level);
         break;
       case "setSteeringMode":
         void this.controller.setSteeringMode(msg.mode);

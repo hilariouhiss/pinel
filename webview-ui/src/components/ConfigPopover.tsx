@@ -14,16 +14,15 @@ const COOLDOWN_MS = 500;
 type ModeValue = "all" | "one-at-a-time";
 
 /**
- * 状态栏弹出配置面板：模型/思考强度点击循环切换（cycle_model /
- * cycle_thinking_level），队列模式双值点选，自动压缩开关。
- * 点击外部/Esc 关闭（Esc 在 window capture 阶段拦截，让位于 Composer 的
- * abort/清空分支）；非 running 或无模型时切换区禁用。
+ * 状态栏弹出配置面板（⚙ 设置按钮触发）：队列模式双值点选、自动压缩开关。
+ * 模型/思考强度已移至状态栏下拉列表（ListPopover + set_model/set_thinking_level），
+ * 不再出现在面板内。点击外部/Esc 关闭（Esc 在 window capture 阶段拦截，让位于
+ * Composer 的 abort/清空分支）；非 running 时切换区禁用。
  */
 export function ConfigPopover({ status, open, onClose }: Props) {
   const [busyKeys, setBusyKeys] = useState<ReadonlySet<string>>(new Set());
   const panelRef = useRef<HTMLDivElement>(null);
   const running = status.processState === "running";
-  const modelMissing = status.model === null;
 
   // Esc 关闭：capture 阶段拦截 + stopPropagation，防止 Composer 的 Esc 分支
   //（流式中会 abort）同时触发——面板打开时 Esc 只关面板
@@ -100,36 +99,6 @@ export function ConfigPopover({ status, open, onClose }: Props) {
     <>
       <div className="config-popover-overlay" onClick={onClose} />
       <div className="config-popover" role="dialog" aria-label="Pi 配置面板" ref={panelRef}>
-        <div className="config-popover-section">
-          <div className="config-popover-title">模型</div>
-          <div className="config-popover-row">
-            <span className="config-popover-value" title={status.model?.name ?? ""}>
-              {status.model?.name ?? "未选择模型"}
-            </span>
-            <button
-              className="config-popover-cycle"
-              title={modelMissing ? "无可用模型" : "切换到下一个模型"}
-              disabled={!running || modelMissing || busyKeys.has("model")}
-              onClick={() => withCooldown("model", () => vscode.postMessage({ type: "cycleModel" }))}
-            >
-              ↻ 切换
-            </button>
-          </div>
-        </div>
-        <div className="config-popover-section">
-          <div className="config-popover-title">思考强度</div>
-          <div className="config-popover-row">
-            <span className="config-popover-value">{status.thinkingLevel}</span>
-            <button
-              className="config-popover-cycle"
-              title={modelMissing ? "无可用模型" : "切换到下一思考强度"}
-              disabled={!running || modelMissing || busyKeys.has("thinking")}
-              onClick={() => withCooldown("thinking", () => vscode.postMessage({ type: "cycleThinking" }))}
-            >
-              ↻ 切换
-            </button>
-          </div>
-        </div>
         <div className="config-popover-section">
           <div className="config-popover-title">队列模式（流式中发送）</div>
           <div className="config-popover-row">

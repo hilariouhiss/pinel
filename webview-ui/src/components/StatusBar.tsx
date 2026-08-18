@@ -3,12 +3,30 @@ import type { ChatStatus } from "../types";
 
 interface Props {
   status: ChatStatus;
-  /** 配置面板是否打开（aria-expanded）；点击模型/思考等级按钮触发。 */
+  /** ⚙ 设置面板是否打开（aria-expanded）；由设置按钮触发。 */
   configOpen: boolean;
   onOpenConfig: () => void;
+  /** 模型/思考等级下拉列表是否打开（aria-expanded）；由各自按钮触发。 */
+  modelListOpen: boolean;
+  thinkingListOpen: boolean;
+  onOpenModelList: () => void;
+  onOpenThinkingList: () => void;
+  /** 按钮元素引用（App 侧 ListPopover 锚定定位/焦点还原依赖）。 */
+  modelBtnRef?: React.Ref<HTMLButtonElement>;
+  thinkingBtnRef?: React.Ref<HTMLButtonElement>;
 }
 
-export function StatusBar({ status, configOpen, onOpenConfig }: Props) {
+export function StatusBar({
+  status,
+  configOpen,
+  onOpenConfig,
+  modelListOpen,
+  thinkingListOpen,
+  onOpenModelList,
+  onOpenThinkingList,
+  modelBtnRef,
+  thinkingBtnRef,
+}: Props) {
   const queueCount = status.steering.length + status.followUp.length;
   // 进程运行中但无模型：自愈已耗尽，警告态 + 重启按钮（由现有字段推导，不新增协议）
   const modelMissing = status.processState === "running" && status.model === null;
@@ -81,11 +99,12 @@ export function StatusBar({ status, configOpen, onOpenConfig }: Props) {
     <div className="statusbar">
       <span className="status-item">
         <button
+          ref={modelBtnRef}
           className="status-config-btn"
-          title="当前模型（点击打开配置面板）"
-          aria-haspopup="dialog"
-          aria-expanded={configOpen}
-          onClick={onOpenConfig}
+          title="当前模型（点击选择切换模型）"
+          aria-haspopup="listbox"
+          aria-expanded={modelListOpen}
+          onClick={onOpenModelList}
         >
           {modelLabel}
         </button>
@@ -93,11 +112,12 @@ export function StatusBar({ status, configOpen, onOpenConfig }: Props) {
       {status.model && (
         <span className="status-item">
           <button
+            ref={thinkingBtnRef}
             className="status-config-btn"
-            title="思考强度（点击打开配置面板）"
-            aria-haspopup="dialog"
-            aria-expanded={configOpen}
-            onClick={onOpenConfig}
+            title="思考强度（点击选择切换）"
+            aria-haspopup="listbox"
+            aria-expanded={thinkingListOpen}
+            onClick={onOpenThinkingList}
           >
             {status.thinkingLevel}
           </button>
@@ -109,6 +129,17 @@ export function StatusBar({ status, configOpen, onOpenConfig }: Props) {
         </span>
       )}
       <span className="status-spacer" />
+      <span className="status-item">
+        <button
+          className="status-config-btn status-gear"
+          title="设置"
+          aria-haspopup="dialog"
+          aria-expanded={configOpen}
+          onClick={onOpenConfig}
+        >
+          ⚙
+        </button>
+      </span>
       {stateEl}
     </div>
   );

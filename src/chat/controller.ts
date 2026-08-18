@@ -9,6 +9,7 @@ import {
   type CycleThinkingLevelData,
   type ExtensionUiRequest,
   type GetAvailableModelsData,
+  type GetAvailableThinkingLevelsData,
   type GetCommandsData,
   type GetMessagesData,
   type ImageContent,
@@ -25,6 +26,7 @@ import {
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
 import { parseTodoTasks, type TodoTask } from "./todos";
 import { parseCommands } from "./commands";
+import { parseModels, parseThinkingLevels } from "./models";
 import {
   inputResponseFor,
   parseQuestionnaireAnswer,
@@ -74,6 +76,8 @@ export type OutMessage =
   | { type: "uiCleared" }
   | { type: "todos"; todos: TodoTask[] }
   | { type: "commands"; commands: SlashCommand[] }
+  | { type: "models"; models: Model[] }
+  | { type: "thinkingLevels"; levels: string[] }
   | { type: "questionnaire"; questionnaire: QuestionnaireView }
   | { type: "questionnaireCleared" }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
@@ -328,21 +332,7 @@ export class ChatController {
       try {
         const state = await client.send<SessionState>({ type: "get_state" });
         this.modelHealAttempts++;
-        this.status = {
-          ...this.status,
-          model: state.model ?? null,
-          thinkingLevel: state.thinkingLevel ?? this.status.thinkingLevel,
-          // 配置三字段：get_state 缺字段时保留默认值（防御旧版 pi）
-          steeringMode: typeof state.steeringMode === "string" ? state.steeringMode : this.status.steeringMode,
-          followUpMode: typeof state.followUpMode === "string" ? state.followUpMode : this.status.followUpMode,
-          autoCompactionEnabled:
-            typeof state.autoCompactionEnabled === "boolean"
-              ? state.autoCompactionEnabled
-              : this.status.autoCompactionEnabled,
-          isStreaming: Boolean(state.isStreaming),
-          isCompacting: Boolean(state.isCompacting),
-        };
-        this.fire({ type: "status", status: this.status });
+        this.applySessionState(state);
         if (this.status.model) {
           return "ok";
         }
@@ -490,12 +480,35 @@ export class ChatController {
     }
   }
 
+  /**
+   * get_state 响应应用到本地状态（缺字段保留旧值，防御旧版 pi 的配置三字段缺失）。
+   * 初始同步与切换后回读共用，保证字段合并逻辑一致。
+   */
+  private applySessionState(state: SessionState): void {
+    this.status = {
+      ...this.status,
+      model: state.model ?? null,
+      thinkingLevel: state.thinkingLevel ?? this.status.thinkingLevel,
+      // 配置三字段：get_state 缺字段时保留默认值（防御旧版 pi）
+      steeringMode: typeof state.steeringMode === "string" ? state.steeringMode : this.status.steeringMode,
+      followUpMode: typeof state.followUpMode === "string" ? state.followUpMode : this.status.followUpMode,
+      autoCompactionEnabled:
+        typeof state.autoCompactionEnabled === "boolean"
+          ? state.autoCompactionEnabled
+          : this.status.autoCompactionEnabled,
+      isStreaming: Boolean(state.isStreaming),
+      isCompacting: Boolean(state.isCompacting),
+    };
+    this.fire({ type: "status", status: this.status });
+  }
+
   // -------------------------------------------------------------------------
   // 配置切换（状态栏弹出面板）
   // -------------------------------------------------------------------------
 
   /**
    * 循环切换模型（cycle_model）。
+   * UI 不再使用（已由状态栏模型列表 set_model 替代），保留供 PinelTestApi 测试覆盖。
    * pi 切模型时会重新锎制思考等级，响应携带 {model, thinkingLevel, isScoped}，
    * 两者一并应用；仅一个可用模型时响应为 null。
    */
@@ -596,6 +609,161 @@ export class ChatController {
       },
       "设置自动压缩失败",
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // 模型/思考强度列表（状态栏下拉选择；每次点击时拉取）
+  // -------------------------------------------------------------------------
+
+  /**
+   * 拉取可用模型列表（get_available_models；状态栏模型列表）。
+   * 失败/空结果 notice + fire 空数组（webview 收到空数组即关闭弹窗；
+   * 区别于 fetchCommands 的静默——此处为用户主动点击，需可见反馈）。
+   */
+  async getModels(): Promise<void> {
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("warning", "pi 进程不可用，无法获取模型列表");
+      this.fire({ type: "models", models: [] });
+      return;
+    }
+    try {
+      const data = await client.send<GetAvailableModelsData>({ type: "get_available_models" });
+      if (this.client !== client) {
+        return; // restart 竞态：丢弃迟到响应，不污染新进程状态
+      }
+      const models = parseModels(data);
+      if (models.length === 0) {
+        this.notice("warning", "未获取到模型列表");
+      }
+      this.fire({ type: "models", models });
+    } catch (err) {
+      if (this.client !== client) {
+        return;
+      }
+      this.notice("warning", `获取模型列表失败：${(err as Error).message}`);
+      this.fire({ type: "models", models: [] });
+    }
+  }
+
+  /**
+   * 切换到指定模型（set_model；状态栏模型列表选择）。
+   * pi 切模型时会重新锎制思考等级并持久化 settings，但 set_model 响应只有
+   * Model 对象（不含 thinkingLevel）——先防御校验并应用响应 model，再
+   * get_state 回读刷新 model + thinkingLevel；回读失败保留 set_model 结果。
+   */
+  async setModel(provider: string, modelId: string): Promise<void> {
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("warning", "pi 进程不可用，无法切换模型");
+      return;
+    }
+    try {
+      const data = await client.send<Model>({ type: "set_model", provider, modelId });
+      if (this.client !== client) {
+        return; // restart 竞态：丢弃迟到响应，不污染新进程状态
+      }
+      // 防御：响应形状异常（旧版 pi / 协议漂移）→ 仅提示不更新；
+      // 空字符串同视为异常（与 parseModels 的 trim 非空校验一致）
+      if (
+        typeof data !== "object" ||
+        data === null ||
+        Array.isArray(data) ||
+        typeof data.id !== "string" ||
+        data.id.trim().length === 0 ||
+        typeof data.name !== "string" ||
+        data.name.trim().length === 0 ||
+        typeof data.provider !== "string" ||
+        data.provider.trim().length === 0
+      ) {
+        this.notice("warning", "切换模型失败：响应数据异常");
+        return;
+      }
+      this.status = { ...this.status, model: data };
+      this.fire({ type: "status", status: this.status });
+      // set_model 响应不含 thinkingLevel（pi 内部 re-clamp）：回读确认
+      await this.refreshStateAfterSwitch(client);
+    } catch (err) {
+      if (this.client !== client) {
+        return;
+      }
+      this.notice("error", `切换模型失败：${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * 拉取当前模型支持的思考强度列表（get_available_thinking_levels；
+   * 状态栏思考强度列表）。失败/空结果 notice + fire 空数组（同 getModels）。
+   */
+  async getThinkingLevels(): Promise<void> {
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("warning", "pi 进程不可用，无法获取思考强度列表");
+      this.fire({ type: "thinkingLevels", levels: [] });
+      return;
+    }
+    try {
+      const data = await client.send<GetAvailableThinkingLevelsData>({ type: "get_available_thinking_levels" });
+      if (this.client !== client) {
+        return; // restart 竞态：丢弃迟到响应，不污染新进程状态
+      }
+      const levels = parseThinkingLevels(data);
+      if (levels.length === 0) {
+        this.notice("warning", "未获取到思考强度列表");
+      }
+      this.fire({ type: "thinkingLevels", levels });
+    } catch (err) {
+      if (this.client !== client) {
+        return;
+      }
+      this.notice("warning", `获取思考强度列表失败：${(err as Error).message}`);
+      this.fire({ type: "thinkingLevels", levels: [] });
+    }
+  }
+
+  /**
+   * 设置思考强度（set_thinking_level；状态栏思考强度列表选择）。
+   * 响应无 data 且 pi 会 clamp 到模型支持范围——成功后 get_state 回读确认
+   * 实际生效值。
+   */
+  async setThinkingLevel(level: string): Promise<void> {
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("warning", "pi 进程不可用，无法设置思考强度");
+      return;
+    }
+    try {
+      await client.send({ type: "set_thinking_level", level });
+      if (this.client !== client) {
+        return;
+      }
+      await this.refreshStateAfterSwitch(client);
+    } catch (err) {
+      if (this.client !== client) {
+        return;
+      }
+      this.notice("error", `设置思考强度失败：${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * 切换命令成功后 get_state 回读确认（set_model 响应不含 thinkingLevel、
+   * set_thinking_level 无 data 且 pi 会 clamp）。回读失败仅提示，
+   * 不覆盖已应用的切换结果。
+   */
+  private async refreshStateAfterSwitch(client: RpcClient): Promise<void> {
+    try {
+      const state = await client.send<SessionState>({ type: "get_state" });
+      if (this.client !== client) {
+        return;
+      }
+      this.applySessionState(state);
+    } catch (err) {
+      if (this.client !== client) {
+        return;
+      }
+      this.notice("warning", `状态回读失败（切换已生效，界面可能未同步）：${(err as Error).message}`);
+    }
   }
 
   /**

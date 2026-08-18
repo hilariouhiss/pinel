@@ -948,6 +948,16 @@ body {
   outline: 1px solid var(--vscode-focusBorder);
 }
 
+/* ⚙ 设置按钮：窄图形按钮，避免 hover 下划线破坏图标观感 */
+.status-gear {
+  padding: 0 2px;
+}
+
+.status-gear:hover {
+  text-decoration: none;
+  color: var(--vscode-foreground);
+}
+
 /* 遮罩层：点击外部关闭（fixed 覆盖整个 webview） */
 .config-popover-overlay {
   position: fixed;
@@ -1044,4 +1054,86 @@ body {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
   border-color: var(--vscode-button-background);
+}
+
+/* ===========================================================================
+ * 下拉选择列表（模型/思考强度；ListPopover）
+ * 弹层 fixed 定位由组件内联 style 计算（锚定触发按钮）；样式与 config-popover
+ * 同源（menu 系列 CSS 变量）。
+ * ========================================================================== */
+.list-popover-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+.list-popover {
+  position: fixed;
+  z-index: 100;
+  width: min(260px, calc(100vw - 16px));
+  max-height: min(320px, 60vh);
+  overflow-y: auto;
+  background: var(--vscode-menu-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-input-border));
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  font-size: 12px;
+  outline: none;
+}
+
+.list-popover-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  text-align: left;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.list-popover-item:hover,
+.list-popover-item.active {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
+  color: var(--vscode-menu-selectionForeground, var(--vscode-foreground));
+}
+
+.list-popover-item.selected .list-popover-item-label {
+  font-weight: 600;
+}
+
+.list-popover-item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-popover-check {
+  flex: none;
+  margin-left: auto;
+  color: var(--vscode-menu-selectionForeground, var(--vscode-foreground));
+}
+
+.list-popover-item-detail {
+  flex: none;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.list-popover-hint {
+  padding: 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  text-align: center;
 }
