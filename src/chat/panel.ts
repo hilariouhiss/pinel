@@ -93,6 +93,19 @@ interface WebviewInputFocusMessage {
   focused: boolean;
 }
 
+interface WebviewGetSessionListMessage {
+  type: "getSessionList";
+}
+
+interface WebviewSwitchSessionMessage {
+  type: "switchSession";
+  path: string;
+}
+
+interface WebviewNewSessionMessage {
+  type: "newSession";
+}
+
 type WebviewInMessage =
   | WebviewPromptMessage
   | WebviewAbortMessage
@@ -112,6 +125,9 @@ type WebviewInMessage =
   | WebviewSetAutoCompactionMessage
   | WebviewEditPromptMessage
   | WebviewInputFocusMessage
+  | WebviewGetSessionListMessage
+  | WebviewSwitchSessionMessage
+  | WebviewNewSessionMessage
   | WebviewReadyMessage;
 
 /**
@@ -225,6 +241,26 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       case "inputFocus":
         this.controller.setInputFocused(msg.focused);
         break;
+      case "getSessionList":
+        void this.postSessionList();
+        break;
+      case "switchSession":
+        // 聊天视图已在次侧边栏，无需 revealChatView（与历史视图入口不同）
+        void this.controller.switchSession(msg.path);
+        break;
+      case "newSession":
+        void this.controller.newSession();
+        break;
+    }
+  }
+
+  /** 扫描会话列表并回发（聊天 header 弹层数据源；每次打开实时扫描）。 */
+  private async postSessionList(): Promise<void> {
+    try {
+      const items = await this.controller.getSessionList();
+      this.post({ type: "sessionList", items, currentSessionFile: this.controller.getStatus().sessionFile });
+    } catch {
+      // 扫描异常：不弹 notice（弹层空列表即可），仅忽略
     }
   }
 }

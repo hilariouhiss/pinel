@@ -1,7 +1,5 @@
 import * as vscode from "vscode";
-import * as os from "node:os";
-import * as path from "node:path";
-import { scanSessions, type SessionMeta } from "./session-history";
+import { scanSessions, toItem, resolveSessionsRoot, type SessionListItem } from "./session-history";
 import type { ChatController } from "./controller";
 import { getPanelHtml } from "./panel";
 
@@ -19,15 +17,7 @@ import { getPanelHtml } from "./panel";
  */
 
 /** 会话列表项（webview 协议镜像；时间用 epoch ms 便于 JSON 序列化）。 */
-export interface SessionListItem {
-  path: string;
-  id: string;
-  created?: number;
-  modified: number;
-  name?: string;
-  preview?: string;
-  truncated: boolean;
-}
+export type { SessionListItem } from "./session-history";
 
 interface SessionListMessage {
   type: "sessionList";
@@ -172,13 +162,8 @@ export class SessionHistoryProvider implements vscode.WebviewViewProvider {
   private async scan(): Promise<SessionListItem[]> {
     const configured = vscode.workspace.getConfiguration("pinel").get<string>("sessionDir")?.trim();
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (configured) {
-      // 自定义目录：pi 不建 cwd 子目录（custom 布局）
-      const metas = await scanSessions(configured, undefined, "custom");
-      return metas.map(toItem);
-    }
-    const root = path.join(os.homedir(), ".pi", "agent", "sessions");
-    const metas = await scanSessions(root, cwd, "default");
+    const { root, layout } = resolveSessionsRoot(cwd, configured);
+    const metas = await scanSessions(root, cwd, layout);
     return metas.map(toItem);
   }
 
@@ -203,16 +188,4 @@ export class SessionHistoryProvider implements vscode.WebviewViewProvider {
   getLastCurrentSessionFile(): string | undefined {
     return this.lastSessionFile;
   }
-}
-
-function toItem(m: SessionMeta): SessionListItem {
-  return {
-    path: m.path,
-    id: m.id,
-    created: m.created?.getTime(),
-    modified: m.modified.getTime(),
-    name: m.name,
-    preview: m.preview,
-    truncated: m.truncated,
-  };
 }

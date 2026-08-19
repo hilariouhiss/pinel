@@ -1296,6 +1296,113 @@ suite("Pinel 集成测试（假 pi）", () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // 聊天 header 会话历史列表（controller.getSessionList 实时扫描路径）
+  // ---------------------------------------------------------------------------
+
+  suite("聊天 header 会话历史列表（controller 扫描路径）", () => {
+    let sessionDir: string;
+    let sessionA: string;
+    let sessionB: string;
+
+    /** 会话文件 header（假元信息）。 */
+    function sessionHeader(id: string, timestamp: string): string {
+      return JSON.stringify({ type: "session", version: 3, id, timestamp, cwd: "/fake/project" });
+    }
+
+    suiteSetup(async function () {
+      this.timeout(120000);
+      sessionDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pinel-chat-sessions-"));
+      sessionA = path.join(sessionDir, "2026-08-17T01-00-00-000Z_aaaa.jsonl");
+      sessionB = path.join(sessionDir, "2026-08-18T01-00-00-000Z_bbbb.jsonl");
+      const broken = path.join(sessionDir, "2026-08-16T01-00-00-000Z_cccc.jsonl");
+      await fs.promises.writeFile(
+        sessionA,
+        [
+          sessionHeader("chat-session-a", "2026-08-17T01:00:00.000Z"),
+          JSON.stringify({
+            type: "session_info",
+            id: "a1",
+            parentId: null,
+            timestamp: "2026-08-17T01:01:00.000Z",
+            name: "聊天入口会话",
+          }),
+          JSON.stringify({
+            type: "message",
+            id: "a2",
+            parentId: null,
+            timestamp: "2026-08-17T01:02:00.000Z",
+            message: { role: "user", content: "聊天入口第一条消息" },
+          }),
+        ].join("\n"),
+      );
+      await fs.promises.writeFile(
+        sessionB,
+        [
+          sessionHeader("chat-session-b", "2026-08-18T01:00:00.000Z"),
+          JSON.stringify({
+            type: "message",
+            id: "b1",
+            parentId: null,
+            timestamp: "2026-08-18T01:02:00.000Z",
+            message: { role: "user", content: "更新的会话" },
+          }),
+        ].join("\n"),
+      );
+      await fs.promises.writeFile(broken, "{broken header");
+      // mtime 排序控制：B 最新、A 次之（损坏文件本就跳过）
+      const now = Date.now();
+      await fs.promises.utimes(sessionB, new Date(now), new Date(now));
+      await fs.promises.utimes(sessionA, new Date(now - 60_000), new Date(now - 60_000));
+
+      // 配置扩展扫描自定义会话目录（fake-pi 忽略 --session-dir 参数，无影响）；
+      // config.update 的 IPC 传播为异步，轮询值验证（同会话历史 suite 模式）
+      const config = vscode.workspace.getConfiguration("pinel");
+      await config.update("sessionDir", sessionDir, vscode.ConfigurationTarget.Global);
+      await waitFor(
+        () => vscode.workspace.getConfiguration("pinel").get<string>("sessionDir") === sessionDir,
+        5000,
+        "sessionDir 配置传播到扩展宿主",
+      );
+    });
+
+    suiteTeardown(async () => {
+      const config = vscode.workspace.getConfiguration("pinel");
+      await config.update("sessionDir", "", vscode.ConfigurationTarget.Global);
+      await fs.promises.rm(sessionDir, { recursive: true, force: true });
+    });
+
+    test("getChatSessionList：controller 实时扫描（排序/元信息/损坏跳过）", async function () {
+      this.timeout(60000);
+      const list = await api.getChatSessionList();
+      assert.strictEqual(list.length, 2, "损坏文件跳过");
+      assert.strictEqual(list[0].path, sessionB, "mtime 最新在前");
+      assert.strictEqual(list[1].path, sessionA);
+      const a = list.find((i) => i.path === sessionA);
+      assert.strictEqual(a?.name, "聊天入口会话", "session_info 名称解析");
+      assert.ok(a?.preview?.includes("聊天入口第一条消息"), "首条 user 消息预览");
+      // currentSessionFile 由 panel 拼装（getStatus().sessionFile）：fake-pi 会话在
+      // /fake/ 目录外，仅断言其存在（高亮匹配由切换链路既有测试覆盖）
+      assert.ok(typeof api.getStatus().sessionFile === "string", "sessionFile 存在");
+    });
+
+    test("getChatSessionList 与历史视图扫描一致（共享扫描链路）", async function () {
+      this.timeout(60000);
+      // 关闭并重开历史视图：销毁旧 webview 触发重新 resolve + 扫描
+      //（旧视图可能缓存了上一 suite 的扫描结果/旧配置）
+      await vscode.commands.executeCommand("workbench.action.closeSidebar");
+      await vscode.commands.executeCommand("pinel.sessionHistory.focus");
+      await waitFor(
+        () => api.getSessionList().length >= 2 && api.getSessionList()[0].path === sessionB,
+        15000,
+        "历史视图按新配置重新扫描",
+      );
+      const viaProvider = api.getSessionList().map((i) => i.path).sort();
+      const viaController = (await api.getChatSessionList()).map((i) => i.path).sort();
+      assert.deepStrictEqual(viaController, viaProvider, "两条路径扫描结果一致");
+    });
+  });
+
   suite("提示词编辑器（Ctrl+G 编辑/回填/清理）", () => {
     /** 指定路径的临时文件标签页是否打开。 */
     function pendingTabOpen(pendingPath: string): boolean {

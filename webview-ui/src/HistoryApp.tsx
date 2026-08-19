@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { vscode } from "./index";
 import type { HostMessage, SessionListItem } from "./types";
+import { formatRelativeTime } from "./utils";
 
 /**
  * 会话历史视图（主侧边栏）。
@@ -8,27 +9,6 @@ import type { HostMessage, SessionListItem } from "./types";
  * 点击会话 → switchSession；点击新会话 → newSession（宿主切换成功后
  * 自动打开次侧边栏聊天视图）。
  */
-
-/** 相对时间（分钟/小时/天/日期）。 */
-function formatRelativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) {
-    return "刚刚";
-  }
-  if (minutes < 60) {
-    return `${minutes} 分钟前`;
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours} 小时前`;
-  }
-  const days = Math.floor(hours / 24);
-  if (days < 7) {
-    return `${days} 天前`;
-  }
-  return new Date(ts).toLocaleDateString();
-}
 
 export default function HistoryApp() {
   const [items, setItems] = useState<SessionListItem[]>([]);

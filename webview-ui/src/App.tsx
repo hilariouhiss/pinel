@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, HostMessage, ModelInfo, QuestionnaireView, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { ChatMessage, ChatStatus, HostMessage, ModelInfo, QuestionnaireView, SessionListItem, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ListPopover, type ListItem } from "./components/ListPopover";
+import { SessionListPopover } from "./components/SessionListPopover";
 import { MessageView } from "./components/MessageView";
 import { Notices } from "./components/Notices";
 import { StatusBar } from "./components/StatusBar";
 import { TodoPanel } from "./components/TodoPanel";
 import { UiDialogs } from "./components/UiDialogs";
 import { Questionnaire } from "./components/Questionnaire";
+// SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
+import historyIcon from "../../media/history.svg";
 
 const initialStatus: ChatStatus = {
   processState: "stopped",
@@ -26,8 +29,8 @@ const initialStatus: ChatStatus = {
 
 let noticeSeq = 0;
 
-/** 弹窗互斥：任一时刻只开一个（模型列表 / 思考强度列表 / ⚙ 设置面板）。 */
-type PopoverKind = "model" | "thinking" | "config" | null;
+/** 弹窗互斥：任一时刻只开一个（模型列表 / 思考强度列表 / ⚙ 设置面板 / 会话历史）。 */
+type PopoverKind = "model" | "thinking" | "config" | "session" | null;
 
 /** 模型项复合键（Model.id 跨 provider 可能重复）。 */
 function modelItemId(m: ModelInfo): string {
@@ -54,6 +57,10 @@ export default function App() {
   /** 列表锚定：状态栏按钮元素引用（ListPopover 定位/焦点还原依赖）。 */
   const modelBtnRef = useRef<HTMLButtonElement>(null);
   const thinkingBtnRef = useRef<HTMLButtonElement>(null);
+  /** 会话历史按钮元素引用（SessionListPopover 锚定）。 */
+  const historyBtnRef = useRef<HTMLButtonElement>(null);
+  /** 会话历史列表（header 弹层数据；getSessionList 响应填充）。 */
+  const [sessionItems, setSessionItems] = useState<SessionListItem[]>([]);
   /** 当前会话文件（快照替换语义：会话变化时清空本地 tools）。 */
   const sessionFileRef = useRef<string | undefined>(undefined);
   /** 会话切换/新建进行中（切换遮罩）。 */
@@ -151,6 +158,9 @@ export default function App() {
       case "sessionListChanged":
         // 仅会话历史视图消费；聊天视图忽略
         break;
+      case "sessionList":
+        setSessionItems(msg.items);
+        break;
       case "triggerEditPrompt":
         setEditPromptTrigger((v) => v + 1);
         break;
@@ -236,6 +246,27 @@ export default function App() {
 
   const openConfig = () => setPopover((prev) => (prev === "config" ? null : "config"));
 
+  // 会话历史弹层：打开时拉取最新列表（每次打开实时扫描）
+  const openSessionList = () => {
+    setPopover((prev) => (prev === "session" ? null : "session")); // 已开则关闭（toggle）
+    setSessionItems([]);
+    vscode.postMessage({ type: "getSessionList" });
+  };
+
+  // 选择会话/新会话：乐观置位 switching（controller 的 sessionSwitching 广播在
+  // ensureStarted 之后才发，点击到广播之间需本地禁点防重开弹层——HistoryApp 同款）
+  const selectSession = (path: string) => {
+    setPopover(null);
+    setSwitching(true);
+    vscode.postMessage({ type: "switchSession", path });
+  };
+
+  const startNewSession = () => {
+    setPopover(null);
+    setSwitching(true);
+    vscode.postMessage({ type: "newSession" });
+  };
+
   const modelItems: ListItem[] = models.map((m) => ({
     id: modelItemId(m),
     label: m.name ?? m.id ?? "",
@@ -260,6 +291,21 @@ export default function App() {
   return (
     <div className="pinel-root">
       <Notices notices={notices} onDismiss={dismissNotice} />
+      <div className="chat-header">
+        <button
+          ref={historyBtnRef}
+          className="chat-history-btn"
+          title="会话历史（点击选择切换会话）"
+          aria-haspopup="dialog"
+          aria-expanded={popover === "session"}
+          onClick={openSessionList}
+          disabled={switching}
+          dangerouslySetInnerHTML={{ __html: historyIcon }}
+        />
+        <span className="chat-history-label" onClick={openSessionList}>
+          会话历史
+        </span>
+      </div>
       {showBootAnimation && (
         <div className="session-boot-overlay">
           <div className="boot-spinner" />
@@ -335,6 +381,15 @@ export default function App() {
         onClose={() => setPopover(null)}
       />
       <ConfigPopover status={status} open={popover === "config"} onClose={() => setPopover(null)} />
+      <SessionListPopover
+        anchor={popover === "session" ? historyBtnRef.current : null}
+        items={sessionItems}
+        currentSessionFile={status.sessionFile}
+        switching={switching}
+        onSelect={selectSession}
+        onNewSession={startNewSession}
+        onClose={() => setPopover(null)}
+      />
     </div>
   );
 }

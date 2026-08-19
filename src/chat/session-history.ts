@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 /**
@@ -23,6 +24,45 @@ import * as path from "node:path";
 export const MAX_SCAN_LINES = 200;
 /** 首条 user 消息预览最大字符数。 */
 export const MAX_PREVIEW_CHARS = 120;
+
+/** 会话列表项（webview 协议镜像；时间用 epoch ms 便于 JSON 序列化）。 */
+export interface SessionListItem {
+  path: string;
+  id: string;
+  created?: number;
+  modified: number;
+  name?: string;
+  preview?: string;
+  truncated: boolean;
+}
+
+/**
+ * 会话存储目录解析（provider 与 controller 共用，防布局判断漂移）。
+ * - 自定义目录（pinel.sessionDir / --session-dir）：pi 不建 cwd 子目录（custom 布局）
+ * - 默认：`~/.pi/agent/sessions` + cwd 子目录（default 布局）
+ */
+export function resolveSessionsRoot(
+  cwd: string | undefined,
+  configuredRoot?: string,
+): { root: string; layout: SessionLayout } {
+  if (configuredRoot) {
+    return { root: configuredRoot, layout: "custom" };
+  }
+  return { root: path.join(os.homedir(), ".pi", "agent", "sessions"), layout: "default" };
+}
+
+/** SessionMeta → SessionListItem（时间戳 epoch ms）。 */
+export function toItem(m: SessionMeta): SessionListItem {
+  return {
+    path: m.path,
+    id: m.id,
+    created: m.created?.getTime(),
+    modified: m.modified.getTime(),
+    name: m.name,
+    preview: m.preview,
+    truncated: m.truncated,
+  };
+}
 
 /** 会话目录布局。 */
 export type SessionLayout = "default" | "custom";

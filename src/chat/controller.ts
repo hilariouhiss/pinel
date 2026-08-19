@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { RpcClient } from "../rpc/client";
 import { PromptEditorManager } from "./prompt-editor";
+import { scanSessions, toItem, resolveSessionsRoot } from "./session-history";
 import {
   DIALOG_UI_METHODS,
   type AgentMessage,
@@ -29,6 +30,7 @@ import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly"
 import { parseTodoTasks, type TodoTask } from "./todos";
 import { parseCommands } from "./commands";
 import { parseModels, parseThinkingLevels } from "./models";
+import type { SessionListItem } from "./session-history";
 import {
   inputResponseFor,
   parseQuestionnaireAnswer,
@@ -88,6 +90,7 @@ export type OutMessage =
   | { type: "sessionListChanged" }
   | { type: "triggerEditPrompt" }
   | { type: "fillPrompt"; text: string }
+  | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
@@ -526,8 +529,21 @@ export class ChatController {
   }
 
   // -------------------------------------------------------------------------
-  // 会话历史（切换/新建）
+  // 会话历史（切换/新建/列表）
   // -------------------------------------------------------------------------
+
+  /**
+   * 扫描会话列表（聊天界面 header 弹层数据源）。
+   * 与 SessionHistoryProvider 共用 resolveSessionsRoot/scanSessions/toItem，
+   * 布局判断不重复；每次调用实时扫描（弹层打开时拉取）。
+   */
+  async getSessionList(): Promise<SessionListItem[]> {
+    const configured = vscode.workspace.getConfiguration("pinel").get<string>("sessionDir")?.trim();
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const { root, layout } = resolveSessionsRoot(cwd, configured);
+    const metas = await scanSessions(root, cwd, layout);
+    return metas.map(toItem);
+  }
 
   /**
    * 切换到指定会话文件（会话历史列表选择）。

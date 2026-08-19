@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import { ChatController, type ChatStatus, type ToolCard } from "./chat/controller";
 import { ChatPanelProvider } from "./chat/panel";
-import { SessionHistoryProvider, revealChatView, type SessionListItem } from "./chat/session-history-provider";
+import { SessionHistoryProvider, revealChatView } from "./chat/session-history-provider";
+import type { SessionListItem } from "./chat/session-history";
 import type { AgentMessage, ExtensionUiRequest, Model, SlashCommand } from "./rpc/protocol";
 import type { TodoTask } from "./chat/todos";
 import type { QuestionnaireView } from "./chat/questionnaire";
@@ -55,6 +56,8 @@ export interface PinelTestApi {
   getCurrentSessionFile(): string | undefined;
   /** 会话历史列表（最近一次扫描结果；测试断言，不依赖 DOM）。 */
   getSessionList(): SessionListItem[];
+  /** 聊天 header 会话列表（controller.getSessionList 实时扫描；测试断言用）。 */
+  getChatSessionList(): Promise<SessionListItem[]>;
   /** 最近一次广播的当前会话文件（高亮断言）。 */
   getLastCurrentSessionFile(): string | undefined;
   getStatus(): ChatStatus;
@@ -188,6 +191,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     newSession: () => ctrl.newSession(),
     getCurrentSessionFile: () => ctrl.getStatus().sessionFile,
     getSessionList: () => historyProvider.getLastList(),
+    getChatSessionList: () => ctrl.getSessionList(),
     getLastCurrentSessionFile: () => historyProvider.getLastCurrentSessionFile(),
     getStatus: () => ctrl.getStatus(),
     getMessages: () => ctrl.getMessages(),

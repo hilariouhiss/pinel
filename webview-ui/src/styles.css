@@ -1206,6 +1206,87 @@ body {
   font-size: 13px;
 }
 
+/* ------------------------------------------------------------ 聊天 header */
+/* 顶部栏（新增）：右侧会话历史入口（history.svg 图标 + 文字）；
+   正常文档流，压缩 .pinel-scroll 高度，不遮挡消息区 */
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--vscode-input-border);
+  background: var(--vscode-titleBar-activeBackground, var(--vscode-editor-background));
+}
+
+/* 会话历史按钮（仅图标，作为弹层锚点）；文字 label 并列可点 */
+.chat-history-btn {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.chat-history-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* history.svg 图标：尺寸覆写（文件内硬编码 200px）+ path 级主题色
+   （fill 在 <path> 上，必须 path 级选择器覆盖 presentation attribute） */
+.chat-history-btn .icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.chat-history-btn .icon path {
+  fill: var(--vscode-descriptionForeground);
+}
+
+.chat-history-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+
+.chat-history-label:hover {
+  color: var(--vscode-foreground);
+  text-decoration: underline;
+}
+
+/* 会话历史弹层（右上角下拉；top/bottom/left/right 由组件内联计算） */
+.session-popover-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+.session-popover {
+  position: fixed;
+  z-index: 100;
+  width: min(280px, calc(100vw - 16px));
+  background: var(--vscode-menu-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-input-border));
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 6px;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+}
+
+.session-popover-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* 弹层内空态：覆写 .history-empty 的 30% 大 margin（弹层高度小） */
+.session-popover-empty {
+  margin-top: 16px;
+  padding-bottom: 8px;
+}
+
 /* ------------------------------------------------------------ 会话历史 */
 .history-root {
   display: flex;
