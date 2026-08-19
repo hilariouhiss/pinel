@@ -13,6 +13,7 @@ import { UiDialogs } from "./components/UiDialogs";
 import { Questionnaire } from "./components/Questionnaire";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import historyIcon from "../../media/history.svg";
+import newSessionIcon from "../../media/new-session.svg";
 
 const initialStatus: ChatStatus = {
   processState: "stopped",
@@ -59,8 +60,12 @@ export default function App() {
   const thinkingBtnRef = useRef<HTMLButtonElement>(null);
   /** 会话历史按钮元素引用（SessionListPopover 锚定）。 */
   const historyBtnRef = useRef<HTMLButtonElement>(null);
+  /** 新会话按钮元素引用（锚定不需要，与 historyBtnRef 同组）。 */
+  const newSessionBtnRef = useRef<HTMLButtonElement>(null);
   /** 会话历史列表（header 弹层数据；getSessionList 响应填充）。 */
   const [sessionItems, setSessionItems] = useState<SessionListItem[]>([]);
+  /** 当前会话标题（宿主 sessionTitle 广播；snapshot 重放恢复）。 */
+  const [sessionTitle, setSessionTitle] = useState<string | undefined>(undefined);
   /** 当前会话文件（快照替换语义：会话变化时清空本地 tools）。 */
   const sessionFileRef = useRef<string | undefined>(undefined);
   /** 会话切换/新建进行中（切换遮罩）。 */
@@ -94,6 +99,7 @@ export default function App() {
         setTodos(msg.todos ?? []);
         setCommands(msg.commands ?? []);
         setQuestionnaire(msg.questionnaire ?? null);
+        setSessionTitle(msg.sessionTitle);
         break;
       case "stream":
         setStreamBlocks(msg.blocks);
@@ -166,6 +172,9 @@ export default function App() {
         break;
       case "fillPrompt":
         setFill((prev) => ({ seq: prev.seq + 1, text: msg.text }));
+        break;
+      case "sessionTitle":
+        setSessionTitle(msg.title);
         break;
       case "notice": {
         const id = ++noticeSeq;
@@ -261,8 +270,8 @@ export default function App() {
     vscode.postMessage({ type: "switchSession", path });
   };
 
-  const startNewSession = () => {
-    setPopover(null);
+  /** header 新会话按钮（独立入口；弹层内已移除）。 */
+  const headerNewSession = () => {
     setSwitching(true);
     vscode.postMessage({ type: "newSession" });
   };
@@ -292,17 +301,31 @@ export default function App() {
     <div className="pinel-root">
       <Notices notices={notices} onDismiss={dismissNotice} />
       <div className="chat-header">
-        <button
-          ref={historyBtnRef}
-          className="chat-history-btn"
-          title="会话历史（点击选择切换会话）"
-          aria-label="会话历史"
-          aria-haspopup="dialog"
-          aria-expanded={popover === "session"}
-          onClick={openSessionList}
-          disabled={switching}
-          dangerouslySetInnerHTML={{ __html: historyIcon }}
-        />
+        <span className="chat-header-title" title={sessionTitle ?? "未命名会话"}>
+          {sessionTitle ?? "未命名会话"}
+        </span>
+        <span className="chat-header-buttons">
+          <button
+            ref={historyBtnRef}
+            className="chat-history-btn"
+            title="会话历史（点击选择切换会话）"
+            aria-label="会话历史"
+            aria-haspopup="dialog"
+            aria-expanded={popover === "session"}
+            onClick={openSessionList}
+            disabled={switching}
+            dangerouslySetInnerHTML={{ __html: historyIcon }}
+          />
+          <button
+            ref={newSessionBtnRef}
+            className="chat-new-session-btn"
+            title="新会话"
+            aria-label="新会话"
+            onClick={headerNewSession}
+            disabled={switching}
+            dangerouslySetInnerHTML={{ __html: newSessionIcon }}
+          />
+        </span>
       </div>
       {showBootAnimation && (
         <div className="session-boot-overlay">
@@ -385,7 +408,6 @@ export default function App() {
         currentSessionFile={status.sessionFile}
         switching={switching}
         onSelect={selectSession}
-        onNewSession={startNewSession}
         onClose={() => setPopover(null)}
       />
     </div>

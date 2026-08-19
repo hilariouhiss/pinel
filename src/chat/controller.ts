@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
+import { promises as fs } from "node:fs";
 import { RpcClient } from "../rpc/client";
 import { PromptEditorManager } from "./prompt-editor";
-import { scanSessions, toItem, resolveSessionsRoot } from "./session-history";
+import { parseSessionMeta, scanSessions, toItem, resolveSessionsRoot } from "./session-history";
 import {
   DIALOG_UI_METHODS,
   type AgentMessage,
@@ -72,7 +73,7 @@ export interface ToolCard {
 }
 
 export type OutMessage =
-  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null }
+  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; tool: ToolCard }
@@ -90,6 +91,7 @@ export type OutMessage =
   | { type: "sessionListChanged" }
   | { type: "triggerEditPrompt" }
   | { type: "fillPrompt"; text: string }
+  | { type: "sessionTitle"; title: string | undefined }
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
@@ -179,6 +181,10 @@ export class ChatController {
   private sessionSwitching = false;
   /** 提示词编辑器管理（Ctrl+G：VS Code 原生编辑器编辑提示词并回填）。 */
   private promptEditor: PromptEditorManager;
+  /** 当前会话标题（session_info.name 解析缓存；snapshot 携带供重放恢复）。 */
+  private sessionTitleCache: string | undefined = undefined;
+  /** 标题解析去重键（sessionFile 变化才触发解析；重放不重复）。 */
+  private lastTitleSessionFile: string | undefined = undefined;
 
   constructor(output: vscode.OutputChannel) {
     this.output = output;
@@ -1557,7 +1563,7 @@ export class ChatController {
     }
   }
 
-  /** 全量快照（面板 resolve / 重启后重放）。 */
+  /** 全量快照（面板 resolve / 重启后重放；sessionTitle 缓存随快照恢复）。 */
   fireSnapshot(): void {
     this.fire({
       type: "snapshot",
@@ -1567,7 +1573,42 @@ export class ChatController {
       todos: this.todos,
       commands: this.commands,
       questionnaire: this.questionnaireView(),
+      sessionTitle: this.sessionTitleCache,
     });
+    // 会话文件变化（首次/切换/新建/重启后恢复）→ 异步解析标题；重放去重不重复解析
+    if (this.status.sessionFile !== this.lastTitleSessionFile) {
+      this.lastTitleSessionFile = this.status.sessionFile;
+      this.refreshSessionTitle();
+    }
+  }
+
+  /**
+   * 解析当前会话标题（session_info.name）：fire-and-forget，快照先行标题后到。
+   * 竞态防护：捕获触发时 sessionFile，解析完成 fire 前校验未变（连续快速
+   * 切换/restart 时旧解析结果丢弃，与仓库既有「restart 竞态迟到结果丢弃」纪律一致）。
+   */
+  private refreshSessionTitle(): void {
+    const sessionFile = this.status.sessionFile;
+    if (!sessionFile) {
+      this.sessionTitleCache = undefined;
+      this.fire({ type: "sessionTitle", title: undefined });
+      return;
+    }
+    const captured = sessionFile;
+    void (async () => {
+      let title: string | undefined;
+      try {
+        const content = await fs.readFile(captured, "utf8");
+        title = parseSessionMeta(content)?.name;
+      } catch {
+        title = undefined; // 文件不存在/读取失败
+      }
+      if (this.status.sessionFile !== captured) {
+        return; // 会话已切换：旧解析结果丢弃
+      }
+      this.sessionTitleCache = title;
+      this.fire({ type: "sessionTitle", title });
+    })();
   }
 
   private fire(msg: OutMessage): void {

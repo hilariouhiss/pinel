@@ -1207,20 +1207,40 @@ body {
 }
 
 /* ------------------------------------------------------------ 聊天 header */
-/* 顶部栏（新增）：右侧会话历史入口（history.svg 图标 + 文字）；
+/* 顶部栏：左会话标题（ellipsis）+ 右按钮组（会话历史 / 新会话）；
    正常文档流，压缩 .pinel-scroll 高度，不遮挡消息区 */
 .chat-header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
+  justify-content: space-between;
+  gap: 8px;
   padding: 4px 10px;
   border-bottom: 1px solid var(--vscode-input-border);
   background: var(--vscode-titleBar-activeBackground, var(--vscode-editor-background));
 }
 
-/* 会话历史按钮（仅图标，作为弹层锚点；文字已去除，aria-label 提供无障碍名） */
-.chat-history-btn {
+/* 当前会话标题：ellipsis 收缩，按钮组固定宽度 */
+.chat-header-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vscode-foreground);
+}
+
+.chat-header-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* 会话历史/新会话按钮（仅图标，作为弹层锚点/独立入口） */
+.chat-history-btn,
+.chat-new-session-btn {
   display: flex;
   align-items: center;
   background: none;
@@ -1229,20 +1249,23 @@ body {
   cursor: pointer;
 }
 
-.chat-history-btn:disabled {
+.chat-history-btn:disabled,
+.chat-new-session-btn:disabled {
   cursor: default;
   opacity: 0.5;
 }
 
-/* history.svg 图标：尺寸覆写（文件内硬编码 200px）+ path 级主题色
+/* SVG 图标：尺寸覆写（文件内硬编码 200px）+ path 级主题色
    （fill 在 <path> 上，必须 path 级选择器覆盖 presentation attribute） */
-.chat-history-btn .icon {
+.chat-history-btn .icon,
+.chat-new-session-btn .icon {
   width: 16px;
   height: 16px;
   display: block;
 }
 
-.chat-history-btn .icon path {
+.chat-history-btn .icon path,
+.chat-new-session-btn .icon path {
   fill: var(--vscode-descriptionForeground);
 }
 
@@ -1270,19 +1293,59 @@ body {
   overflow-y: auto;
 }
 
-/* 弹层内紧凑化：history-item/history-new-button 为全局类（主侧边栏共用），
+/* 弹层内紧凑化：history-item 为全局类（主侧边栏共用），
    必须作用域覆写（0-2-0 > 0-1-0），主侧边栏样式不受影响 */
 .session-popover .history-item {
   padding: 6px 8px;
   margin: 3px 0;
 }
 
-/* 新会话按钮：顶部紧凑胶囊（hover 加深复用全局 .history-new-button:hover） */
-.session-popover .history-new-button {
-  padding: 6px 0;
-  margin: 6px 8px 4px;
+/* 搜索框（弹层与主侧边栏共用）：search.svg 左嵌 + 受控 input */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 2px 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--vscode-input-border);
   border-radius: 6px;
-  transition: background 0.15s;
+  background: var(--vscode-input-background);
+}
+
+.search-box:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
+.search-box-icon {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.search-box-icon .icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.search-box-icon .icon path {
+  fill: var(--vscode-descriptionForeground);
+}
+
+.search-box-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--vscode-input-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+.search-box-input::placeholder {
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.8;
 }
 
 /* 弹层内空态：覆写 .history-empty 的 30% 大 margin（弹层高度小） */
@@ -1299,36 +1362,59 @@ body {
   background: var(--vscode-editor-background);
 }
 
-.history-new-button {
+/* 主侧边栏新会话入口：透明描边（无背景色），add.svg 图标 + 文字，hover 浅色背景 */
+.history-new-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
+  gap: 8px;
   margin: 10px 10px 4px;
-  padding: 8px 0;
-  border: 1px solid var(--vscode-button-border, transparent);
+  padding: 6px 10px;
+  border: 1px solid var(--vscode-input-border);
   border-radius: 4px;
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  color: var(--vscode-foreground);
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
-  flex: none;
 }
 
-.history-new-button:hover {
-  background: var(--vscode-button-hoverBackground);
+.history-new-row:hover {
+  background: var(--vscode-list-hoverBackground);
 }
 
-.history-new-button:disabled {
+.history-new-row:has(.history-new-button:disabled) {
   opacity: 0.6;
   cursor: default;
 }
 
-.history-new-icon {
-  font-size: 14px;
-  line-height: 1;
+.history-new-button {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+}
+
+/* add.svg 图标：尺寸覆写 + currentColor 跟随文字色（path 级选择器） */
+.history-new-button .icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.history-new-button .icon path {
+  fill: currentColor;
+}
+
+.history-new-label {
+  cursor: pointer;
+}
+
+.history-new-button:disabled {
+  opacity: 1;
+  cursor: default;
 }
 
 .history-switching {

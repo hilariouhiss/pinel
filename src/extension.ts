@@ -7,7 +7,7 @@ import type { AgentMessage, ExtensionUiRequest, Model, SlashCommand } from "./rp
 import type { TodoTask } from "./chat/todos";
 import type { QuestionnaireView } from "./chat/questionnaire";
 
-/** 事件记录（测试断言用）：notice / models / thinkingLevels / sessionSwitching / fillPrompt。 */
+/** 事件记录（测试断言用）：notice / models / thinkingLevels / sessionSwitching / fillPrompt / sessionTitle。 */
 export interface TestEventLog {
   notices: Array<{ level: "info" | "warning" | "error"; text: string }>;
   lastModels: Model[] | undefined;
@@ -16,6 +16,8 @@ export interface TestEventLog {
   lastSessionSwitching: boolean | undefined;
   /** 最近一次提示词编辑器保存回填（fillPrompt 广播）。 */
   lastFillPrompt: string | undefined;
+  /** 最近一次会话标题广播（对象包裹区分「未广播」与「广播 undefined」）。 */
+  lastSessionTitle: { title: string | undefined } | undefined;
 }
 
 /** 暴露给集成测试的钩子接口（通过扩展 exports 获取）。 */
@@ -152,6 +154,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
   let lastThinkingLevels: string[] | undefined;
   let lastSessionSwitching: boolean | undefined;
   let lastFillPrompt: string | undefined;
+  let lastSessionTitle: { title: string | undefined } | undefined;
   ctrl.onChange.event((msg) => {
     if (msg.type === "notice") {
       notices.push({ level: msg.level, text: msg.text });
@@ -166,6 +169,8 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       lastSessionSwitching = msg.switching;
     } else if (msg.type === "fillPrompt") {
       lastFillPrompt = msg.text;
+    } else if (msg.type === "sessionTitle") {
+      lastSessionTitle = { title: msg.title };
     }
   });
 
@@ -214,6 +219,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       lastThinkingLevels,
       lastSessionSwitching,
       lastFillPrompt,
+      lastSessionTitle,
     }),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {
       const deadline = Date.now() + timeoutMs;

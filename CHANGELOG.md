@@ -8,6 +8,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- header 会话标题：聊天顶部栏左侧显示当前会话名（宿主解析 session_info.name 广播，snapshot 携带缓存；无/无名显示「未命名会话」）
+- header 新会话独立按钮：弹层内「新会话」移除，顶部右侧新增图标按钮（new-session.svg），一键新建会话
+- 会话列表搜索框：弹层与主侧边栏均新增（search.svg 左嵌，本地过滤名称/预览，区分「暂无会话」/「无匹配会话」）；主侧边栏「新会话」按钮改透明描边样式（add.svg 图标）
 - 聊天界面会话历史入口：顶部栏「会话历史」按钮（history.svg 图标）弹出右上角下拉列表（复用主侧边栏会话历史资产：名称/摘要/相对时间/当前标记），选择即切换会话；弹层内可直接新建会话；列表每次打开实时扫描（controller.getSessionList 与历史视图共享扫描纯函数）
 - 编辑器编辑提示词：聚焦输入框按 **Ctrl+G** 在 VS Code 原生编辑器中编辑提示词（扩展键位注册，when 限定输入框聚焦；带入当前输入内容，`os.tmpdir()` 临时 `.md` 文件）；**Ctrl+S 保存后自动回填输入框**（行尾统一 LF），发送后自动关闭编辑器标签页并删除临时文件；手动关闭标签页同样清理
 - 状态栏设置按钮回归：模型显示左侧新增 ⚙ 设置按钮（settings.svg 图标，颜色随主题自适应），点击打开配置面板（队列模式/自动压缩）——此前因 emoji ⚙ 图标过小改为 `/settings` 命令触发，现以正式 SVG 图标恢复按钮入口

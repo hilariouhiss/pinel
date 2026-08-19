@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SessionListItem } from "../types";
 import { formatRelativeTime } from "../utils";
+import { SearchBox } from "./SearchBox";
 
 interface Props {
   /** 触发按钮元素（null 时不渲染）。定位/焦点管理都依赖它。 */
@@ -8,10 +9,9 @@ interface Props {
   items: SessionListItem[];
   /** 当前会话文件（高亮「当前」徽标）。 */
   currentSessionFile?: string;
-  /** 切换/新建进行中（列表与新会话按钮禁用，防连点）。 */
+  /** 切换进行中（列表禁用，防连点）。 */
   switching: boolean;
   onSelect: (path: string) => void;
-  onNewSession: () => void;
   onClose: () => void;
 }
 
@@ -26,8 +26,10 @@ const MIN_BELOW = 160;
  * - 定位：锚定 header 按钮——下方优先，空间不足翻转上方；水平左对齐，超右缘右对齐
  *   （与 ListPopover 同款机制）
  * - 交互：Esc / 点击外部关闭（Esc 在 window capture 阶段拦截 stopPropagation，
- *   让位于 Composer 的中断/清空分支）；列表项/新会话按钮点击即切换/新建
+ *   让位于 Composer 的中断/清空分支）；列表项点击即切换
  * - 焦点：打开时移入弹层，关闭时还原到触发按钮
+ * - 搜索：顶部 SearchBox 本地过滤（name/预览）；弹层为常驻挂载（anchor null 仅
+ *   return null），打开时显式重置搜索词
  * - 列表项复用主侧边栏 history-item 结构与样式（全局类，未作用域化）
  */
 export function SessionListPopover({
@@ -36,12 +38,28 @@ export function SessionListPopover({
   currentSessionFile,
   switching,
   onSelect,
-  onNewSession,
   onClose,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top?: number; bottom?: number; left?: number; right?: number }>({});
   const triggerRef = useRef<HTMLElement | null>(null);
+  const [query, setQuery] = useState("");
+
+  // 打开时重置搜索词（组件常驻挂载，useState 跨开关保留）
+  useEffect(() => {
+    if (anchor) {
+      setQuery("");
+    }
+  }, [anchor]);
+
+  // 本地过滤：名称/预览包含关键词（大小写不敏感）
+  const keyword = query.trim().toLowerCase();
+  const filtered = keyword
+    ? items.filter(
+        (i) =>
+          i.name?.toLowerCase().includes(keyword) || i.preview?.toLowerCase().includes(keyword),
+      )
+    : items;
 
   // 锚定定位：渲染后按按钮实际位置计算；窗口尺寸变化时重算
   useLayoutEffect(() => {
@@ -120,20 +138,20 @@ export function SessionListPopover({
         ref={panelRef}
         style={pos}
       >
-        <button className="history-new-button" onClick={onNewSession} disabled={switching}>
-          <span className="history-new-icon" aria-hidden="true">
-            ＋
-          </span>
-          新会话
-        </button>
+        <SearchBox value={query} onChange={setQuery} />
         <div className="history-list session-popover-list">
           {items.length === 0 ? (
             <div className="history-empty session-popover-empty">
               <div className="history-empty-title">暂无会话</div>
-              <div className="history-empty-hint">点击上方「新会话」开始与 Pi 对话</div>
+              <div className="history-empty-hint">点击 header 的「新会话」按钮开始与 Pi 对话</div>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="history-empty session-popover-empty">
+              <div className="history-empty-title">无匹配会话</div>
+              <div className="history-empty-hint">换个关键词试试</div>
             </div>
           ) : (
-            items.map((item) => {
+            filtered.map((item) => {
               const active = item.path === currentSessionFile;
               return (
                 <button

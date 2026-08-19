@@ -131,7 +131,7 @@ export interface SessionListItem {
 }
 
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "tool"; tool: ToolCard }
@@ -150,6 +150,7 @@ export type HostMessage =
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "triggerEditPrompt" }
   | { type: "fillPrompt"; text: string }
+  | { type: "sessionTitle"; title: string | undefined }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {

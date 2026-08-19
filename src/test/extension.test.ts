@@ -1403,6 +1403,30 @@ suite("Pinel 集成测试（假 pi）", () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // 会话标题广播（header 标题链路）
+  // ---------------------------------------------------------------------------
+
+  suite("会话标题广播（sessionTitle）", () => {
+    test("启动后标题消息送达（fake-pi 无真实会话文件 → undefined）", async function () {
+      this.timeout(60000);
+      // restart 触发 fireSnapshot → sessionFile 变化检测 → 异步解析广播
+      await api.restart();
+      await waitFor(() => api.getStatus().processState === "running", 30000, "重启完成");
+      await waitFor(
+        () => api.getTestEventLog().lastSessionTitle !== undefined,
+        15000,
+        "sessionTitle 广播送达",
+      );
+      // fake-pi 的 sessionFile 为内存态 /fake/session.jsonl（文件不存在）→ 解析失败 undefined
+      assert.strictEqual(
+        api.getTestEventLog().lastSessionTitle?.title,
+        undefined,
+        "无会话文件时标题为 undefined",
+      );
+    });
+  });
+
   suite("提示词编辑器（Ctrl+G 编辑/回填/清理）", () => {
     /** 指定路径的临时文件标签页是否打开。 */
     function pendingTabOpen(pendingPath: string): boolean {
