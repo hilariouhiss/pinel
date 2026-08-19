@@ -139,10 +139,10 @@ export function Composer({
     }
   }, [atTrigger]);
 
-  // 触发变化时高亮重置 + 弹窗关闭标记复位（继续输入重新触发）
+  // 查询变化时高亮重置（弹窗关闭标记由 onChange 复位——直接 @ 选择后
+  // atQuery 可能不变（"" → ""），effect 依赖会漏复位）
   useEffect(() => {
     setFileHighlight(0);
-    setFileDismissed(false);
   }, [atQuery]);
 
   // 列表变化（过滤输入/命令刷新）时高亮重置为第一项
@@ -446,6 +446,7 @@ export function Composer({
         onChange={(e) => {
           setText(e.target.value);
           setSuggestDismissed(false); // 文本变化复位 Esc 关闭标记，继续输入重新触发补全
+          setFileDismissed(false); // 同上：@ 文件弹窗关闭标记（修复：直接 @ 选择后 atQuery 不变导致不复位）
         }}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
