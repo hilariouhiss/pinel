@@ -186,6 +186,9 @@ export function SessionListPopover({
                           defaultValue={item.name || ""}
                           autoFocus
                           onFocus={(e) => e.target.select()}
+                          // 阻止点击冒泡：input 嵌套于 button.history-item-main 内，
+                          // 编辑态点击输入框（定位光标/取消全选）不得触发会话切换
+                          onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
                               submitRename(item.path, (e.target as HTMLInputElement).value);
