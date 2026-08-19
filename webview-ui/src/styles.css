@@ -1621,6 +1621,11 @@ body {
   cursor: default;
 }
 
+/* 编辑态行主体（div 替换 button）：不可点击，无切换语义 */
+.history-item-main-editing {
+  cursor: default;
+}
+
 /* 行操作按钮区（编辑/删除）：hover/focus-within 显隐，Tab 可达 */
 .history-item-actions {
   display: flex;

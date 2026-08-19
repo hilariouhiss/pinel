@@ -118,23 +118,21 @@ export default function HistoryApp() {
             const editing = editingPath === item.path;
             return (
               <div key={item.path} className={`history-item${active ? " active" : ""}`}>
-                <button
-                  className="history-item-main"
-                  onClick={() => switchSession(item.path)}
-                  disabled={switching}
-                >
-                  <div className="history-item-top">
-                    {editing ? (
+                {editing ? (
+                  // 编辑态渲染 div 而非 button：input 嵌套于 button 内时，浏览器隐式
+                  // 激活会让输入框里的 Enter（含中文输入法选词确认）click 父按钮 →
+                  // 误触发会话切换；div 无 onClick 彻底隔离（点击行内/输入框均不切换）
+                  <div className="history-item-main history-item-main-editing">
+                    <div className="history-item-top">
                       <input
                         className="history-item-edit-input"
                         defaultValue={item.name || ""}
                         autoFocus
                         onFocus={(e) => e.target.select()}
-                        // 阻止点击冒泡：input 嵌套于 button.history-item-main 内，
-                        // 编辑态点击输入框（定位光标/取消全选）不得触发会话切换
-                        onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") {
+                          // isComposing：IME 合成中按 Enter 只是选词确认，不得提交
+                          if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
                             submitRename(item.path, (e.target as HTMLInputElement).value);
                           } else if (e.key === "Escape") {
                             setEditingPath(null);
@@ -142,14 +140,25 @@ export default function HistoryApp() {
                         }}
                         onBlur={() => setEditingPath(null)}
                       />
-                    ) : (
-                      <span className="history-item-name">{item.name || "未命名会话"}</span>
-                    )}
-                    {active && <span className="history-item-badge">当前</span>}
-                    <span className="history-item-time">{formatRelativeTime(item.modified)}</span>
+                      {active && <span className="history-item-badge">当前</span>}
+                      <span className="history-item-time">{formatRelativeTime(item.modified)}</span>
+                    </div>
+                    {item.preview && <div className="history-item-preview">{item.preview}</div>}
                   </div>
-                  {item.preview && <div className="history-item-preview">{item.preview}</div>}
-                </button>
+                ) : (
+                  <button
+                    className="history-item-main"
+                    onClick={() => switchSession(item.path)}
+                    disabled={switching}
+                  >
+                    <div className="history-item-top">
+                      <span className="history-item-name">{item.name || "未命名会话"}</span>
+                      {active && <span className="history-item-badge">当前</span>}
+                      <span className="history-item-time">{formatRelativeTime(item.modified)}</span>
+                    </div>
+                    {item.preview && <div className="history-item-preview">{item.preview}</div>}
+                  </button>
+                )}
                 <div className="history-item-actions">
                   <button
                     className="history-item-edit"
