@@ -3,11 +3,9 @@ import { vscode } from "./index";
 import type { ChatMessage, ChatStatus, HostMessage, ModelInfo, QuestionnaireView, SessionListItem, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
-import { ListPopover, type ListItem } from "./components/ListPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
 import { MessageView } from "./components/MessageView";
 import { Notices } from "./components/Notices";
-import { StatusBar } from "./components/StatusBar";
 import { TodoPanel } from "./components/TodoPanel";
 import { UiDialogs } from "./components/UiDialogs";
 import { Questionnaire } from "./components/Questionnaire";
@@ -30,13 +28,8 @@ const initialStatus: ChatStatus = {
 
 let noticeSeq = 0;
 
-/** 弹窗互斥：任一时刻只开一个（模型列表 / 思考强度列表 / ⚙ 设置面板 / 会话历史）。 */
-type PopoverKind = "model" | "thinking" | "config" | "session" | null;
-
-/** 模型项复合键（Model.id 跨 provider 可能重复）。 */
-function modelItemId(m: ModelInfo): string {
-  return `${m.provider}:${m.id}`;
-}
+/** 弹窗互斥：任一时刻只开一个（⚙ 设置面板 / 会话历史）。 */
+type PopoverKind = "config" | "session" | null;
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -55,9 +48,8 @@ export default function App() {
   /** 思考强度列表数据与加载态。 */
   const [thinkingLevels, setThinkingLevels] = useState<string[]>([]);
   const [thinkingLoading, setThinkingLoading] = useState(false);
-  /** 列表锚定：状态栏按钮元素引用（ListPopover 定位/焦点还原依赖）。 */
-  const modelBtnRef = useRef<HTMLButtonElement>(null);
-  const thinkingBtnRef = useRef<HTMLButtonElement>(null);
+  /** 设置面板内嵌展开区（模型/思考；null=收起）。 */
+  const [expandedSection, setExpandedSection] = useState<"model" | "thinking" | null>(null);
   /** 会话历史按钮元素引用（SessionListPopover 锚定）。 */
   const historyBtnRef = useRef<HTMLButtonElement>(null);
   /** 新会话按钮元素引用（锚定不需要，与 historyBtnRef 同组）。 */
@@ -130,10 +122,10 @@ export default function App() {
         setCommands(msg.commands);
         break;
       case "models":
-        // 空数组 = 拉取失败信号（宿主已 notice）：关闭弹窗，不展示空列表
+        // 空数组 = 拉取失败信号（宿主已 notice）：收起内嵌展开区（面板保持打开）
         if (msg.models.length === 0) {
           setModelLoading(false);
-          setPopover((prev) => (prev === "model" ? null : prev));
+          setExpandedSection((prev) => (prev === "model" ? null : prev));
         } else {
           setModels(msg.models);
           setModelLoading(false);
@@ -142,7 +134,7 @@ export default function App() {
       case "thinkingLevels":
         if (msg.levels.length === 0) {
           setThinkingLoading(false);
-          setPopover((prev) => (prev === "thinking" ? null : prev));
+          setExpandedSection((prev) => (prev === "thinking" ? null : prev));
         } else {
           setThinkingLevels(msg.levels);
           setThinkingLoading(false);
@@ -238,19 +230,32 @@ export default function App() {
   const showBootAnimation =
     !hasConversation && (status.processState === "starting" || status.processState === "stopped");
 
-  // 模型列表：点击时拉取（每次点击重新请求，保证与 pi 配置同步）
-  const openModelList = () => {
-    setPopover((prev) => (prev === "model" ? null : "model")); // 已开则关闭（toggle）
-    setModelLoading(true);
-    setModels([]);
-    vscode.postMessage({ type: "getModels" });
+  // 设置面板内嵌列表展开：模型/思考（toggle；展开时拉取数据）
+  const toggleExpandedSection = (section: "model" | "thinking" | null) => {
+    setExpandedSection((prev) => {
+      const next = section === prev ? null : section;
+      if (next === "model") {
+        setModelLoading(true);
+        setModels([]);
+        vscode.postMessage({ type: "getModels" });
+      } else if (next === "thinking") {
+        setThinkingLoading(true);
+        setThinkingLevels([]);
+        vscode.postMessage({ type: "getThinkingLevels" });
+      }
+      return next;
+    });
   };
 
-  const openThinkingList = () => {
-    setPopover((prev) => (prev === "thinking" ? null : "thinking"));
-    setThinkingLoading(true);
-    setThinkingLevels([]);
-    vscode.postMessage({ type: "getThinkingLevels" });
+  // 选中模型/思考：发 set 消息，面板保持打开、仅收起展开区
+  const selectModel = (provider: string, modelId: string) => {
+    setExpandedSection(null);
+    vscode.postMessage({ type: "setModel", provider, modelId });
+  };
+
+  const selectThinkingLevel = (level: string) => {
+    setExpandedSection(null);
+    vscode.postMessage({ type: "setThinkingLevel", level });
   };
 
   const openConfig = () => setPopover((prev) => (prev === "config" ? null : "config"));
@@ -276,26 +281,30 @@ export default function App() {
     vscode.postMessage({ type: "newSession" });
   };
 
-  const modelItems: ListItem[] = models.map((m) => ({
-    id: modelItemId(m),
-    label: m.name ?? m.id ?? "",
-    detail: m.provider,
-  }));
-
-  const thinkingItems: ListItem[] = thinkingLevels.map((level) => ({ id: level, label: level }));
-
-  const selectModel = (item: ListItem) => {
-    setPopover(null);
-    const selected = models.find((m) => modelItemId(m) === item.id);
-    if (selected && typeof selected.provider === "string" && typeof selected.id === "string") {
-      vscode.postMessage({ type: "setModel", provider: selected.provider, modelId: selected.id });
-    }
-  };
-
-  const selectThinkingLevel = (item: ListItem) => {
-    setPopover(null);
-    vscode.postMessage({ type: "setThinkingLevel", level: item.id });
-  };
+  // 状态横幅：仅三类关键态显示（就绪/运行中/启动中静默）
+  const banner =
+    status.processState === "error" ? (
+      <div className="status-banner status-banner-error">
+        <span className="status-banner-text">✕ {status.error ?? "pi 进程异常"}</span>
+        <button className="status-banner-btn" onClick={() => vscode.postMessage({ type: "restart" })}>
+          重启
+        </button>
+      </div>
+    ) : status.processState === "no-workspace" ? (
+      <div className="status-banner status-banner-warn">
+        <span className="status-banner-text">⚠ {status.error ?? "未打开文件夹"}</span>
+        <button className="status-banner-btn" onClick={() => vscode.postMessage({ type: "restart" })}>
+          重试
+        </button>
+      </div>
+    ) : status.processState === "running" && status.model === null ? (
+      <div className="status-banner status-banner-warn">
+        <span className="status-banner-text">⚠ 无可用模型，请检查 pi 认证后重试</span>
+        <button className="status-banner-btn" onClick={() => vscode.postMessage({ type: "restart" })}>
+          重启
+        </button>
+      </div>
+    ) : null;
 
   return (
     <div className="pinel-root">
@@ -365,43 +374,29 @@ export default function App() {
         {questionnaire && <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />}
       </div>
       {todos.length > 0 && <TodoPanel todos={todos} />}
+      {banner}
       <Composer
         status={status}
         commands={commands}
         popoverOpen={popover !== null}
         fill={fill}
         editPromptTrigger={editPromptTrigger}
-      />
-      <StatusBar
-        status={status}
-        modelListOpen={popover === "model"}
-        thinkingListOpen={popover === "thinking"}
         settingsOpen={popover === "config"}
-        onOpenModelList={openModelList}
-        onOpenThinkingList={openThinkingList}
         onOpenSettings={openConfig}
-        modelBtnRef={modelBtnRef}
-        thinkingBtnRef={thinkingBtnRef}
       />
-      <ListPopover
-        anchor={popover === "model" ? modelBtnRef.current : null}
-        items={modelItems}
-        selectedId={status.model ? modelItemId(status.model) : null}
-        loading={modelLoading}
-        emptyText="无可用模型"
-        onSelect={selectModel}
+      <ConfigPopover
+        status={status}
+        open={popover === "config"}
         onClose={() => setPopover(null)}
+        models={models}
+        modelLoading={modelLoading}
+        thinkingLevels={thinkingLevels}
+        thinkingLoading={thinkingLoading}
+        expandedSection={expandedSection}
+        onToggleSection={toggleExpandedSection}
+        onSelectModel={selectModel}
+        onSelectThinkingLevel={selectThinkingLevel}
       />
-      <ListPopover
-        anchor={popover === "thinking" ? thinkingBtnRef.current : null}
-        items={thinkingItems}
-        selectedId={status.thinkingLevel}
-        loading={thinkingLoading}
-        emptyText="无可用思考强度"
-        onSelect={selectThinkingLevel}
-        onClose={() => setPopover(null)}
-      />
-      <ConfigPopover status={status} open={popover === "config"} onClose={() => setPopover(null)} />
       <SessionListPopover
         anchor={popover === "session" ? historyBtnRef.current : null}
         items={sessionItems}

@@ -384,7 +384,7 @@ export class ChatController {
     // 自愈重启入口由 startWithHeal 触发
     this.output.appendLine(`[warn] 模型自愈：get_state ${maxAttempts} 次尝试未获得模型（${failures.join("；")}）`);
     if (this.modelHealRestarted) {
-      this.notice("warning", "未获取到模型信息：请检查 pi 认证（在终端运行 pi 验证），或点击状态栏“重启”重试。");
+      this.notice("warning", "未获取到模型信息：请检查 pi 认证（在终端运行 pi 验证），或点击横幅的重启按钮重试。");
       return "exhausted";
     }
     return "heal-needed";
@@ -465,7 +465,7 @@ export class ChatController {
     }
     await this.ensureStarted();
     if (!this.client) {
-      this.notice("error", "pi 进程不可用，请点击状态栏的“重启”");
+      this.notice("error", "pi 进程不可用，请点击横幅的重启按钮");
       return;
     }
 
@@ -573,7 +573,7 @@ export class ChatController {
     await this.ensureStarted();
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("error", "pi 进程不可用，请点击状态栏的“重启”");
+      this.notice("error", "pi 进程不可用，请点击横幅的重启按钮");
       this.fire({ type: "sessionSwitching", switching: false });
       return;
     }
@@ -614,7 +614,7 @@ export class ChatController {
     await this.ensureStarted();
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("error", "pi 进程不可用，请点击状态栏的“重启”");
+      this.notice("error", "pi 进程不可用，请点击横幅的重启按钮");
       this.fire({ type: "sessionSwitching", switching: false });
       return;
     }
@@ -741,12 +741,12 @@ export class ChatController {
   }
 
   // -------------------------------------------------------------------------
-  // 配置切换（状态栏弹出面板）
+  // 配置切换（设置面板）
   // -------------------------------------------------------------------------
 
   /**
    * 循环切换模型（cycle_model）。
-   * UI 不再使用（已由状态栏模型列表 set_model 替代），保留供 PinelTestApi 测试覆盖。
+   * UI 不再使用（已由设置面板内嵌模型列表 set_model 替代），保留供 PinelTestApi 测试覆盖。
    * pi 切模型时会重新锎制思考等级，响应携带 {model, thinkingLevel, isScoped}，
    * 两者一并应用；仅一个可用模型时响应为 null。
    */
@@ -850,11 +850,11 @@ export class ChatController {
   }
 
   // -------------------------------------------------------------------------
-  // 模型/思考强度列表（状态栏下拉选择；每次点击时拉取）
+  // 模型/思考强度列表（设置面板内嵌展开；每次展开时拉取）
   // -------------------------------------------------------------------------
 
   /**
-   * 拉取可用模型列表（get_available_models；状态栏模型列表）。
+   * 拉取可用模型列表（get_available_models；设置面板模型列表）。
    * 失败/空结果 notice + fire 空数组（webview 收到空数组即关闭弹窗；
    * 区别于 fetchCommands 的静默——此处为用户主动点击，需可见反馈）。
    */
@@ -885,7 +885,7 @@ export class ChatController {
   }
 
   /**
-   * 切换到指定模型（set_model；状态栏模型列表选择）。
+   * 切换到指定模型（set_model；设置面板模型列表选择）。
    * pi 切模型时会重新锎制思考等级并持久化 settings，但 set_model 响应只有
    * Model 对象（不含 thinkingLevel）——先防御校验并应用响应 model，再
    * get_state 回读刷新 model + thinkingLevel；回读失败保留 set_model 结果。
@@ -931,7 +931,7 @@ export class ChatController {
 
   /**
    * 拉取当前模型支持的思考强度列表（get_available_thinking_levels；
-   * 状态栏思考强度列表）。失败/空结果 notice + fire 空数组（同 getModels）。
+   * 设置面板思考强度列表）。失败/空结果 notice + fire 空数组（同 getModels）。
    */
   async getThinkingLevels(): Promise<void> {
     const client = this.client;
@@ -960,7 +960,7 @@ export class ChatController {
   }
 
   /**
-   * 设置思考强度（set_thinking_level；状态栏思考强度列表选择）。
+   * 设置思考强度（set_thinking_level；设置面板思考强度列表选择）。
    * 响应无 data 且 pi 会 clamp 到模型支持范围——成功后 get_state 回读确认
    * 实际生效值。
    */

@@ -13,6 +13,7 @@ import type { Attachment, ChatStatus, SlashCommand } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import sendIcon from "../../../media/send.svg";
 import stopIcon from "../../../media/stop.svg";
+import settingsIcon from "../../../media/settings.svg";
 
 interface Props {
   status: ChatStatus;
@@ -23,6 +24,10 @@ interface Props {
   fill?: { seq: number; text: string };
   /** Ctrl+G 命令触发版本（每次递增：webview 取当前输入内容发起编辑）。 */
   editPromptTrigger?: number;
+  /** 配置面板开合态（下半 ⚙ 设置按钮 aria-expanded）。 */
+  settingsOpen?: boolean;
+  /** 下半 ⚙ 设置按钮（toggle 打开配置面板）。 */
+  onOpenSettings?: () => void;
 }
 
 /** 来源徽标（中文标签）；未知来源兜底"其他"（pi 未来可能新增 source）。 */
@@ -65,7 +70,15 @@ async function compressImage(
 
 let attachmentSeq = 0;
 
-export function Composer({ status, commands, popoverOpen = false, fill, editPromptTrigger = 0 }: Props) {
+export function Composer({
+  status,
+  commands,
+  popoverOpen = false,
+  fill,
+  editPromptTrigger = 0,
+  settingsOpen = false,
+  onOpenSettings,
+}: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const busy = status.isStreaming || status.isCompacting;
@@ -256,7 +269,7 @@ export function Composer({ status, commands, popoverOpen = false, fill, editProm
   const rows = Math.min(8, Math.max(1, text.split("\n").length));
 
   return (
-    <div className="composer">
+    <div className="footer-card">
       {popupVisible && (
         <div className="composer-suggest" role="listbox" aria-label="命令补全" ref={suggestRef}>
           {candidates.map((cmd, i) => (
@@ -294,26 +307,35 @@ export function Composer({ status, commands, popoverOpen = false, fill, editProm
           ))}
         </div>
       )}
-      <div className="composer-row">
-        <textarea
-          ref={inputRef}
-          className="composer-input"
-          placeholder={
-            busy
-              ? "流式输出中——发送将加入队列（steer）"
-              : "输入消息或 / 命令"
-          }
-          rows={rows}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setSuggestDismissed(false); // 文本变化复位 Esc 关闭标记，继续输入重新触发补全
-          }}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          onFocus={() => vscode.postMessage({ type: "inputFocus", focused: true })}
-          onBlur={() => vscode.postMessage({ type: "inputFocus", focused: false })}
+      <textarea
+        ref={inputRef}
+        className="composer-input"
+        placeholder={
+          busy ? "流式输出中——发送将加入队列（steer）" : "输入消息，Ctrl+G 用编辑器编辑"
+        }
+        rows={rows}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          setSuggestDismissed(false); // 文本变化复位 Esc 关闭标记，继续输入重新触发补全
+        }}
+        onKeyDown={onKeyDown}
+        onPaste={onPaste}
+        onFocus={() => vscode.postMessage({ type: "inputFocus", focused: true })}
+        onBlur={() => vscode.postMessage({ type: "inputFocus", focused: false })}
+      />
+      <div className="footer-actions">
+        <button
+          className="status-settings-btn"
+          title="设置"
+          aria-label="设置"
+          aria-haspopup="dialog"
+          aria-expanded={settingsOpen}
+          onClick={onOpenSettings}
+          disabled={!onOpenSettings}
+          dangerouslySetInnerHTML={{ __html: settingsIcon }}
         />
+        <span className="footer-actions-spacer" />
         {busy ? (
           <button
             className="composer-stop"
