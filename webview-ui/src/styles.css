@@ -736,6 +736,103 @@ body {
   padding: 2px;
 }
 
+/* @ 文件补全弹窗（与命令补全弹窗同款定位与交互） */
+.composer-file-suggest {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  padding: 2px;
+}
+
+.composer-file-suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.composer-file-suggest-item.active {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.composer-file-suggest-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-foreground);
+}
+
+.composer-file-suggest-type {
+  flex: none;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.composer-file-suggest-empty {
+  padding: 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* @ 文件引用附件卡片（与图片附件同区，位于输入框上方） */
+.composer-file-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.composer-file-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  background: var(--vscode-editor-background);
+  font-size: 11px;
+}
+
+.composer-file-ref-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-foreground);
+}
+
+.composer-file-ref-remove {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.composer-file-ref-remove:hover {
+  color: var(--vscode-errorForeground);
+}
+
 .composer-suggest-item {
   display: flex;
   align-items: baseline;

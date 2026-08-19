@@ -11,16 +11,21 @@ interface Props {
 
 /** 提取用户消息的纯文本。 */
 function userText(content: ChatMessage["content"]): string {
+  let text: string;
   if (typeof content === "string") {
-    return content;
-  }
-  if (Array.isArray(content)) {
-    return (content as ContentBlock[])
+    text = content;
+  } else if (Array.isArray(content)) {
+    text = (content as ContentBlock[])
       .filter((b) => b.type === "text" && typeof b.text === "string")
       .map((b) => b.text)
       .join("\n");
+  } else {
+    return "";
   }
-  return "";
+  // 剥离 @ 文件引用的 <file name="...">...</file> 注入块：权威消息（get_messages）
+  // 含完整文件内容 markup，直接渲染会让用户气泡突变且文件内 markdown 误渲染——
+  // 替换为简洁引用行（对齐乐观渲染的原文观感）
+  return text.replace(/<file name="([^"]+)">[\s\S]*?<\/file>/g, "📎 $1");
 }
 
 /** 提取用户消息的图片附件。 */

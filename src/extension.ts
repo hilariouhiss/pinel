@@ -3,6 +3,7 @@ import { ChatController, type ChatStatus, type ToolCard } from "./chat/controlle
 import { ChatPanelProvider } from "./chat/panel";
 import { SessionHistoryProvider, revealChatView } from "./chat/session-history-provider";
 import type { SessionListItem } from "./chat/session-history";
+import type { FileItem } from "./chat/file-scanner";
 import type { AgentMessage, ExtensionUiRequest, Model, SlashCommand } from "./rpc/protocol";
 import type { TodoTask } from "./chat/todos";
 import type { QuestionnaireView } from "./chat/questionnaire";
@@ -24,7 +25,9 @@ export interface TestEventLog {
 export interface PinelTestApi {
   /** 打开聊天面板（执行 focus 命令以触发 resolveWebviewView）。 */
   openPanel(): Promise<void>;
-  sendPrompt(text: string): Promise<void>;
+  sendPrompt(text: string, fileRefs?: string[]): Promise<void>;
+  /** @ 添加文件：扫描工作区文件列表（gitignore 过滤；测试钩子）。 */
+  getFileList(): Promise<{ items: FileItem[]; truncated: boolean }>;
   abort(): Promise<void>;
   /** 循环切换模型（cycle_model）。 */
   cycleModel(): Promise<void>;
@@ -178,7 +181,8 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     openPanel: async () => {
       await vscode.commands.executeCommand("pinel.chatView.focus");
     },
-    sendPrompt: (text: string) => ctrl.sendPrompt({ text }),
+    sendPrompt: (text: string, fileRefs?: string[]) => ctrl.sendPrompt({ text, fileRefs }),
+    getFileList: () => ctrl.getFileList(),
     abort: () => ctrl.abort(),
     cycleModel: () => ctrl.cycleModel(),
     cycleThinkingLevel: () => ctrl.cycleThinkingLevel(),

@@ -1,8 +1,10 @@
 import * as vscode from "vscode";
 import { promises as fs } from "node:fs";
+import * as path from "node:path";
 import { RpcClient } from "../rpc/client";
 import { PromptEditorManager } from "./prompt-editor";
 import { parseSessionMeta, scanSessions, toItem, resolveSessionsRoot } from "./session-history";
+import { scanWorkspaceFiles, imageMimeType, isImageFile, type FileItem, type ScanResult } from "./file-scanner";
 import {
   DIALOG_UI_METHODS,
   type AgentMessage,
@@ -92,12 +94,15 @@ export type OutMessage =
   | { type: "triggerEditPrompt" }
   | { type: "fillPrompt"; text: string }
   | { type: "sessionTitle"; title: string | undefined }
+  | { type: "fileList"; items: FileItem[]; truncated: boolean }
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
   text: string;
   images?: Array<{ data: string; mimeType: string }>;
+  /** @ 文件引用（相对 workspace 根路径；发送时 pinel 自读自拼——RPC 模式 pi 不支持 @file）。 */
+  fileRefs?: string[];
 }
 
 /**
@@ -474,20 +479,25 @@ export class ChatController {
       data: img.data,
       mimeType: img.mimeType,
     }));
+    // @ 文件引用：pinel 自读自拼（RPC 模式 pi 不支持 @file，实证 main.js:508）
+    // 文本 → <file name="绝对路径"> 注入（对齐 pi CLI file-processor 格式）；
+    // 图片 → base64 附件 + 空 <file name> 引用（对齐 pi CLI，模型拿得到路径）
+    const text = input.fileRefs?.length ? await this.attachFileRefs(input.text, images, input.fileRefs) : input.text;
 
     // 乐观渲染用户消息
+    // 乐观渲染用户消息（仅原文，不含 <file> 注入 markup——权威列表显示层剥离）
     const userMessage: AgentMessage = { role: "user", content: input.text };
     this.fire({ type: "message", message: userMessage });
 
     try {
       if (this.status.isStreaming) {
         // 流式中自动转 steer（排队消息，当前回合结束后投递）
-        await this.client.send({ type: "steer", message: input.text, images });
+        await this.client.send({ type: "steer", message: text, images });
         this.notice("info", "已加入待处理队列（steer）");
       } else {
         await this.client.send({
           type: "prompt",
-          message: input.text,
+          message: text,
           images,
           streamingBehavior: "steer",
         });
@@ -549,6 +559,63 @@ export class ChatController {
     const { root, layout } = resolveSessionsRoot(cwd, configured);
     const metas = await scanSessions(root, cwd, layout);
     return metas.map(toItem);
+  }
+
+  /**
+   * 扫描工作区文件列表（输入框 @ 添加文件数据源）。
+   * gitignore 过滤 + 上限截断（截断时 notice 提示）；无 workspace → 空列表。
+   */
+  async getFileList(): Promise<ScanResult> {
+    const root = this.workspaceRoot;
+    if (!root) {
+      return { items: [], truncated: false };
+    }
+    const result = await scanWorkspaceFiles(root);
+    if (result.truncated) {
+      this.notice("warning", "工作区文件较多，@ 文件列表已截断（上限 1000）");
+    }
+    return result;
+  }
+
+  /** 文本文件引用最大字节数（超限截断 + notice）。 */
+  private static readonly MAX_FILE_REF_BYTES = 2 * 1024 * 1024;
+
+  /**
+   * @ 文件引用拼装：文本 → `<file name="绝对路径">` 注入（对齐 pi CLI
+   * file-processor 格式）；图片 → base64 附件 + 空 `<file name>` 引用。
+   * 读取失败 notice + 跳过（不阻塞发送）。
+   */
+  private async attachFileRefs(text: string, images: ImageContent[], refs: string[]): Promise<string> {
+    const root = this.workspaceRoot;
+    if (!root) {
+      return text;
+    }
+    let out = text;
+    for (const ref of refs) {
+      const abs = path.resolve(root, ref);
+      try {
+        const stat = await fs.stat(abs);
+        if (!stat.isFile() || stat.size === 0) {
+          continue;
+        }
+        if (isImageFile(abs)) {
+          const content = await fs.readFile(abs);
+          images.push({ type: "image", data: content.toString("base64"), mimeType: imageMimeType(abs) });
+          // 对齐 pi CLI：图片附空引用（模型拿得到图片路径）
+          out += `\n<file name="${abs}"></file>\n`;
+        } else {
+          let content = await fs.readFile(abs, "utf8");
+          if (content.length > ChatController.MAX_FILE_REF_BYTES) {
+            content = content.slice(0, ChatController.MAX_FILE_REF_BYTES);
+            this.notice("warning", `文件 ${ref} 超过 2MB 已截断`);
+          }
+          out += `\n<file name="${abs}">\n${content}\n</file>\n`;
+        }
+      } catch {
+        this.notice("warning", `无法读取文件 ${ref}（已跳过）`);
+      }
+    }
+    return out;
   }
 
   /**

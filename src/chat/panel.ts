@@ -106,6 +106,10 @@ interface WebviewNewSessionMessage {
   type: "newSession";
 }
 
+interface WebviewGetFileListMessage {
+  type: "getFileList";
+}
+
 type WebviewInMessage =
   | WebviewPromptMessage
   | WebviewAbortMessage
@@ -128,6 +132,7 @@ type WebviewInMessage =
   | WebviewGetSessionListMessage
   | WebviewSwitchSessionMessage
   | WebviewNewSessionMessage
+  | WebviewGetFileListMessage
   | WebviewReadyMessage;
 
 /**
@@ -251,6 +256,19 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       case "newSession":
         void this.controller.newSession();
         break;
+      case "getFileList":
+        void this.postFileList();
+        break;
+    }
+  }
+
+  /** 扫描工作区文件并回发（@ 添加文件数据源；每次打开时实时扫描）。 */
+  private async postFileList(): Promise<void> {
+    try {
+      const { items, truncated } = await this.controller.getFileList();
+      this.post({ type: "fileList", items, truncated });
+    } catch {
+      // 扫描异常：不弹 notice（弹窗空列表即可），仅忽略
     }
   }
 

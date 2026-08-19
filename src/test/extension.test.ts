@@ -1427,6 +1427,72 @@ suite("Pinel 集成测试（假 pi）", () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // @ 添加文件（fileList 扫描 / sendPrompt fileRefs 拼装）
+  // ---------------------------------------------------------------------------
+
+  suite("@ 添加文件（工作区扫描与发送拼装）", () => {
+    let fixtureDir: string;
+
+    suiteSetup(async function () {
+      this.timeout(120000);
+      // workspace 根内唯一名 fixture 目录（主套件不可切换工作区——评审 M3；
+      // 结束删除；gitignore 过滤另由仓库根既有规则覆盖）
+      fixtureDir = path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "", `__pinel_at_fixture_${Date.now()}`);
+      await fs.promises.mkdir(fixtureDir, { recursive: true });
+      await fs.promises.writeFile(path.join(fixtureDir, "note.txt"), "这是测试文件内容\n第二行\n");
+      await fs.promises.writeFile(path.join(fixtureDir, "img.png"), "fake-png-bytes");
+    });
+
+    suiteTeardown(async () => {
+      await fs.promises.rm(fixtureDir, { recursive: true, force: true });
+    });
+
+    test("getFileList：工作区扫描（含 fixture 文件；仓库根 gitignore 规则生效）", async function () {
+      this.timeout(60000);
+      const { items } = await api.getFileList();
+      const note = items.find((i) => i.path.startsWith("__pinel_at_fixture_") && i.path.endsWith("note.txt"));
+      assert.ok(note, "fixture 文本文件必须在列表中");
+      assert.strictEqual(note.isImage, false, "txt 非图片");
+      const img = items.find((i) => i.path.endsWith("img.png"));
+      assert.ok(img && img.isImage, "png 图片判定");
+      // 仓库根 gitignore 规则（dist/ out/ 等）必须生效
+      assert.ok(!items.some((i) => i.path.startsWith("dist/")), "仓库根 gitignore 的 dist/ 过滤生效");
+      assert.ok(!items.some((i) => i.path.startsWith("node_modules/")), "node_modules 硬编码跳过");
+    });
+
+    test("sendPrompt 带 fileRefs：文本 <file name> 注入 + 图片附件送达 fake-pi", async function () {
+      this.timeout(60000);
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+      const relNote = path.relative(root, path.join(fixtureDir, "note.txt")).replace(/\\/g, "/");
+      const relImg = path.relative(root, path.join(fixtureDir, "img.png")).replace(/\\/g, "/");
+      const marker = `ATFILE-${Date.now()}`;
+      const baseline = api.getSettledCount();
+      await api.sendPrompt(`${marker} 看看这两个文件`, [relNote, relImg]);
+      await api.waitForSettled(30000, baseline);
+
+      // fake-pi 入站 prompt 记录：文本含 <file name> 注入内容、images 含图片附件
+      const records = readFakePiLog(logPath);
+      const after = recordsAfterPrompt(records, marker);
+      const promptRecs = logRecordsWith(after, "in", "prompt");
+      assert.ok(promptRecs.length >= 1, "prompt 入站记录必须存在");
+      // 日志行结构：{ t, record: { dir, record: 请求 } }
+      const rec = (promptRecs[promptRecs.length - 1] as { record?: { record?: { message?: unknown; images?: unknown[] } } })
+        ?.record?.record;
+      const msg = String(rec?.message ?? "");
+      assert.ok(msg.includes(`<file name=`), "prompt 必须含 <file name> 注入");
+      assert.ok(msg.includes("这是测试文件内容"), "文本文件内容必须注入");
+      assert.ok(Array.isArray(rec?.images) && rec.images.length >= 1, "图片附件必须送达");
+      assert.strictEqual(
+        (rec?.images?.[0] as { mimeType?: string })?.mimeType,
+        "image/png",
+        "图片 mimeType 正确",
+      );
+      // 注：settle 后用户消息为权威列表（含 <file> markup）——显示层剥离由
+      // MessageView 处理（webview 逻辑，宿主不可断言，F5 覆盖）
+    });
+  });
+
   suite("提示词编辑器（Ctrl+G 编辑/回填/清理）", () => {
     /** 指定路径的临时文件标签页是否打开。 */
     function pendingTabOpen(pendingPath: string): boolean {

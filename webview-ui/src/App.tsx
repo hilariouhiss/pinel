@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, HostMessage, ModelInfo, QuestionnaireView, SessionListItem, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { ChatMessage, ChatStatus, FileItem, HostMessage, ModelInfo, QuestionnaireView, SessionListItem, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
@@ -56,6 +56,8 @@ export default function App() {
   const newSessionBtnRef = useRef<HTMLButtonElement>(null);
   /** 会话历史列表（header 弹层数据；getSessionList 响应填充）。 */
   const [sessionItems, setSessionItems] = useState<SessionListItem[]>([]);
+  /** 工作区文件列表（@ 添加文件数据；getFileList 响应填充）。 */
+  const [fileList, setFileList] = useState<FileItem[]>([]);
   /** 当前会话标题（宿主 sessionTitle 广播；snapshot 重放恢复）。 */
   const [sessionTitle, setSessionTitle] = useState<string | undefined>(undefined);
   /** 当前会话文件（快照替换语义：会话变化时清空本地 tools）。 */
@@ -158,6 +160,9 @@ export default function App() {
         break;
       case "sessionList":
         setSessionItems(msg.items);
+        break;
+      case "fileList":
+        setFileList(msg.items);
         break;
       case "triggerEditPrompt":
         setEditPromptTrigger((v) => v + 1);
@@ -383,6 +388,7 @@ export default function App() {
         editPromptTrigger={editPromptTrigger}
         settingsOpen={popover === "config"}
         onOpenSettings={openConfig}
+        fileList={fileList}
       />
       <ConfigPopover
         status={status}

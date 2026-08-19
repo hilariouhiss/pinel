@@ -9,7 +9,7 @@ import {
 } from "react";
 import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
-import type { Attachment, ChatStatus, SlashCommand } from "../types";
+import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import sendIcon from "../../../media/send.svg";
 import stopIcon from "../../../media/stop.svg";
@@ -28,6 +28,8 @@ interface Props {
   settingsOpen?: boolean;
   /** 下半 ⚙ 设置按钮（toggle 打开配置面板）。 */
   onOpenSettings?: () => void;
+  /** 工作区文件列表（@ 添加文件数据；App 持有，getFileList 响应填充）。 */
+  fileList?: FileItem[];
 }
 
 /** 来源徽标（中文标签）；未知来源兜底"其他"（pi 未来可能新增 source）。 */
@@ -78,12 +80,17 @@ export function Composer({
   editPromptTrigger = 0,
   settingsOpen = false,
   onOpenSettings,
+  fileList = [],
 }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  /** @ 文件引用（发送时 pinel 自读内容附加；附件区卡片展示）。 */
+  const [fileRefs, setFileRefs] = useState<string[]>([]);
   const busy = status.isStreaming || status.isCompacting;
   // 弹窗 Esc 关闭标记：文本变化时复位（继续输入重新触发补全）
   const [suggestDismissed, setSuggestDismissed] = useState(false);
+  /** @ 文件弹窗 Esc 关闭标记（文本变化时复位，继续输入重新触发）。 */
+  const [fileDismissed, setFileDismissed] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   /** 当前输入文本引用（Ctrl+G 触发 effect 需最新值，避免绑定 text 依赖重复触发）。 */
@@ -100,6 +107,43 @@ export function Composer({
   const popupVisible = !suggestDismissed && isCommandQuery(text) && candidates.length > 0;
   // 防越界夹取（列表变化瞬间 highlight 可能超出新长度）
   const activeIndex = Math.min(highlight, Math.max(0, candidates.length - 1));
+
+  // @ 文件引用触发：当前词（空格分隔的末 token）以 @ 开头（含仅输入 @）；
+  // 与命令补全弹窗互斥（isCommandQuery 为 false 时才可能触发）
+  const lastToken = text.split(/\s+/).pop() ?? "";
+  const atTrigger = lastToken.startsWith("@");
+  const atQuery = atTrigger ? lastToken.slice(1) : "";
+  const fileCandidates = useMemo(() => {
+    if (!atQuery) {
+      return fileList;
+    }
+    const q = atQuery.toLowerCase();
+    return fileList.filter((f) => f.path.toLowerCase().includes(q));
+  }, [fileList, atQuery]);
+  const filePopupVisible = !fileDismissed && atTrigger;
+  // 文件弹窗高亮（独立索引，避免与命令补全高亮互相污染）
+  const [fileHighlight, setFileHighlight] = useState(0);
+  const fileActiveIndex = Math.min(fileHighlight, Math.max(0, fileCandidates.length - 1));
+  const fileSuggestRef = useRef<HTMLDivElement>(null);
+
+  // 高亮项滚动同步（文件弹窗）
+  useEffect(() => {
+    const items = fileSuggestRef.current?.querySelectorAll(".composer-file-suggest-item");
+    items?.[fileActiveIndex]?.scrollIntoView({ block: "nearest" });
+  }, [fileActiveIndex, fileCandidates]);
+
+  // @ 触发时拉取文件列表（每次触发重新扫描，保证新鲜）
+  useEffect(() => {
+    if (atTrigger) {
+      vscode.postMessage({ type: "getFileList" });
+    }
+  }, [atTrigger]);
+
+  // 触发变化时高亮重置 + 弹窗关闭标记复位（继续输入重新触发）
+  useEffect(() => {
+    setFileHighlight(0);
+    setFileDismissed(false);
+  }, [atQuery]);
 
   // 列表变化（过滤输入/命令刷新）时高亮重置为第一项
   useEffect(() => {
@@ -159,18 +203,34 @@ export function Composer({
     caretAtEnd.current = true;
   };
 
+  /** @ 文件选中：移除输入中 @token + 附件区新增引用卡片 + 关闭弹窗。 */
+  const acceptFile = (file: FileItem) => {
+    const token = text.split(/\s+/).pop() ?? "";
+    const prefix = text.slice(0, Math.max(0, text.length - token.length));
+    setText(prefix);
+    setFileRefs((prev) => (prev.includes(file.path) ? prev : [...prev, file.path]));
+    setFileDismissed(true);
+    caretAtEnd.current = true;
+  };
+
+  const removeFileRef = (ref: string) => {
+    setFileRefs((prev) => prev.filter((r) => r !== ref));
+  };
+
   const send = () => {
     const trimmed = text.trim();
-    if (!trimmed && attachments.length === 0) {
+    if (!trimmed && attachments.length === 0 && fileRefs.length === 0) {
       return;
     }
     vscode.postMessage({
       type: "sendPrompt",
       text: trimmed,
       images: attachments.map((a) => ({ data: a.data, mimeType: a.mimeType })),
+      fileRefs,
     });
     setText("");
     setAttachments([]);
+    setFileRefs([]);
   };
 
   const addImageFile = (file: File) => {
@@ -242,6 +302,36 @@ export function Composer({
         return;
       }
     }
+    // @ 文件弹窗（与命令补全互斥，不会同时打开；IME 组合输入期间不拦截）
+    if (filePopupVisible) {
+      if (e.nativeEvent.isComposing) {
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setFileHighlight((h) => Math.min(h + 1, Math.max(fileCandidates.length - 1, 0)));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setFileHighlight((h) => Math.max(h - 1, 0));
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        // 文件弹窗打开时 Enter 优先接受文件（而非发送）
+        e.preventDefault();
+        const file = fileCandidates[fileActiveIndex];
+        if (file) {
+          acceptFile(file);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setFileDismissed(true);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       send();
@@ -291,6 +381,28 @@ export function Composer({
           ))}
         </div>
       )}
+      {filePopupVisible && (
+        <div className="composer-file-suggest" role="listbox" aria-label="添加文件" ref={fileSuggestRef}>
+          {fileCandidates.length === 0 ? (
+            <div className="composer-file-suggest-empty">无匹配文件</div>
+          ) : (
+            fileCandidates.map((file, i) => (
+              <div
+                key={file.path}
+                role="option"
+                aria-selected={i === fileActiveIndex}
+                className={`composer-file-suggest-item${i === fileActiveIndex ? " active" : ""}`}
+                onMouseDown={onSuggestionMouseDown}
+                onMouseEnter={() => setFileHighlight(i)}
+                onClick={() => acceptFile(file)}
+              >
+                <span className="composer-file-suggest-path">{file.path}</span>
+                {file.isImage && <span className="composer-file-suggest-type">图片</span>}
+              </div>
+            ))
+          )}
+        </div>
+      )}
       {attachments.length > 0 && (
         <div className="composer-attachments">
           {attachments.map((a) => (
@@ -304,6 +416,22 @@ export function Composer({
                 ✕
               </button>
             </div>
+          ))}
+        </div>
+      )}
+      {fileRefs.length > 0 && (
+        <div className="composer-file-refs">
+          {fileRefs.map((ref) => (
+            <span key={ref} className="composer-file-ref" title={ref}>
+              <span className="composer-file-ref-name">📄 {ref}</span>
+              <button
+                className="composer-file-ref-remove"
+                title="移除"
+                onClick={() => removeFileRef(ref)}
+              >
+                ✕
+              </button>
+            </span>
           ))}
         </div>
       )}
@@ -348,7 +476,7 @@ export function Composer({
             className="composer-send"
             title="发送 (Enter)"
             onClick={send}
-            disabled={!text.trim() && attachments.length === 0}
+            disabled={!text.trim() && attachments.length === 0 && fileRefs.length === 0}
             dangerouslySetInnerHTML={{ __html: sendIcon }}
           />
         )}

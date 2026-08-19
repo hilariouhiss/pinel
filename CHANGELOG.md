@@ -11,6 +11,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - footer 卡片化：底部输入框与按钮合并为圆角卡片（上半输入框 + 下半左 ⚙ 设置右发送/停止）；状态区移除，错误/无模型/未打开文件夹改输入框上方横幅（附重启/重试）；placeholder 提示「输入消息，Ctrl+G 用编辑器编辑」
 - 模型/思考强度移入设置面板：内嵌展开列表选择（复用 get_available_models/set_model 链路，选中后面板保持打开）
 - 主侧边栏新会话按钮/搜索框/会话列表左右边距统一对齐
+- @ 添加文件：输入框输入 `@` 弹出工作区文件补全列表（ignore 包 gitignore 过滤 + 上限 1000），选中后附件卡片呈现；发送时文本以 `<file name="绝对路径">` 格式注入（对齐 pi CLI file-processor，2MB 截断）、图片转 base64 附件（+ 空 `<file name>` 引用）；用户消息显示层剥离 `<file>` markup（防气泡突变）；pinel 自读自拼（RPC 模式 pi 不支持 @file 参数）
 - header 会话标题：聊天顶部栏左侧显示当前会话名（宿主解析 session_info.name 广播，snapshot 携带缓存；无/无名显示「未命名会话」）
 - header 新会话独立按钮：弹层内「新会话」移除，顶部右侧新增图标按钮（new-session.svg），一键新建会话
 - 会话列表搜索框：弹层与主侧边栏均新增（search.svg 左嵌，本地过滤名称/预览，区分「暂无会话」/「无匹配会话」）；主侧边栏「新会话」按钮改透明描边样式（add.svg 图标）

@@ -134,5 +134,8 @@
   },
   "allowScripts": {
     "esbuild@0.28.2": true
+  },
+  "dependencies": {
+    "ignore": "^5.3.2"
   }
 }

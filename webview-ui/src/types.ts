@@ -130,6 +130,12 @@ export interface SessionListItem {
   truncated: boolean;
 }
 
+/** 工作区文件项（@ 添加文件列表镜像）。 */
+export interface FileItem {
+  path: string;
+  isImage: boolean;
+}
+
 export type HostMessage =
   | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined }
   | { type: "stream"; blocks: StreamBlock[] }
@@ -151,6 +157,7 @@ export type HostMessage =
   | { type: "triggerEditPrompt" }
   | { type: "fillPrompt"; text: string }
   | { type: "sessionTitle"; title: string | undefined }
+  | { type: "fileList"; items: FileItem[]; truncated: boolean }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {
