@@ -324,7 +324,6 @@ export default function App() {
 
   return (
     <div className="pinel-root">
-      <Notices notices={notices} onDismiss={dismissNotice} />
       <div className="chat-header">
         <span className="chat-header-title" title={sessionTitle ?? "未命名会话"}>
           {sessionTitle ?? "未命名会话"}
@@ -351,6 +350,9 @@ export default function App() {
             dangerouslySetInnerHTML={{ __html: newSessionIcon }}
           />
         </span>
+        {/* 通知横幅：悬浮于 header 正下方（absolute 定位上下文 = chat-header，
+            top:calc(100%+3px)，不挤压布局；见 styles.css .notices） */}
+        <Notices notices={notices} onDismiss={dismissNotice} />
       </div>
       {showBootAnimation && (
         <div className="session-boot-overlay">

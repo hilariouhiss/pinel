@@ -27,11 +27,20 @@ body {
 }
 
 /* ------------------------------------------------------------------ 提示条 */
+/* 通知横幅：悬浮于 header 正下方（App.tsx 中作为 chat-header 的 absolute 定位
+   子元素；top 百分比基于不含 border 的 padding box，+3px 补齐 border 视觉贴合）；
+   限高滚动防长文本堆叠覆盖大块消息区 */
 .notices {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 8px;
+  right: 8px;
+  z-index: 30; /* 高于消息区内容（无 z-index）；低于弹层(90/100)与全屏 overlay(900) */
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 4px 8px 0;
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .notice {
@@ -1331,6 +1340,7 @@ body {
   padding: 4px 10px;
   border-bottom: 1px solid var(--vscode-input-border);
   background: var(--vscode-titleBar-activeBackground, var(--vscode-editor-background));
+  position: relative; /* 通知横幅（.notices absolute）的定位上下文 */
 }
 
 /* 当前会话标题：ellipsis 收缩，按钮组固定宽度 */
