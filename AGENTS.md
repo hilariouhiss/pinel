@@ -68,7 +68,7 @@ npm run package      # 生产构建（minify）
 
 - **测试首次运行**会下载 VS Code 到 `.vscode-test/`（gitignored），约 100MB
 - **F5 调试**：先 `npm run watch`（tasks.json 默认构建任务已含 webview），否则全新 clone 后面板空白
-- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 145/145 通过：主套件 142 + 空窗口套件 3）
+- 质量门：`npm run compile` 与 `npm test` 必须全绿（当前 160/160 通过：主套件 157 + 空窗口套件 3）
 
 ## Coding Guidelines
 
