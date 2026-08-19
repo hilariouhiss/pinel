@@ -715,6 +715,11 @@ body {
   padding: 8px;
 }
 
+/* 聚焦输入框时卡片边框高亮（输入框自身扁平无边框，focus 指示由卡片承担） */
+.footer-card:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
 /* ---------------------------------------------------------------- 命令补全 */
 .composer-suggest {
   position: absolute;
@@ -821,10 +826,11 @@ body {
 .composer-input {
   width: 100%;
   resize: none;
+  /* 扁平化：无边框、透明背景，融入卡片（聚焦时卡片边框高亮 .footer-card:focus-within） */
+  border: none;
+  border-radius: 0;
+  background: transparent;
   padding: 7px 10px;
-  border: 1px solid var(--vscode-input-border);
-  border-radius: 6px;
-  background: var(--vscode-editor-background);
   color: var(--vscode-input-foreground);
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
@@ -834,7 +840,8 @@ body {
 }
 
 .composer-input:focus {
-  border-color: var(--vscode-focusBorder);
+  /* 输入框自身无边框：focus 指示由 .footer-card:focus-within 承担 */
+  outline: none;
 }
 
 .composer-send,
