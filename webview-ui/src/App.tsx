@@ -296,15 +296,13 @@ export default function App() {
           ref={historyBtnRef}
           className="chat-history-btn"
           title="会话历史（点击选择切换会话）"
+          aria-label="会话历史"
           aria-haspopup="dialog"
           aria-expanded={popover === "session"}
           onClick={openSessionList}
           disabled={switching}
           dangerouslySetInnerHTML={{ __html: historyIcon }}
         />
-        <span className="chat-history-label" onClick={openSessionList}>
-          会话历史
-        </span>
       </div>
       {showBootAnimation && (
         <div className="session-boot-overlay">

@@ -28,6 +28,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 聊天 header 会话历史入口 UI 微调：按钮去除「会话历史」文字只留图标（补 aria-label）；弹窗缩小（240px 宽 / 40vh 高 / 列表项紧凑）；弹层内「新会话」按钮改为顶部紧凑胶囊样式（主侧边栏历史视图样式不受影响）
 - 输入框改为单行起步（随输入换行增长，8 行封顶后内部滚动）；发送/停止按钮改为正方形（边长随 VS Code 字号自适应，与输入框首行同高）
 - 输入框 placeholder 改为「输入消息或 / 命令」（流式输出中仍显示队列提示）
 - 移除 `/settings` 命令触发设置面板的本地拦截：`/settings` 输入恢复为普通文本发送给模型；设置面板唯一入口为状态栏 ⚙ 设置按钮

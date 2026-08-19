@@ -15,8 +15,8 @@ interface Props {
   onClose: () => void;
 }
 
-/** 弹层宽度（会话名/预览较长）。 */
-const POPOVER_WIDTH = 280;
+/** 弹层宽度（会话名/预览较长；240px 与 styles.css .session-popover 同步）。 */
+const POPOVER_WIDTH = 240;
 const POPOVER_MARGIN = 8;
 /** 下方空间不足 160px 或少于上方空间时翻转上方。 */
 const MIN_BELOW = 160;

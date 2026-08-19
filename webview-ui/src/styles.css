@@ -1219,7 +1219,7 @@ body {
   background: var(--vscode-titleBar-activeBackground, var(--vscode-editor-background));
 }
 
-/* 会话历史按钮（仅图标，作为弹层锚点）；文字 label 并列可点 */
+/* 会话历史按钮（仅图标，作为弹层锚点；文字已去除，aria-label 提供无障碍名） */
 .chat-history-btn {
   display: flex;
   align-items: center;
@@ -1246,17 +1246,6 @@ body {
   fill: var(--vscode-descriptionForeground);
 }
 
-.chat-history-label {
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-  cursor: pointer;
-}
-
-.chat-history-label:hover {
-  color: var(--vscode-foreground);
-  text-decoration: underline;
-}
-
 /* 会话历史弹层（右上角下拉；top/bottom/left/right 由组件内联计算） */
 .session-popover-overlay {
   position: fixed;
@@ -1267,7 +1256,7 @@ body {
 .session-popover {
   position: fixed;
   z-index: 100;
-  width: min(280px, calc(100vw - 16px));
+  width: min(240px, calc(100vw - 16px));
   background: var(--vscode-menu-background, var(--vscode-editor-background));
   border: 1px solid var(--vscode-menu-border, var(--vscode-input-border));
   border-radius: 6px;
@@ -1277,8 +1266,23 @@ body {
 }
 
 .session-popover-list {
-  max-height: 60vh;
+  max-height: 40vh;
   overflow-y: auto;
+}
+
+/* 弹层内紧凑化：history-item/history-new-button 为全局类（主侧边栏共用），
+   必须作用域覆写（0-2-0 > 0-1-0），主侧边栏样式不受影响 */
+.session-popover .history-item {
+  padding: 6px 8px;
+  margin: 3px 0;
+}
+
+/* 新会话按钮：顶部紧凑胶囊（hover 加深复用全局 .history-new-button:hover） */
+.session-popover .history-new-button {
+  padding: 6px 0;
+  margin: 6px 8px 4px;
+  border-radius: 6px;
+  transition: background 0.15s;
 }
 
 /* 弹层内空态：覆写 .history-empty 的 30% 大 margin（弹层高度小） */
