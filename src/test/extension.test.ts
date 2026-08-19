@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { PinelTestApi } from "../extension";
+import { confirmSessionDelete } from "../chat/controller";
 
 /** 读取假 pi 日志中的所有记录。 */
 function readFakePiLog(logPath: string): Array<Record<string, unknown>> {
@@ -1424,6 +1425,251 @@ suite("Pinel 集成测试（假 pi）", () => {
         undefined,
         "无会话文件时标题为 undefined",
       );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 会话重命名/删除（会话列表行操作）
+  // ---------------------------------------------------------------------------
+
+  suite("会话重命名/删除（会话列表行操作）", () => {
+    let sessionDir: string;
+    let sessionA: string;
+    let sessionB: string;
+
+    function sessionHeader(id: string, timestamp: string): string {
+      return JSON.stringify({ type: "session", version: 3, id, timestamp, cwd: "/fake/project" });
+    }
+
+    function setSessionNameRecords(records: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+      return records.filter((r) => {
+        const rec = r.record as { dir?: string; record?: { type?: string } } | undefined;
+        return rec?.dir === "in" && rec?.record?.type === "set_session_name";
+      });
+    }
+
+    suiteSetup(async function () {
+      this.timeout(120000);
+      sessionDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pinel-rename-sessions-"));
+      sessionA = path.join(sessionDir, "2026-08-17T01-00-00-000Z_aaaa.jsonl");
+      sessionB = path.join(sessionDir, "2026-08-18T01-00-00-000Z_bbbb.jsonl");
+      await fs.promises.writeFile(
+        sessionA,
+        [
+          sessionHeader("rename-session-a", "2026-08-17T01:00:00.000Z"),
+          JSON.stringify({
+            type: "session_info",
+            id: "a1",
+            parentId: null,
+            timestamp: "2026-08-17T01:01:00.000Z",
+            name: "旧名A",
+          }),
+          JSON.stringify({
+            type: "message",
+            id: "a2",
+            parentId: null,
+            timestamp: "2026-08-17T01:02:00.000Z",
+            message: { role: "user", content: "A 的消息" },
+          }),
+        ].join("\n"),
+      );
+      await fs.promises.writeFile(
+        sessionB,
+        [
+          sessionHeader("rename-session-b", "2026-08-18T01:00:00.000Z"),
+          JSON.stringify({
+            type: "message",
+            id: "b1",
+            parentId: null,
+            timestamp: "2026-08-18T01:02:00.000Z",
+            message: { role: "user", content: "B 的消息" },
+          }),
+        ].join("\n"),
+      );
+      // 配置扩展扫描自定义会话目录（同既有 suite 模式）
+      const config = vscode.workspace.getConfiguration("pinel");
+      await config.update("sessionDir", sessionDir, vscode.ConfigurationTarget.Global);
+      await waitFor(
+        () => vscode.workspace.getConfiguration("pinel").get<string>("sessionDir") === sessionDir,
+        5000,
+        "sessionDir 配置传播",
+      );
+    });
+
+    suiteTeardown(async () => {
+      const config = vscode.workspace.getConfiguration("pinel");
+      await config.update("sessionDir", "", vscode.ConfigurationTarget.Global);
+      await fs.promises.rm(sessionDir, { recursive: true, force: true });
+    });
+
+    test("非当前会话重命名：文件追加 session_info + 列表立即刷新（不依赖 pi）", async function () {
+      this.timeout(60000);
+      const before = api.getTestEventLog().sessionListRefreshCount;
+      await api.renameSession(sessionB, "新名字B");
+      await waitFor(
+        () => api.getTestEventLog().sessionListRefreshCount > before,
+        10000,
+        "sessionListRefresh 广播",
+      );
+      // 文件物理追加：leaf id = 最后一个条目 b1，格式对齐 pi appendSessionInfo
+      const content = await fs.promises.readFile(sessionB, "utf8");
+      const lines = content.split("\n").filter((l) => l.trim());
+      const info = JSON.parse(lines[lines.length - 1]) as {
+        type?: string;
+        parentId?: unknown;
+        name?: unknown;
+      };
+      assert.strictEqual(info.type, "session_info");
+      assert.strictEqual(info.parentId, "b1");
+      assert.strictEqual(info.name, "新名字B");
+      // 列表扫描读出新名称
+      const list = await api.getChatSessionList();
+      assert.strictEqual(list.find((i) => i.path === sessionB)?.name, "新名字B");
+      // 纯文件操作：当前会话仍是 fake-pi 内存态（未涉及 pi 进程）
+      assert.strictEqual(api.getCurrentSessionFile(), "/fake/session.jsonl");
+    });
+
+    test("当前会话重命名：RPC set_session_name 送达 + 落盘 + 标题刷新", async function () {
+      this.timeout(60000);
+      // 前置：切到扫描目录内真实文件（fake-pi 落盘目标；标题解析自文件 session_info）
+      await api.switchSession(sessionA);
+      await waitFor(() => api.getCurrentSessionFile() === sessionA, 15000, "切换完成");
+      await waitFor(
+        () => api.getTestEventLog().lastSessionTitle?.title === "旧名A",
+        15000,
+        "切换后标题解析",
+      );
+      const before = api.getTestEventLog().sessionListRefreshCount;
+      await api.renameSession(sessionA, "重命名A");
+      // fake-pi 收到 set_session_name 命令（按入站计数断言，避免跨测试日志累积）
+      await waitFor(
+        () => setSessionNameRecords(readFakePiLog(logPath)).length > 0,
+        10000,
+        "set_session_name 送达 fake-pi",
+      );
+      const sent = setSessionNameRecords(readFakePiLog(logPath))[0];
+      assert.strictEqual(
+        (sent.record as { record?: { name?: string } }).record?.name,
+        "重命名A",
+        "命令携带新名称",
+      );
+      // 标题 force 重解析（RPC 成功 → 文件已落盘 → 读出新名）
+      await waitFor(
+        () => api.getTestEventLog().lastSessionTitle?.title === "重命名A",
+        15000,
+        "标题刷新为重命名结果",
+      );
+      await waitFor(
+        () => api.getTestEventLog().sessionListRefreshCount > before,
+        10000,
+        "sessionListRefresh 广播",
+      );
+      // fake-pi 向真实文件物理追加（列表扫描可见）
+      const list = await api.getChatSessionList();
+      assert.strictEqual(list.find((i) => i.path === sessionA)?.name, "重命名A");
+    });
+
+    test("RENAME-FAIL 场景：notice 反馈且列表/标题不变", async function () {
+      this.timeout(60000);
+      process.env.PINEL_FAKE_PI_SCENARIO = "RENAME-FAIL";
+      // 专用会话文件（独立于其他测试的重命名结果，避免顺序耦合）
+      const sessionC = path.join(sessionDir, "2026-08-16T01-00-00-000Z_cccc.jsonl");
+      await fs.promises.writeFile(
+        sessionC,
+        [
+          sessionHeader("rename-session-c", "2026-08-16T01:00:00.000Z"),
+          JSON.stringify({
+            type: "session_info",
+            id: "c1",
+            parentId: null,
+            timestamp: "2026-08-16T01:01:00.000Z",
+            name: "FAIL旧名",
+          }),
+        ].join("\n"),
+      );
+      try {
+        await api.restart();
+        await waitFor(
+          () => api.getStatus().processState === "running",
+          30000,
+          "RENAME-FAIL 场景启动",
+        );
+        await api.switchSession(sessionC);
+        await waitFor(() => api.getCurrentSessionFile() === sessionC, 15000, "切换完成");
+        await waitFor(
+          () => api.getTestEventLog().lastSessionTitle?.title === "FAIL旧名",
+          15000,
+          "切换后标题解析",
+        );
+        const refreshBefore = api.getTestEventLog().sessionListRefreshCount;
+        await api.renameSession(sessionC, "失败名");
+        // 失败 notice（旧版 pi 无此命令 → send 抛错 → 可见反馈）
+        await waitFor(
+          () => api.getTestEventLog().notices.some((n) => n.text.includes("重命名失败")),
+          10000,
+          "重命名失败 notice",
+        );
+        // 状态不变：标题仍旧名、无刷新信号、文件未追加
+        assert.strictEqual(api.getTestEventLog().lastSessionTitle?.title, "FAIL旧名");
+        assert.strictEqual(api.getTestEventLog().sessionListRefreshCount, refreshBefore);
+        const content = await fs.promises.readFile(sessionC, "utf8");
+        assert.ok(!content.includes("失败名"), "文件未被追加");
+      } finally {
+        delete process.env.PINEL_FAKE_PI_SCENARIO;
+        await api.restart();
+        await waitFor(
+          () => api.getStatus().processState === "running",
+          30000,
+          "恢复默认场景",
+        );
+        // 重启后当前会话回到 fake-pi 内存态；清理专用文件
+        await fs.promises.rm(sessionC, { force: true });
+      }
+    });
+
+    test("删除非当前会话：文件删除 + 列表立即刷新", async function () {
+      this.timeout(60000);
+      // 上一测试的 finally 重启后当前会话回到 fake-pi 内存态（非扫描目录内文件）
+      const before = api.getTestEventLog().sessionListRefreshCount;
+      await api.deleteSession(sessionB);
+      await waitFor(() => !fs.existsSync(sessionB), 10000, "会话文件已删除");
+      await waitFor(
+        () => api.getTestEventLog().sessionListRefreshCount > before,
+        10000,
+        "sessionListRefresh 广播",
+      );
+      const list = await api.getChatSessionList();
+      assert.ok(!list.some((i) => i.path === sessionB), "列表不再包含已删会话");
+      assert.ok(fs.existsSync(sessionA), "当前会话文件不受影响");
+    });
+
+    test("删除当前会话：拒绝（notice）且文件保留", async function () {
+      this.timeout(60000);
+      // 先切到扫描目录内真实文件作为当前会话（上一测试后当前为 fake-pi 内存态）
+      await api.switchSession(sessionA);
+      await waitFor(() => api.getCurrentSessionFile() === sessionA, 15000, "切换完成");
+      const refreshBefore = api.getTestEventLog().sessionListRefreshCount;
+      await api.deleteSession(sessionA);
+      assert.ok(
+        api.getTestEventLog().notices.some((n) => n.text.includes("当前会话不可删除")),
+        "拒绝 notice",
+      );
+      assert.ok(fs.existsSync(sessionA), "文件保留");
+      assert.strictEqual(api.getTestEventLog().sessionListRefreshCount, refreshBefore, "无刷新信号");
+    });
+
+    test("删除确认 seam：showWarningMessage 拒绝/接受两条路径", async function () {
+      this.timeout(60000);
+      const orig = vscode.window.showWarningMessage;
+      try {
+        vscode.window.showWarningMessage = (async () => undefined) as typeof vscode.window.showWarningMessage;
+        assert.strictEqual(await confirmSessionDelete(sessionA), false, "拒绝路径返回 false");
+        assert.ok(fs.existsSync(sessionA), "确认 seam 本身不删文件");
+        vscode.window.showWarningMessage = (async () => "删除") as typeof vscode.window.showWarningMessage;
+        assert.strictEqual(await confirmSessionDelete(sessionA), true, "确认路径返回 true");
+      } finally {
+        vscode.window.showWarningMessage = orig;
+      }
     });
   });
 

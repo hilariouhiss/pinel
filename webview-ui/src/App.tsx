@@ -158,6 +158,10 @@ export default function App() {
       case "sessionListChanged":
         // 仅会话历史视图消费；聊天视图忽略
         break;
+      case "sessionListRefresh":
+        // 重命名/删除后的立即刷新信号：仅会话历史视图消费；聊天视图忽略
+        //（弹层数据在宿主操作成功后由 panel 重拉 post sessionList 覆盖）
+        break;
       case "sessionList":
         setSessionItems(msg.items);
         break;

@@ -5,6 +5,8 @@ import { formatRelativeTime } from "./utils";
 import { SearchBox } from "./components/SearchBox";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import addIcon from "../../media/add.svg";
+import editIcon from "../../media/edit.svg";
+import deleteIcon from "../../media/delete.svg";
 
 /**
  * 会话历史视图（主侧边栏）。
@@ -12,6 +14,9 @@ import addIcon from "../../media/add.svg";
  * （名称/首条消息摘要/相对时间/当前高亮）。
  * 点击会话 → switchSession；点击新会话 → newSession（宿主切换成功后
  * 自动打开次侧边栏聊天视图）。
+ * 行右侧操作：edit.svg 行内编辑重命名（Enter 提交/Esc/blur 取消，提交后
+ * 乐观退出编辑态——失败经宿主 notice 反馈）；delete.svg 删除（当前会话行
+ * 禁用，title 提示）。
  */
 export default function HistoryApp() {
   const [items, setItems] = useState<SessionListItem[]>([]);
@@ -20,6 +25,8 @@ export default function HistoryApp() {
   const [switching, setSwitching] = useState(false);
   /** 搜索关键词（本地过滤 name/预览）。 */
   const [query, setQuery] = useState("");
+  /** 行内编辑中的会话路径（同一时刻至多一行；null 无编辑）。 */
+  const [editingPath, setEditingPath] = useState<string | null>(null);
 
   const handleMessage = useCallback((event: MessageEvent<HostMessage>) => {
     const msg = event.data;
@@ -57,6 +64,12 @@ export default function HistoryApp() {
     }
     vscode.postMessage({ type: "switchSession", path: sessionPath });
     setSwitching(true);
+  };
+
+  /** 提交重命名：乐观退出编辑态；宿主成功后刷新列表、失败 notice。 */
+  const submitRename = (path: string, rawName: string) => {
+    setEditingPath(null);
+    vscode.postMessage({ type: "renameSession", path, name: rawName });
   };
 
   // 本地过滤：名称/预览包含关键词（大小写不敏感）
@@ -102,20 +115,59 @@ export default function HistoryApp() {
         ) : (
           filtered.map((item) => {
             const active = item.path === currentSessionFile;
+            const editing = editingPath === item.path;
             return (
-              <button
-                key={item.path}
-                className={`history-item${active ? " active" : ""}`}
-                onClick={() => switchSession(item.path)}
-                disabled={switching}
-              >
-                <div className="history-item-top">
-                  <span className="history-item-name">{item.name || "未命名会话"}</span>
-                  {active && <span className="history-item-badge">当前</span>}
-                  <span className="history-item-time">{formatRelativeTime(item.modified)}</span>
+              <div key={item.path} className={`history-item${active ? " active" : ""}`}>
+                <button
+                  className="history-item-main"
+                  onClick={() => switchSession(item.path)}
+                  disabled={switching}
+                >
+                  <div className="history-item-top">
+                    {editing ? (
+                      <input
+                        className="history-item-edit-input"
+                        defaultValue={item.name || ""}
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            submitRename(item.path, (e.target as HTMLInputElement).value);
+                          } else if (e.key === "Escape") {
+                            setEditingPath(null);
+                          }
+                        }}
+                        onBlur={() => setEditingPath(null)}
+                      />
+                    ) : (
+                      <span className="history-item-name">{item.name || "未命名会话"}</span>
+                    )}
+                    {active && <span className="history-item-badge">当前</span>}
+                    <span className="history-item-time">{formatRelativeTime(item.modified)}</span>
+                  </div>
+                  {item.preview && <div className="history-item-preview">{item.preview}</div>}
+                </button>
+                <div className="history-item-actions">
+                  <button
+                    className="history-item-edit"
+                    title="重命名"
+                    onClick={() => {
+                      if (!switching) {
+                        setEditingPath(item.path);
+                      }
+                    }}
+                    disabled={switching}
+                    dangerouslySetInnerHTML={{ __html: editIcon }}
+                  />
+                  <button
+                    className="history-item-delete"
+                    title={active ? "当前会话不可删除" : "删除会话"}
+                    onClick={() => vscode.postMessage({ type: "deleteSession", path: item.path })}
+                    disabled={switching || active}
+                    dangerouslySetInnerHTML={{ __html: deleteIcon }}
+                  />
                 </div>
-                {item.preview && <div className="history-item-preview">{item.preview}</div>}
-              </button>
+              </div>
             );
           })
         )}

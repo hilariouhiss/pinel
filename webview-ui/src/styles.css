@@ -1579,16 +1579,16 @@ body {
 }
 
 .history-item {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
-  text-align: left;
   margin: 4px 0;
   padding: 8px 10px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: none;
   color: var(--vscode-foreground);
-  cursor: pointer;
+  cursor: default;
   font-size: 12px;
   font-family: inherit;
 }
@@ -1603,8 +1603,107 @@ body {
   border-color: var(--vscode-focusBorder, transparent);
 }
 
-.history-item:disabled {
+/* 行主体（点击切换）：透明铺满容器剩余宽度 */
+.history-item-main {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  text-align: left;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.history-item-main:disabled {
   cursor: default;
+}
+
+/* 行操作按钮区（编辑/删除）：hover/focus-within 显隐，Tab 可达 */
+.history-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  opacity: 0;
+}
+
+.history-item:hover .history-item-actions,
+.history-item:focus-within .history-item-actions {
+  opacity: 1;
+}
+
+.history-item-edit,
+.history-item-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.history-item-edit:hover,
+.history-item-delete:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.history-item-edit:disabled,
+.history-item-delete:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.history-item-edit:disabled:hover,
+.history-item-delete:disabled:hover {
+  background: none;
+}
+
+/* SVG 链路：fill 是 path 上的 presentation attribute，必须 path 级选择器覆写 */
+.history-item-edit .icon,
+.history-item-delete .icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.history-item-edit .icon path,
+.history-item-delete .icon path {
+  fill: var(--vscode-descriptionForeground);
+}
+
+.history-item-delete:hover:not(:disabled) .icon path {
+  fill: var(--vscode-errorForeground);
+}
+
+/* active 行图标改用选中前景色（深色选中背景下 descriptionForeground 对比不足） */
+.history-item.active .history-item-edit .icon path,
+.history-item.active .history-item-delete .icon path {
+  fill: var(--vscode-list-activeSelectionForeground);
+}
+
+/* 行内编辑输入框（替换名称 span） */
+.history-item-edit-input {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+  outline: none;
+}
+
+.history-item-edit-input:focus {
+  border-color: var(--vscode-focusBorder);
 }
 
 .history-item-top {

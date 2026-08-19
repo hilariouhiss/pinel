@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { ChatController, OutMessage } from "./controller";
+import { confirmSessionDelete, type ChatController, type OutMessage } from "./controller";
 
 interface WebviewPromptMessage {
   type: "sendPrompt";
@@ -97,6 +97,17 @@ interface WebviewGetSessionListMessage {
   type: "getSessionList";
 }
 
+interface WebviewRenameSessionMessage {
+  type: "renameSession";
+  path: string;
+  name: string;
+}
+
+interface WebviewDeleteSessionMessage {
+  type: "deleteSession";
+  path: string;
+}
+
 interface WebviewSwitchSessionMessage {
   type: "switchSession";
   path: string;
@@ -130,6 +141,8 @@ type WebviewInMessage =
   | WebviewEditPromptMessage
   | WebviewInputFocusMessage
   | WebviewGetSessionListMessage
+  | WebviewRenameSessionMessage
+  | WebviewDeleteSessionMessage
   | WebviewSwitchSessionMessage
   | WebviewNewSessionMessage
   | WebviewGetFileListMessage
@@ -248,6 +261,23 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "getSessionList":
         void this.postSessionList();
+        break;
+      case "renameSession":
+        void (async () => {
+          await this.controller.renameSession(msg.path, msg.name);
+          // 弹层数据源是 getSessionList 按需拉取：成功后重拉覆盖当前弹层数据
+          await this.postSessionList();
+        })();
+        break;
+      case "deleteSession":
+        void (async () => {
+          // 破坏性操作：确认后再删（共享 seam，与历史视图行为一致）
+          if (!(await confirmSessionDelete(msg.path))) {
+            return;
+          }
+          await this.controller.deleteSession(msg.path);
+          await this.postSessionList();
+        })();
         break;
       case "switchSession":
         // 聊天视图已在次侧边栏，无需 revealChatView（与历史视图入口不同）

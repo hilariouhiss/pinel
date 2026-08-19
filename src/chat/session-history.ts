@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { randomUUID } from "node:crypto";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -295,6 +296,82 @@ function extractText(content: unknown): string {
 function normalizePreview(text: string): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
   return oneLine.length > MAX_PREVIEW_CHARS ? `${oneLine.slice(0, MAX_PREVIEW_CHARS)}…` : oneLine;
+}
+
+/**
+ * 向会话文件追加显示名（session_info 条目），供「重命名非当前会话」使用。
+ * 格式完全对齐 pi 的 session-manager.js appendSessionInfo：
+ * {type:"session_info", id:uuid8, parentId:leafId, timestamp:ISO, name:清洗后}。
+ *
+ * 关键语义（对齐 pi 加载逻辑 _buildIndex）：
+ * - leaf id = 最后一个非 header 条目的 id（**全文件扫描**，不受 MAX_SCAN_LINES
+ *   显示层截断限制——超长会话复用截断会拿到错误 parentId 导致树链错误）
+ * - 仅 header 的会话 parentId 为 null（对齐 pi leafId 初始值）
+ * - id 用 uuid8 并对已解析 id 集合查重（对齐 pi generateId 的查重语义）
+ * - name 清洗对齐 pi appendSessionInfo：\r\n 压成空格 + trim
+ * - 读取/写入失败抛错（由调用方 notice）；空名抛错（调用方应提前拦截，双保险）
+ */
+export async function appendSessionName(filePath: string, name: string): Promise<void> {
+  const sanitized = name.replace(/[\r\n]+/g, " ").trim();
+  if (!sanitized) {
+    throw new Error("会话名称不能为空");
+  }
+  let content: string;
+  try {
+    content = await fs.readFile(filePath, "utf8");
+  } catch {
+    throw new Error(`读取会话文件失败：${filePath}`);
+  }
+  const ids = new Set<string>();
+  let leafId: string | null = null;
+  for (const line of content.split("\n")) {
+    if (!line.trim()) {
+      continue;
+    }
+    let entry: Record<string, unknown> | null = null;
+    try {
+      const parsed: unknown = JSON.parse(line);
+      if (parsed !== null && typeof parsed === "object") {
+        entry = parsed as Record<string, unknown>;
+      }
+    } catch {
+      continue; // 坏行跳过（对齐 pi parseSessionEntryLine）
+    }
+    if (!entry || entry.type === "session") {
+      continue; // header 不参与 leaf/id 集合（对齐 _buildIndex）
+    }
+    if (typeof entry.id === "string" && entry.id) {
+      ids.add(entry.id);
+      leafId = entry.id;
+    }
+  }
+  // uuid8 查重生成（对齐 pi generateId）；100 次全撞的理论场景兜底全 UUID
+  let id = "";
+  for (let i = 0; i < 100; i++) {
+    const candidate = randomUUID().slice(0, 8);
+    if (!ids.has(candidate)) {
+      id = candidate;
+      break;
+    }
+  }
+  if (!id) {
+    id = randomUUID();
+  }
+  const entry = {
+    type: "session_info",
+    id,
+    parentId: leafId,
+    timestamp: new Date().toISOString(),
+    name: sanitized,
+  };
+  // 文件尾无换行时先补 \n（防追加行与末行粘连成坏 JSON 行——pi 正常文件恒以 \n 结尾，
+  // 但外部截断/异常写入可能破坏，防御处理保证追加行始终独立）
+  const prefix = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
+  try {
+    await fs.appendFile(filePath, `${prefix}${JSON.stringify(entry)}\n`, "utf8");
+  } catch {
+    throw new Error(`写入会话文件失败：${filePath}`);
+  }
 }
 
 /** 目录存在则返回其路径（规范化大小写），否则 undefined。 */

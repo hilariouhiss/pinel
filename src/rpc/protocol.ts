@@ -173,6 +173,17 @@ export interface SessionSwitchData {
   cancelled: boolean;
 }
 
+/**
+ * 设置当前会话显示名（会话重命名链路）。
+ * 注意：docs/rpc.md 未收录此命令（文档漂移），实测 pi 0.84.x 实现：
+ * trim 后空名报错 "Session name cannot be empty"，成功响应无 data；
+ * 仅作用于当前会话（setSessionName → appendSessionInfo 落盘 session_info 条目）。
+ */
+export interface SetSessionNameCommand {
+  type: "set_session_name";
+  name: string;
+}
+
 export type ClientCommand =
   | PromptCommand
   | SteerCommand
@@ -190,7 +201,8 @@ export type ClientCommand =
   | SetAutoCompactionCommand
   | GetCommandsCommand
   | SwitchSessionCommand
-  | NewSessionCommand;
+  | NewSessionCommand
+  | SetSessionNameCommand;
 
 // ---------------------------------------------------------------------------
 // 状态

@@ -153,6 +153,7 @@ export type HostMessage =
   | { type: "questionnaireCleared" }
   | { type: "sessionSwitching"; switching: boolean }
   | { type: "sessionListChanged" }
+  | { type: "sessionListRefresh" }
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "triggerEditPrompt" }
   | { type: "fillPrompt"; text: string }

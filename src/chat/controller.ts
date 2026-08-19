@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { RpcClient } from "../rpc/client";
 import { PromptEditorManager } from "./prompt-editor";
-import { parseSessionMeta, scanSessions, toItem, resolveSessionsRoot } from "./session-history";
+import { parseSessionMeta, scanSessions, toItem, resolveSessionsRoot, appendSessionName } from "./session-history";
 import { scanWorkspaceFiles, imageMimeType, isImageFile, type FileItem, type ScanResult } from "./file-scanner";
 import {
   DIALOG_UI_METHODS,
@@ -91,6 +91,7 @@ export type OutMessage =
   | { type: "questionnaireCleared" }
   | { type: "sessionSwitching"; switching: boolean }
   | { type: "sessionListChanged" }
+  | { type: "sessionListRefresh" }
   | { type: "triggerEditPrompt" }
   | { type: "fillPrompt"; text: string }
   | { type: "sessionTitle"; title: string | undefined }
@@ -559,6 +560,79 @@ export class ChatController {
     const { root, layout } = resolveSessionsRoot(cwd, configured);
     const metas = await scanSessions(root, cwd, layout);
     return metas.map(toItem);
+  }
+
+  /**
+   * 重命名会话（会话列表行内编辑）。
+   *
+   * 双路径：
+   * - 当前会话（path === sessionFile）→ RPC set_session_name（pi 权威通道：
+   *   内存状态 + 落盘；需 pi 运行中）
+   * - 非当前会话 → 宿主向目标 .jsonl 追加 session_info 条目（纯文件操作，
+   *   不依赖 pi 进程状态；格式对齐 pi appendSessionInfo，见 session-history.ts）
+   *
+   * 空名（trim 后）视为取消：双路径统一入口拦截，不发 RPC 也不追加文件
+   * （防非当前路径追加空名触发 pi「显式清除名称」语义）。
+   * 成功 → sessionListRefresh（列表立即刷新，绕 provider 5s 节流）；
+   * 当前会话另 force 重解析标题（refreshSessionTitle 以 sessionFile 变化为
+   * 去重键，重命名不改路径必须 reset 后重跑）。
+   */
+  async renameSession(sessionPath: string, name: string): Promise<void> {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return; // 空名视为取消
+    }
+    const isCurrent = sessionPath === this.status.sessionFile;
+    if (isCurrent) {
+      const client = this.client;
+      if (!client?.isRunning) {
+        this.notice("warning", "pi 进程不可用，无法重命名当前会话");
+        return;
+      }
+      try {
+        await client.send({ type: "set_session_name", name: trimmed });
+        if (this.client !== client) {
+          return; // restart 竞态：迟到响应丢弃
+        }
+      } catch (err) {
+        // 旧版 pi 无此命令（docs/rpc.md 未收录）→ send 抛错 → 可见反馈
+        this.notice("warning", `重命名失败：${(err as Error).message}`);
+        return;
+      }
+      // 标题 force 重解析（响应先于落盘的极小竞态可接受，下次刷新自愈）
+      this.lastTitleSessionFile = undefined;
+      this.refreshSessionTitle();
+    } else {
+      try {
+        await appendSessionName(sessionPath, trimmed);
+      } catch (err) {
+        this.notice("warning", `重命名失败：${(err as Error).message}`);
+        return;
+      }
+    }
+    this.fire({ type: "sessionListRefresh" });
+  }
+
+  /**
+   * 删除会话（会话列表行操作）。
+   * - 当前会话禁止删除（webview 按钮已禁用，此处执行时二次校验防切换窗口期）
+   * - 非当前会话：宿主直接删 .jsonl（pi RPC 无删除命令；纯文件操作不依赖
+   *   pi 进程状态）；fs.rm force:true 幂等 + maxRetries 重试（Windows 句柄）
+   * - 确认弹窗不在本方法内（UI 层 confirmSessionDelete，PinelTestApi 直调不卡框）
+   * 成功 → sessionListRefresh 立即刷新。
+   */
+  async deleteSession(sessionPath: string): Promise<void> {
+    if (sessionPath === this.status.sessionFile) {
+      this.notice("warning", "当前会话不可删除");
+      return;
+    }
+    try {
+      await fs.rm(sessionPath, { force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (err) {
+      this.notice("error", `删除会话失败：${(err as Error).message}`);
+      return;
+    }
+    this.fire({ type: "sessionListRefresh" });
   }
 
   /**
@@ -1773,6 +1847,22 @@ function extractText(content: unknown): string | undefined {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 删除会话确认（UI 层共享 seam，聊天面板与历史视图两个 handler 统一调用）。
+ * 包 vscode.window.showWarningMessage：返回 true 仅当用户点击「删除」。
+ * 独立导出以便集成测试 stub showWarningMessage 后直调覆盖拒绝/接受两条路径
+ * （controller.deleteSession 本体不内置确认——PinelTestApi 直调不卡确认框）。
+ */
+export async function confirmSessionDelete(sessionPath: string): Promise<boolean> {
+  const label = path.basename(sessionPath);
+  const pick = await vscode.window.showWarningMessage(
+    `确定删除会话「${label}」吗？此操作不可撤销。`,
+    { modal: true },
+    "删除",
+  );
+  return pick === "删除";
 }
 
 export type { AgentMessage };

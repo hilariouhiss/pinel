@@ -68,6 +68,7 @@
  */
 "use strict";
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
 
@@ -104,6 +105,8 @@ let messages = [];
 let currentSessionFile = "/fake/session.jsonl";
 let currentSessionId = "fake-session";
 let newSessionCount = 0;
+/** 当前会话显示名（set_session_name 写入；get_state 镜像 sessionName 字段）。 */
+let currentSessionName = undefined;
 
 /** B 会话数据（switch_session 后重置为的消息集合，与默认会话可区分）。 */
 const sessionBMessages = [
@@ -138,6 +141,60 @@ function respond(id, command, success, data, error) {
     res.error = error;
   }
   out(res);
+}
+
+/**
+ * 向会话文件物理追加 session_info 条目（格式对齐宿主 appendSessionName /
+ * 真实 pi appendSessionInfo）：leaf id = 最后一个非 header 条目、uuid8 查重、
+ * 尾无换行先补 \n。文件不存在/不可读时抛错由调用方吞掉（仅内存态）。
+ */
+function appendSessionInfoToFile(filePath, name) {
+  let content;
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch {
+    throw new Error("no file");
+  }
+  const ids = new Set();
+  let leafId = null;
+  for (const line of content.split("\n")) {
+    if (!line.trim()) {
+      continue;
+    }
+    let entry = null;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue; // 坏行跳过（对齐 parseSessionEntryLine）
+    }
+    if (!entry || entry.type === "session") {
+      continue;
+    }
+    if (typeof entry.id === "string" && entry.id) {
+      ids.add(entry.id);
+      leafId = entry.id;
+    }
+  }
+  let id = "";
+  for (let i = 0; i < 100; i++) {
+    const candidate = crypto.randomUUID().slice(0, 8);
+    if (!ids.has(candidate)) {
+      id = candidate;
+      break;
+    }
+  }
+  if (!id) {
+    id = crypto.randomUUID();
+  }
+  const entry = {
+    type: "session_info",
+    id,
+    parentId: leafId,
+    timestamp: new Date().toISOString(),
+    name: String(name).replace(/[\r\n]+/g, " ").trim(),
+  };
+  const prefix = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
+  fs.appendFileSync(filePath, prefix + JSON.stringify(entry) + "\n", "utf8");
 }
 
 const MODEL = { id: "fake-model", name: "Fake Model", provider: "fake" };
@@ -642,6 +699,30 @@ async function handleCommand(record) {
       currentSessionId = "new-session";
       messages = [];
       respond(id, "new_session", true, { cancelled: false });
+      break;
+    }
+
+    case "set_session_name": {
+      // 真实 pi 镜像（rpc-mode.js）：trim 后空名报错；成功无 data。
+      // 向 currentSessionFile 物理追加 session_info 条目（重命名测试断言
+      // 文件内容/标题刷新/列表名称依赖真实落盘——与宿主 appendSessionName 同格式）。
+      const name = String(record.name ?? "").replace(/[\r\n]+/g, " ").trim();
+      if (!name) {
+        respond(id, "set_session_name", false, undefined, "Session name cannot be empty");
+        break;
+      }
+      if (SCENARIO === "RENAME-FAIL") {
+        // 模拟旧版 pi 无此命令：失败路径（客户端应 notice 且状态不变）
+        respond(id, "set_session_name", false, undefined, "Unknown command: set_session_name");
+        break;
+      }
+      currentSessionName = name;
+      try {
+        appendSessionInfoToFile(currentSessionFile, name);
+      } catch {
+        // 文件不存在（默认 /fake/session.jsonl 内存态）：仅更新内存态
+      }
+      respond(id, "set_session_name", true);
       break;
     }
 

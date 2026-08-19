@@ -19,6 +19,8 @@ export interface TestEventLog {
   lastFillPrompt: string | undefined;
   /** 最近一次会话标题广播（对象包裹区分「未广播」与「广播 undefined」）。 */
   lastSessionTitle: { title: string | undefined } | undefined;
+  /** 重命名/删除后的立即刷新信号计数（sessionListRefresh 广播断言）。 */
+  sessionListRefreshCount: number;
 }
 
 /** 暴露给集成测试的钩子接口（通过扩展 exports 获取）。 */
@@ -57,7 +59,10 @@ export interface PinelTestApi {
   switchSession(sessionPath: string): Promise<void>;
   /** 新建会话（会话历史顶部按钮）。 */
   newSession(): Promise<void>;
-  /** 当前会话文件路径（get_state.sessionFile；切换/新建断言用）。 */
+  /** 重命名会话（双路径：当前→RPC set_session_name，非当前→文件追加）。 */
+  renameSession(sessionPath: string, name: string): Promise<void>;
+  /** 删除会话（当前会话拒绝；无确认弹窗——UI 层 confirmSessionDelete 负责）。 */
+  deleteSession(sessionPath: string): Promise<void>;  /** 当前会话文件路径（get_state.sessionFile；切换/新建断言用）。 */
   getCurrentSessionFile(): string | undefined;
   /** 会话历史列表（最近一次扫描结果；测试断言，不依赖 DOM）。 */
   getSessionList(): SessionListItem[];
@@ -158,6 +163,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
   let lastSessionSwitching: boolean | undefined;
   let lastFillPrompt: string | undefined;
   let lastSessionTitle: { title: string | undefined } | undefined;
+  let sessionListRefreshCount = 0;
   ctrl.onChange.event((msg) => {
     if (msg.type === "notice") {
       notices.push({ level: msg.level, text: msg.text });
@@ -174,6 +180,8 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       lastFillPrompt = msg.text;
     } else if (msg.type === "sessionTitle") {
       lastSessionTitle = { title: msg.title };
+    } else if (msg.type === "sessionListRefresh") {
+      sessionListRefreshCount++;
     }
   });
 
@@ -198,6 +206,8 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     getPendingPromptUriPath: () => ctrl.getPendingPromptUri()?.fsPath,
     switchSession: (sessionPath: string) => ctrl.switchSession(sessionPath),
     newSession: () => ctrl.newSession(),
+    renameSession: (sessionPath: string, name: string) => ctrl.renameSession(sessionPath, name),
+    deleteSession: (sessionPath: string) => ctrl.deleteSession(sessionPath),
     getCurrentSessionFile: () => ctrl.getStatus().sessionFile,
     getSessionList: () => historyProvider.getLastList(),
     getChatSessionList: () => ctrl.getSessionList(),
@@ -224,6 +234,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       lastSessionSwitching,
       lastFillPrompt,
       lastSessionTitle,
+      sessionListRefreshCount,
     }),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {
       const deadline = Date.now() + timeoutMs;

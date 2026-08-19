@@ -2,7 +2,7 @@ import * as assert from "assert";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { encodeCwd, parseSessionMeta, scanSessions, MAX_SCAN_LINES, MAX_PREVIEW_CHARS } from "../chat/session-history";
+import { encodeCwd, parseSessionMeta, scanSessions, appendSessionName, MAX_SCAN_LINES, MAX_PREVIEW_CHARS } from "../chat/session-history";
 
 function header(id = "uuid-1", timestamp = "2026-08-18T01:00:00.000Z"): string {
   return JSON.stringify({ type: "session", version: 3, id, timestamp, cwd: "/fake/project" });
@@ -203,5 +203,119 @@ suite("scanSessions 单元测试（临时目录）", () => {
 
   test("根目录为空/不存在 → 空列表", async () => {
     assert.deepStrictEqual(await scanSessions(path.join(tmp, "nope"), undefined, "custom"), []);
+  });
+});
+
+suite("appendSessionName 单元测试", () => {
+  let tmp: string;
+  let file: string;
+
+  setup(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), "pinel-append-name-"));
+    file = path.join(tmp, "2026-08-18T01-00-00-000Z_uuid.jsonl");
+  });
+
+  teardown(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  async function writeSession(lines: string[]): Promise<void> {
+    await fs.writeFile(file, lines.join("\n"));
+  }
+
+  function msgEntry(id: string, parentId: string | null, role: string, content: string): string {
+    return JSON.stringify({
+      type: "message",
+      id,
+      parentId,
+      timestamp: "2026-08-18T01:02:00.000Z",
+      message: { role, content },
+    });
+  }
+
+  test("正常追加：session_info 条目可被 parseSessionMeta 解析为最新名称", async () => {
+    await writeSession([
+      header(),
+      msgEntry("a1", null, "user", "第一条消息"),
+      msgEntry("a2", "a1", "assistant", "回复"),
+    ]);
+    await appendSessionName(file, "重构认证模块");
+    const content = await fs.readFile(file, "utf8");
+    const lines = content.split("\n").filter((l) => l.trim());
+    assert.strictEqual(lines.length, 4);
+    const info = JSON.parse(lines[3]) as Record<string, unknown>;
+    assert.strictEqual(info.type, "session_info");
+    assert.strictEqual(info.parentId, "a2"); // leaf = 最后一个非 header 条目的 id
+    assert.strictEqual(info.name, "重构认证模块");
+    assert.match(info.id as string, /^[0-9a-f]{8}$/); // uuid8
+    assert.strictEqual(typeof info.timestamp, "string");
+    // 显示层读取到最新名称
+    assert.strictEqual(parseSessionMeta(content)?.name, "重构认证模块");
+  });
+
+  test("名称清洗：\r\n 压成空格 + trim（对齐 pi appendSessionInfo）", async () => {
+    await writeSession([header(), msgEntry("b1", null, "user", "消息")]);
+    await appendSessionName(file, "  多行\r\n名称\n第二行  ");
+    assert.strictEqual(parseSessionMeta(await fs.readFile(file, "utf8"))?.name, "多行 名称 第二行");
+  });
+
+  test("仅 header 的会话：parentId 为 null（对齐 pi leafId 初始值）", async () => {
+    await writeSession([header()]);
+    await appendSessionName(file, "空会话命名");
+    const content = await fs.readFile(file, "utf8");
+    const info = JSON.parse(content.split("\n").filter((l) => l.trim())[1]) as Record<string, unknown>;
+    assert.strictEqual(info.type, "session_info");
+    assert.strictEqual(info.parentId, null);
+  });
+
+  test("追加不覆盖既有名称：最新一条生效（重命名两次取后一次）", async () => {
+    await writeSession([header(), msgEntry("c1", null, "user", "消息")]);
+    await appendSessionName(file, "旧名");
+    await appendSessionName(file, "新名");
+    assert.strictEqual(parseSessionMeta(await fs.readFile(file, "utf8"))?.name, "新名");
+  });
+
+  test("损坏文件：坏行跳过（对齐 pi parseSessionEntryLine），仍可追加", async () => {
+    await writeSession([header(), "{not-json", msgEntry("d1", null, "user", "消息")]);
+    await appendSessionName(file, "坏文件命名");
+    // 坏行被跳过，leaf 取最后合法条目 d1
+    const content = await fs.readFile(file, "utf8");
+    const info = JSON.parse(content.split("\n").filter((l) => l.trim()).pop()!) as Record<string, unknown>;
+    assert.strictEqual(info.parentId, "d1");
+    assert.strictEqual(parseSessionMeta(content)?.name, "坏文件命名");
+  });
+
+  test("id 查重：不与既有条目 id 冲突", async () => {
+    // 构造一个既有 id 恰好为固定 uuid8 的文件（查重需跳过它）——用固定种子不可行，
+    // 改为断言：追加生成的 id 不在既有 id 集合内（覆盖多条目场景）
+    await writeSession([
+      header(),
+      msgEntry("00000001", null, "user", "消息"),
+      msgEntry("00000002", "00000001", "assistant", "回复"),
+    ]);
+    await appendSessionName(file, "查重命名");
+    const content = await fs.readFile(file, "utf8");
+    const info = JSON.parse(content.split("\n").filter((l) => l.trim()).pop()!) as Record<string, unknown>;
+    assert.notStrictEqual(info.id, "00000001");
+    assert.notStrictEqual(info.id, "00000002");
+  });
+
+  test("空名：抛错（调用方应提前拦截，双保险）", async () => {
+    await writeSession([header()]);
+    await assert.rejects(appendSessionName(file, "   \r\n "), /会话名称不能为空/);
+  });
+
+  test("文件尾无换行：先补 \\n 再追加（防粘连成坏 JSON 行）", async () => {
+    // writeSession 用 join 不追加尾换行 → 构造无尾换行文件
+    await fs.writeFile(file, [header(), msgEntry("e1", null, "user", "无尾换行")].join("\n"));
+    await appendSessionName(file, "补换行");
+    const content = await fs.readFile(file, "utf8");
+    const lines = content.split("\n").filter((l) => l.trim());
+    assert.strictEqual(lines.length, 3); // 追加行独立成行，未与末行粘连
+    assert.strictEqual(parseSessionMeta(content)?.name, "补换行");
+  });
+
+  test("文件不存在：抛错", async () => {
+    await assert.rejects(appendSessionName(path.join(tmp, "nope.jsonl"), "任意名"), /读取会话文件失败/);
   });
 });

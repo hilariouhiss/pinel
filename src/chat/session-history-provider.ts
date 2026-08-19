@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { scanSessions, toItem, resolveSessionsRoot, type SessionListItem } from "./session-history";
-import type { ChatController } from "./controller";
+import { confirmSessionDelete, type ChatController } from "./controller";
 import { getPanelHtml } from "./panel";
 
 /**
@@ -51,7 +51,9 @@ type HistoryInMessage =
   | { type: "ready" }
   | { type: "refresh" }
   | { type: "newSession" }
-  | { type: "switchSession"; path: string };
+  | { type: "switchSession"; path: string }
+  | { type: "renameSession"; path: string; name: string }
+  | { type: "deleteSession"; path: string };
 
 /** 刷新节流：settled 每回合都广播 sessionListChanged，5s 内不重复扫描。 */
 const REFRESH_THROTTLE_MS = 5000;
@@ -75,6 +77,10 @@ export class SessionHistoryProvider implements vscode.WebviewViewProvider {
     controller.onChange.event((msg) => {
       if (msg.type === "sessionListChanged") {
         void this.refreshThrottled();
+      } else if (msg.type === "sessionListRefresh") {
+        // 重命名/删除后的立即刷新：直连 refresh() 绕 5s 节流
+        //（refresh 会重置 lastRefreshAt，后续 settle 信号被吞属良性——数据已最新）
+        void this.refresh();
       } else if (msg.type === "snapshot") {
         // 会话文件变化（切换/新建/重启）→ 高亮必须及时，绕过节流
         const sf = this.controller.getStatus().sessionFile;
@@ -120,6 +126,18 @@ export class SessionHistoryProvider implements vscode.WebviewViewProvider {
         void (async () => {
           await this.controller.switchSession(msg.path);
           await revealChatView();
+        })();
+        break;
+      case "renameSession":
+        void this.controller.renameSession(msg.path, msg.name);
+        break;
+      case "deleteSession":
+        void (async () => {
+          // 破坏性操作：确认后再删（共享 seam，与聊天面板行为一致）
+          if (!(await confirmSessionDelete(msg.path))) {
+            return;
+          }
+          await this.controller.deleteSession(msg.path);
         })();
         break;
     }

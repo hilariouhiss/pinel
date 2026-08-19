@@ -1,7 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { vscode } from "../index";
 import type { SessionListItem } from "../types";
 import { formatRelativeTime } from "../utils";
 import { SearchBox } from "./SearchBox";
+// SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
+import editIcon from "../../../media/edit.svg";
+import deleteIcon from "../../../media/delete.svg";
 
 interface Props {
   /** 触发按钮元素（null 时不渲染）。定位/焦点管理都依赖它。 */
@@ -44,6 +48,8 @@ export function SessionListPopover({
   const [pos, setPos] = useState<{ top?: number; bottom?: number; left?: number; right?: number }>({});
   const triggerRef = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState("");
+  /** 行内编辑中的会话路径（同一时刻至多一行；null 无编辑）。 */
+  const [editingPath, setEditingPath] = useState<string | null>(null);
 
   // 打开时重置搜索词（组件常驻挂载，useState 跨开关保留）
   useEffect(() => {
@@ -93,13 +99,19 @@ export function SessionListPopover({
   }, [anchor]);
 
   // Esc 关闭：capture 阶段拦截 + stopPropagation，防止 Composer 的 Esc 分支
-  //（流式中会 abort）同时触发——弹窗打开时 Esc 只关弹窗
+  //（流式中会 abort）同时触发——弹窗打开时 Esc 只关弹窗。
+  // 行内编辑态豁免：window capture 先于 React 冒泡委托执行，input 侧无法拦截——
+  // 编辑 input 上的 Esc 交由 input 自身取消编辑（两段式：先取消编辑、再关弹层）；
+  // 只豁免 .history-item-edit-input，SearchBox 的 Esc 关弹层行为保留。
   useEffect(() => {
     if (!anchor) {
       return;
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if ((e.target as HTMLElement | null)?.closest?.(".history-item-edit-input")) {
+          return;
+        }
         e.stopPropagation();
         e.preventDefault();
         onClose();
@@ -122,6 +134,12 @@ export function SessionListPopover({
       }
     };
   }, [anchor]);
+
+  /** 提交重命名：乐观退出编辑态；宿主成功后刷新列表、失败 notice。 */
+  const submitRename = (path: string, rawName: string) => {
+    setEditingPath(null);
+    vscode.postMessage({ type: "renameSession", path, name: rawName });
+  };
 
   if (!anchor) {
     return null;
@@ -153,20 +171,59 @@ export function SessionListPopover({
           ) : (
             filtered.map((item) => {
               const active = item.path === currentSessionFile;
+              const editing = editingPath === item.path;
               return (
-                <button
-                  key={item.path}
-                  className={`history-item${active ? " active" : ""}`}
-                  onClick={() => onSelect(item.path)}
-                  disabled={switching}
-                >
-                  <div className="history-item-top">
-                    <span className="history-item-name">{item.name || "未命名会话"}</span>
-                    {active && <span className="history-item-badge">当前</span>}
-                    <span className="history-item-time">{formatRelativeTime(item.modified)}</span>
+                <div key={item.path} className={`history-item${active ? " active" : ""}`}>
+                  <button
+                    className="history-item-main"
+                    onClick={() => onSelect(item.path)}
+                    disabled={switching}
+                  >
+                    <div className="history-item-top">
+                      {editing ? (
+                        <input
+                          className="history-item-edit-input"
+                          defaultValue={item.name || ""}
+                          autoFocus
+                          onFocus={(e) => e.target.select()}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              submitRename(item.path, (e.target as HTMLInputElement).value);
+                            } else if (e.key === "Escape") {
+                              setEditingPath(null);
+                            }
+                          }}
+                          onBlur={() => setEditingPath(null)}
+                        />
+                      ) : (
+                        <span className="history-item-name">{item.name || "未命名会话"}</span>
+                      )}
+                      {active && <span className="history-item-badge">当前</span>}
+                      <span className="history-item-time">{formatRelativeTime(item.modified)}</span>
+                    </div>
+                    {item.preview && <div className="history-item-preview">{item.preview}</div>}
+                  </button>
+                  <div className="history-item-actions">
+                    <button
+                      className="history-item-edit"
+                      title="重命名"
+                      onClick={() => {
+                        if (!switching) {
+                          setEditingPath(item.path);
+                        }
+                      }}
+                      disabled={switching}
+                      dangerouslySetInnerHTML={{ __html: editIcon }}
+                    />
+                    <button
+                      className="history-item-delete"
+                      title={active ? "当前会话不可删除" : "删除会话"}
+                      onClick={() => vscode.postMessage({ type: "deleteSession", path: item.path })}
+                      disabled={switching || active}
+                      dangerouslySetInnerHTML={{ __html: deleteIcon }}
+                    />
                   </div>
-                  {item.preview && <div className="history-item-preview">{item.preview}</div>}
-                </button>
+                </div>
               );
             })
           )}
