@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, FileItem, HostMessage, ModelInfo, QuestionnaireView, SessionListItem, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { ChatMessage, ChatStatus, FileItem, HostMessage, ModelInfo, QuestionnaireView, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
+import { SessionStatsBar } from "./components/SessionStatsBar";
 import { MessageView } from "./components/MessageView";
 import { Notices } from "./components/Notices";
 import { TodoPanel } from "./components/TodoPanel";
@@ -22,6 +23,7 @@ const initialStatus: ChatStatus = {
   steeringMode: "all",
   followUpMode: "one-at-a-time",
   autoCompactionEnabled: true,
+  showSessionStats: false,
   steering: [],
   followUp: [],
 };
@@ -56,6 +58,8 @@ export default function App() {
   const newSessionBtnRef = useRef<HTMLButtonElement>(null);
   /** 会话历史列表（header 弹层数据；getSessionList 响应填充）。 */
   const [sessionItems, setSessionItems] = useState<SessionListItem[]>([]);
+  /** 会话统计（get_session_stats 推送；null=尚未拉取）。 */
+  const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   /** 工作区文件列表（@ 添加文件数据；getFileList 响应填充）。 */
   const [fileList, setFileList] = useState<FileItem[]>([]);
   /** 当前会话标题（宿主 sessionTitle 广播；snapshot 重放恢复）。 */
@@ -89,7 +93,7 @@ export default function App() {
         setMessages(msg.messages);
         setStreamBlocks([]);
         setStatus(msg.status);
-        setPendingUi(msg.pendingUi ?? []);
+        setSessionStats(msg.sessionStats ?? null); // 快照恢复（重显/重启不留长期占位）        setPendingUi(msg.pendingUi ?? []);
         setTodos(msg.todos ?? []);
         setCommands(msg.commands ?? []);
         setQuestionnaire(msg.questionnaire ?? null);
@@ -164,6 +168,9 @@ export default function App() {
         break;
       case "sessionList":
         setSessionItems(msg.items);
+        break;
+      case "sessionStats":
+        setSessionStats(msg.stats);
         break;
       case "fileList":
         setFileList(msg.items);
@@ -383,6 +390,7 @@ export default function App() {
         {questionnaire && <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />}
       </div>
       {todos.length > 0 && <TodoPanel todos={todos} />}
+      {status.showSessionStats && <SessionStatsBar stats={sessionStats} />}
       {banner}
       <Composer
         status={status}

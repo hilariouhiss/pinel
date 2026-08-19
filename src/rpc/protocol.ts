@@ -184,6 +184,49 @@ export interface SetSessionNameCommand {
   name: string;
 }
 
+/** 获取会话统计（get_session_stats；docs/rpc.md 已收录）。纯拉取式，无推送事件。 */
+export interface GetSessionStatsCommand {
+  type: "get_session_stats";
+}
+
+/** get_session_stats 响应 tokens（total = input+output+cacheRead+cacheWrite）。 */
+export interface SessionTokens {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
+/**
+ * 上下文占用。无模型/模型无 contextWindow 时整个 contextUsage 字段缺省；
+ * 压缩后无新的有效 assistant 响应时 tokens/percent 为 null（估算不可信，
+ * 待下次 LLM 响应恢复——对齐 pi agent-session.js getContextUsage）。
+ */
+export interface SessionContextUsage {
+  tokens: number | null;
+  contextWindow: number;
+  percent: number | null;
+}
+
+/**
+ * get_session_stats 响应 data（docs/rpc.md 已收录）。
+ * 聚合全会话条目（含被压缩掉的历史），token/成本反映实际计费。
+ * 除 tokens 外均容缺（防御解析见 src/chat/session-stats.ts）。
+ */
+export interface SessionStatsData {
+  sessionFile?: string;
+  sessionId?: string;
+  userMessages?: number;
+  assistantMessages?: number;
+  toolCalls?: number;
+  toolResults?: number;
+  totalMessages?: number;
+  tokens: SessionTokens;
+  cost?: number;
+  contextUsage?: SessionContextUsage;
+}
+
 export type ClientCommand =
   | PromptCommand
   | SteerCommand
@@ -202,7 +245,8 @@ export type ClientCommand =
   | GetCommandsCommand
   | SwitchSessionCommand
   | NewSessionCommand
-  | SetSessionNameCommand;
+  | SetSessionNameCommand
+  | GetSessionStatsCommand;
 
 // ---------------------------------------------------------------------------
 // 状态

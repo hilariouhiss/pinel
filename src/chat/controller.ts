@@ -23,6 +23,7 @@ import {
   type RpcEvent,
   type RpcRecord,
   type SessionState,
+  type SessionStatsData,
   type SessionSwitchData,
   type SlashCommand,
   type ToolExecutionEndEvent,
@@ -30,6 +31,7 @@ import {
   type ToolExecutionUpdateEvent,
 } from "../rpc/protocol";
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
+import { parseSessionStats } from "./session-stats";
 import { parseTodoTasks, type TodoTask } from "./todos";
 import { parseCommands } from "./commands";
 import { parseModels, parseThinkingLevels } from "./models";
@@ -59,6 +61,8 @@ export interface ChatStatus {
   followUpMode: string;
   /** 自动压缩（set_auto_compaction），默认 true。 */
   autoCompactionEnabled: boolean;
+  /** 会话信息条开关（pinel.showSessionStats 配置镜像；UI 偏好不依赖 pi 运行）。 */
+  showSessionStats?: boolean;
   /** 当前会话文件路径（get_state.sessionFile；会话历史列表高亮用）。 */
   sessionFile?: string;
   error?: string;
@@ -75,7 +79,7 @@ export interface ToolCard {
 }
 
 export type OutMessage =
-  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined }
+  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; tool: ToolCard }
@@ -92,6 +96,7 @@ export type OutMessage =
   | { type: "sessionSwitching"; switching: boolean }
   | { type: "sessionListChanged" }
   | { type: "sessionListRefresh" }
+  | { type: "sessionStats"; stats: SessionStatsData | null }
   | { type: "triggerEditPrompt" }
   | { type: "fillPrompt"; text: string }
   | { type: "sessionTitle"; title: string | undefined }
@@ -127,6 +132,7 @@ const initialStatus: ChatStatus = {
   steeringMode: "all",
   followUpMode: "one-at-a-time",
   autoCompactionEnabled: true,
+  showSessionStats: false,
   steering: [],
   followUp: [],
 };
@@ -156,6 +162,8 @@ export class ChatController {
 
   private client: RpcClient | null = null;
   private status: ChatStatus = { ...initialStatus };
+  /** 最近一次会话统计（get_session_stats 解析结果；切换/重启时清空）。 */
+  private sessionStats: SessionStatsData | null = null;
   private messages: AgentMessage[] = [];
   private partialBlocks: StreamBlock[] = [];
   private tools = new Map<string, ToolCard>();
@@ -171,6 +179,8 @@ export class ChatController {
   private restarting = false;
   private disposed = false;
   private workspaceWatcher: vscode.Disposable;
+  /** 会话信息开关配置监听（dispose 释放）。 */
+  private configWatcher: vscode.Disposable;
   /** 是否已触发过自动重启自愈（手动 restart 重置；置位后初始同步短路重试）。 */
   private modelHealRestarted = false;
   /** 最近一次初始状态同步中 get_state 的尝试次数（测试钩子）。 */
@@ -203,6 +213,18 @@ export class ChatController {
         void this.ensureStarted();
       }
     });
+    // 会话信息开关：配置变更（手改 settings.json / 其他窗口同步）→ 更新状态 + 开启时首拉。
+    // toggle 写配置后已直接更新 status，监听器比较新旧值自然跳过同值写入（无自触发双更新）
+    this.configWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (!e.affectsConfiguration("pinel.showSessionStats")) {
+        return;
+      }
+      const enabled = this.readShowSessionStats();
+      if (enabled === this.status.showSessionStats) {
+        return; // 同值写入（toggle 已直接更新）：跳过
+      }
+      this.applyShowSessionStats(enabled);
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -230,6 +252,13 @@ export class ChatController {
       return; // 进程在同步期间已退出（handleExit 已置 error 态）：不覆盖
     }
     this.setProcessState("running");
+    // 会话信息开关：每次启动回读配置（restart 重置 status 后恢复，防静默复位）；
+    // 开关开启时启动首拉一次（firstFetch=false 由 start 统一触发，避免双拉）
+    const showStats = this.readShowSessionStats();
+    this.applyShowSessionStats(showStats, false);
+    if (showStats) {
+      void this.refreshSessionStats();
+    }
 
     const client = this.client;
     if (!client) {
@@ -415,6 +444,7 @@ export class ChatController {
       this.partialAssembly = createAssembly();
       this.partialBlocks = [];
       this.status = { ...initialStatus };
+      this.sessionStats = null; // 统计归属新进程会话：清空，start 首拉后填充
       this.pendingUi.clear();
       this.todos = [];
       this.commands = [];
@@ -454,6 +484,7 @@ export class ChatController {
       await client.stop();
     }
     this.workspaceWatcher.dispose();
+    this.configWatcher.dispose();
     this.promptEditor.dispose();
     this.onChange.dispose();
   }
@@ -844,6 +875,12 @@ export class ChatController {
       }
     }
     this.fireSnapshot();
+    // 切换/新建后统计归属新会话：先清空占位再异步拉取（防旧会话统计短暂误导）
+    if (this.status.showSessionStats) {
+      this.sessionStats = null;
+      this.fire({ type: "sessionStats", stats: null });
+      void this.refreshSessionStats();
+    }
     this.fire({ type: "sessionListChanged" });
   }
 
@@ -988,6 +1025,87 @@ export class ChatController {
       },
       "设置自动压缩失败",
     );
+  }
+
+  /**
+   * 会话信息开关（设置面板「显示会话信息」）。
+   * pinel 自身 UI 偏好：写 vscode 配置持久化（Global），不依赖 pi 进程状态。
+   * 开启后立即首拉统计；配置写入失败静默 + Output 记录（不弹 notice——开关
+   * 状态由 status 广播实时反馈，配置持久化失败不影响本次会话内显示）。
+   */
+  async setShowSessionStats(enabled: boolean): Promise<void> {
+    try {
+      await vscode.workspace
+        .getConfiguration("pinel")
+        .update("showSessionStats", enabled, vscode.ConfigurationTarget.Global);
+    } catch (err) {
+      this.output.appendLine(`[warning] 写入配置 pinel.showSessionStats 失败：${(err as Error).message}`);
+    }
+    // 直接更新状态 + 广播（onDidChangeConfiguration 监听会比较新旧值跳过，不双更新）
+    this.applyShowSessionStats(enabled, true);
+  }
+
+  /** 读 pinel.showSessionStats 配置（默认关）。 */
+  private readShowSessionStats(): boolean {
+    return vscode.workspace.getConfiguration("pinel").get<boolean>("showSessionStats") ?? false;
+  }
+
+  /**
+   * 应用开关状态到 status + 广播；firstFetch=true 时开启则立即首拉统计。
+   * （start 时用 firstFetch=false：首拉由 start 流程统一触发，避免重复拉取）
+   */
+  private applyShowSessionStats(enabled: boolean, firstFetch = true): void {
+    if (this.status.showSessionStats === enabled) {
+      return;
+    }
+    this.status = { ...this.status, showSessionStats: enabled };
+    this.fire({ type: "status", status: this.status });
+    if (enabled && firstFetch) {
+      void this.refreshSessionStats();
+    }
+  }
+
+  /**
+   * 拉取会话统计（get_session_stats）并广播。
+   * - 会话竞态：捕获发起时 sessionFile，fire 前校验未变（连续切换时旧会话
+   *   迟到响应丢弃——照抄 refreshSessionTitle 模式）
+   * - restart 竞态：this.client === client 校验
+   * - 失败语义：无旧值时不 fire（webview 初始 null 天然占位）、有旧值静默
+   *   保留 + Output 记录（不弹 notice——非用户显式操作的数据刷新，避免打扰）
+   */
+  private async refreshSessionStats(): Promise<void> {
+    if (!this.status.showSessionStats) {
+      return; // 开关关闭：不拉取（settle 钩子无条件调用，内部按开关短路）
+    }
+    const client = this.client;
+    if (!client?.isRunning) {
+      return; // 开关开启但 pi 未运行：保持占位，start 首拉/后续 settle 自然恢复
+    }
+    const captured = this.status.sessionFile;
+    let parsed: SessionStatsData | null = null;
+    try {
+      const data = await client.send<SessionStatsData>({ type: "get_session_stats" });
+      parsed = parseSessionStats(data);
+    } catch (err) {
+      // 命令失败（旧版 pi / 网络异常）
+      this.output.appendLine(`[warning] 获取会话统计失败：${(err as Error).message}`);
+      if (this.client !== client) {
+        return;
+      }
+      if (this.sessionStats !== null) {
+        return; // 有旧值：静默保留（本回合统计未更新，下次 settle 重试）
+      }
+      // 无旧值：不 fire（webview 保持 null 占位）
+      return;
+    }
+    if (this.client !== client) {
+      return; // restart 竞态：丢弃迟到响应
+    }
+    if (this.status.sessionFile !== captured) {
+      return; // 会话已切换：旧统计丢弃（新会话的刷新已由切换钩子触发）
+    }
+    this.sessionStats = parsed;
+    this.fire({ type: "sessionStats", stats: parsed });
   }
 
   // -------------------------------------------------------------------------
@@ -1229,6 +1347,8 @@ export class ChatController {
         //（扩展可能在运行中注册新命令）
         void this.syncMessages();
         void this.fetchCommands();
+        // 会话统计随回合结束刷新（token/成本/上下文占用变化）
+        void this.refreshSessionStats();
         // 会话数据可能已更新（名称/消息）：通知历史视图刷新（provider 内部节流）
         this.fire({ type: "sessionListChanged" });
         break;
@@ -1715,6 +1835,7 @@ export class ChatController {
       commands: this.commands,
       questionnaire: this.questionnaireView(),
       sessionTitle: this.sessionTitleCache,
+      sessionStats: this.sessionStats,
     });
     // 会话文件变化（首次/切换/新建/重启后恢复）→ 异步解析标题；重放去重不重复解析
     if (this.status.sessionFile !== this.lastTitleSessionFile) {

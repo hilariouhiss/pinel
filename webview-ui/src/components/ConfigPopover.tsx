@@ -225,6 +225,26 @@ export function ConfigPopover({
             </button>
           </div>
         </div>
+        <div className="config-popover-section">
+          <div className="config-popover-title">会话信息</div>
+          <div className="config-popover-row">
+            {/* UI 偏好开关：不设 running 门控（不依赖 pi 进程，开启时首拉失败静默） */}
+            <span className="config-popover-value">显示 token/成本/上下文占用</span>
+            <button
+              role="switch"
+              aria-checked={Boolean(status.showSessionStats)}
+              className={`config-popover-toggle${status.showSessionStats ? " on" : ""}`}
+              disabled={busyKeys.has("sessionStats")}
+              onClick={() =>
+                withCooldown("sessionStats", () =>
+                  vscode.postMessage({ type: "toggleSessionStats" }),
+                )
+              }
+            >
+              {status.showSessionStats ? "开" : "关"}
+            </button>
+          </div>
+        </div>
         {expandableRow(
           "model",
           "模型",

@@ -1759,3 +1759,78 @@ body {
   color: inherit;
   opacity: 0.85;
 }
+
+/* ------------------------------------------------------------ 会话信息条 */
+/* 输入框上方（设置面板「显示会话信息」开关开启时显示）：
+   上下文进度条 + token（总量+四项细分）+ 缓存命中率 + 成本 */
+.session-stats-bar {
+  margin: 6px 10px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background);
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.session-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.session-stats-label {
+  flex: none;
+  opacity: 0.9;
+}
+
+.session-stats-value {
+  color: var(--vscode-foreground);
+}
+
+.session-stats-dim {
+  opacity: 0.7;
+}
+
+.session-stats-item {
+  color: var(--vscode-descriptionForeground);
+}
+
+.session-stats-empty {
+  opacity: 0.7;
+}
+
+.session-stats-context {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 120px;
+}
+
+.session-stats-progress {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-input-border);
+  overflow: hidden;
+}
+
+/* 阈值配色：<70 默认 / 70-90 警告 / >90 危险（无新依赖） */
+.session-stats-progress-fill {
+  height: 100%;
+  background: var(--vscode-progressBar-background);
+}
+
+.session-stats-progress-fill.warn {
+  background: var(--vscode-editorWarning-foreground);
+}
+
+.session-stats-progress-fill.danger {
+  background: var(--vscode-editorError-foreground);
+}

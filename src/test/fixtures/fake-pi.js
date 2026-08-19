@@ -681,7 +681,9 @@ async function handleCommand(record) {
       const oldMessages = [...messages];
       currentSessionFile = sessionPath;
       currentSessionId = "switched-session";
-      messages = sessionBMessages;
+      // 拷贝而非引用：prompt 流式的 push 会污染共享的 sessionBMessages 常量
+      //（实测：切换后消息数从 2 涨到 5，统计断言失败）
+      messages = [...sessionBMessages];
       respond(id, "switch_session", true, { cancelled: false });
       if (SCENARIO === "SWITCH-LATE-END") {
         // 模拟真实 pi 的异步乱序：切换响应后延迟补发旧流的 agent_end
@@ -723,6 +725,44 @@ async function handleCommand(record) {
         // 文件不存在（默认 /fake/session.jsonl 内存态）：仅更新内存态
       }
       respond(id, "set_session_name", true);
+      break;
+    }
+
+    case "get_session_stats": {
+      // 真实 pi 镜像（docs/rpc.md 已收录）：聚合全会话条目。
+      // 统计随消息数与会话派生（messages.length / currentSessionFile 的 base），
+      // 让「settle 后刷新」「切换后更新」断言可区分新旧值。
+      if (SCENARIO === "STATS-FAIL") {
+        respond(id, "get_session_stats", false, undefined, "stats failed (scenario)");
+        break;
+      }
+      const n = messages.length;
+      // 默认会话 /fake/session.jsonl 与切换后会话区分（切换后统计归属变化可断言）
+      const base = currentSessionFile === "/fake/session.jsonl" ? 1000 : 500;
+      const input = base + n * 100;
+      const output = Math.round(base / 2) + n * 50;
+      const cacheRead = base + n * 100;
+      const cacheWrite = Math.round(base / 4);
+      const stats = {
+        sessionFile: currentSessionFile,
+        sessionId: currentSessionId,
+        userMessages: n,
+        assistantMessages: n,
+        toolCalls: 0,
+        toolResults: 0,
+        totalMessages: n,
+        tokens: { input, output, cacheRead, cacheWrite, total: input + output + cacheRead + cacheWrite },
+        cost: 0.01 + n * 0.001,
+      };
+      if (SCENARIO !== "STATS-NOCONTEXT") {
+        // 无模型/无 contextWindow 时 contextUsage 缺省（STATS-NOCONTEXT 模拟）
+        stats.contextUsage = {
+          tokens: base + n * 50,
+          contextWindow: 200000,
+          percent: Math.round(((base + n * 50) / 200000) * 100),
+        };
+      }
+      respond(id, "get_session_stats", true, stats);
       break;
     }
 

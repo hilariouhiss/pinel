@@ -108,6 +108,10 @@ interface WebviewDeleteSessionMessage {
   path: string;
 }
 
+interface WebviewToggleSessionStatsMessage {
+  type: "toggleSessionStats";
+}
+
 interface WebviewSwitchSessionMessage {
   type: "switchSession";
   path: string;
@@ -143,6 +147,7 @@ type WebviewInMessage =
   | WebviewGetSessionListMessage
   | WebviewRenameSessionMessage
   | WebviewDeleteSessionMessage
+  | WebviewToggleSessionStatsMessage
   | WebviewSwitchSessionMessage
   | WebviewNewSessionMessage
   | WebviewGetFileListMessage
@@ -288,6 +293,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "getFileList":
         void this.postFileList();
+        break;
+      case "toggleSessionStats":
+        // 开关是 pinel UI 偏好（不依赖 pi 运行）：取当前 status 值翻转
+        void this.controller.setShowSessionStats(!this.controller.getStatus().showSessionStats);
         break;
     }
   }

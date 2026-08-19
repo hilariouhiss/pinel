@@ -8,6 +8,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- 会话信息条：设置面板「显示会话信息」开关（pinel.showSessionStats 配置持久化，重启保留）——开启后输入框上方显示上下文占用进度条（<70% 正常 / 70-90% 警告 / >90% 危险配色，压缩后 percent 未知显示占位）、token（总量 + 输入/输出/缓存读/缓存写四项细分）、缓存命中率（对齐 pi CLI：cacheRead/(input+cacheRead+cacheWrite)，无缓存活动时隐藏）与成本（cost>0 才显示）；数据来自 pi `get_session_stats`（docs/rpc.md 已收录），每回合结束/会话切换/新建/启动时刷新，流式中不刷；失败静默保留旧值
+
 - 会话重命名/删除：会话列表（主侧边栏 + header 弹层）行右侧 hover 显示操作按钮——edit.svg 行内编辑重命名（Enter 提交/Esc 取消，当前会话经 RPC `set_session_name`、非当前会话直接追加 session_info 条目到会话文件）；delete.svg 删除会话（删除前模态确认；当前会话禁用，控制器二次校验）；重命名/删除后列表立即刷新（新增 sessionListRefresh 通道绕 5s 节流）；重命名当前会话后 header 标题即时更新
 
 - footer 卡片化：底部输入框与按钮合并为圆角卡片（上半输入框 + 下半左 ⚙ 设置右发送/停止）；状态区移除，错误/无模型/未打开文件夹改输入框上方横幅（附重启/重试）；placeholder 提示「输入消息，Ctrl+G 用编辑器编辑」

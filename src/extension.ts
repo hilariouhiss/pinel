@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { ChatController, type ChatStatus, type ToolCard } from "./chat/controller";
+import type { SessionStatsData } from "./rpc/protocol";
 import { ChatPanelProvider } from "./chat/panel";
 import { SessionHistoryProvider, revealChatView } from "./chat/session-history-provider";
 import type { SessionListItem } from "./chat/session-history";
@@ -21,6 +22,8 @@ export interface TestEventLog {
   lastSessionTitle: { title: string | undefined } | undefined;
   /** 重命名/删除后的立即刷新信号计数（sessionListRefresh 广播断言）。 */
   sessionListRefreshCount: number;
+  /** 最近一次会话统计广播（对象包裹区分「未广播」与「广播 null」）。 */
+  lastSessionStats: { stats: SessionStatsData | null } | undefined;
 }
 
 /** 暴露给集成测试的钩子接口（通过扩展 exports 获取）。 */
@@ -62,7 +65,9 @@ export interface PinelTestApi {
   /** 重命名会话（双路径：当前→RPC set_session_name，非当前→文件追加）。 */
   renameSession(sessionPath: string, name: string): Promise<void>;
   /** 删除会话（当前会话拒绝；无确认弹窗——UI 层 confirmSessionDelete 负责）。 */
-  deleteSession(sessionPath: string): Promise<void>;  /** 当前会话文件路径（get_state.sessionFile；切换/新建断言用）。 */
+  deleteSession(sessionPath: string): Promise<void>;
+  /** 会话信息开关（pinel.showSessionStats 配置 + status 广播）。 */
+  setShowSessionStats(enabled: boolean): Promise<void>;  /** 当前会话文件路径（get_state.sessionFile；切换/新建断言用）。 */
   getCurrentSessionFile(): string | undefined;
   /** 会话历史列表（最近一次扫描结果；测试断言，不依赖 DOM）。 */
   getSessionList(): SessionListItem[];
@@ -164,6 +169,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
   let lastFillPrompt: string | undefined;
   let lastSessionTitle: { title: string | undefined } | undefined;
   let sessionListRefreshCount = 0;
+  let lastSessionStats: { stats: SessionStatsData | null } | undefined;
   ctrl.onChange.event((msg) => {
     if (msg.type === "notice") {
       notices.push({ level: msg.level, text: msg.text });
@@ -182,6 +188,8 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       lastSessionTitle = { title: msg.title };
     } else if (msg.type === "sessionListRefresh") {
       sessionListRefreshCount++;
+    } else if (msg.type === "sessionStats") {
+      lastSessionStats = { stats: msg.stats };
     }
   });
 
@@ -208,6 +216,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     newSession: () => ctrl.newSession(),
     renameSession: (sessionPath: string, name: string) => ctrl.renameSession(sessionPath, name),
     deleteSession: (sessionPath: string) => ctrl.deleteSession(sessionPath),
+    setShowSessionStats: (enabled: boolean) => ctrl.setShowSessionStats(enabled),
     getCurrentSessionFile: () => ctrl.getStatus().sessionFile,
     getSessionList: () => historyProvider.getLastList(),
     getChatSessionList: () => ctrl.getSessionList(),
@@ -235,6 +244,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       lastFillPrompt,
       lastSessionTitle,
       sessionListRefreshCount,
+      lastSessionStats,
     }),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {
       const deadline = Date.now() + timeoutMs;

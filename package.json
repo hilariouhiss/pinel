@@ -92,6 +92,11 @@
           "type": "string",
           "default": "",
           "markdownDescription": "pi 会话存储目录（留空则使用 pi 默认 `~/.pi/agent/sessions/`）。自定义目录下会话文件直接存放（不按工作目录分子目录），会话历史列表也扫描此目录。"
+        },
+        "pinel.showSessionStats": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "在输入框上方显示会话信息条（token 消耗 / 成本 / 上下文占用进度 / 缓存命中率）。数据来自 pi 的 get_session_stats，随每回合结束与会话切换刷新。"
         }
       }
     }

@@ -23,6 +23,8 @@ export interface ChatStatus {
   autoCompactionEnabled: boolean;
   /** 当前会话文件路径（get_state.sessionFile；会话历史高亮用）。 */
   sessionFile?: string;
+  /** 会话信息条开关（pinel.showSessionStats 配置镜像；UI 偏好不依赖 pi 运行）。 */
+  showSessionStats?: boolean;
   error?: string;
   steering: string[];
   followUp: string[];
@@ -136,8 +138,22 @@ export interface FileItem {
   isImage: boolean;
 }
 
+/** 会话统计（宿主 parseSessionStats 镜像；contextUsage.tokens/percent 可为 null）。 */
+export interface SessionStats {
+  sessionFile?: string;
+  sessionId?: string;
+  userMessages?: number;
+  assistantMessages?: number;
+  toolCalls?: number;
+  toolResults?: number;
+  totalMessages?: number;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+  cost?: number;
+  contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null };
+}
+
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "tool"; tool: ToolCard }
@@ -154,6 +170,7 @@ export type HostMessage =
   | { type: "sessionSwitching"; switching: boolean }
   | { type: "sessionListChanged" }
   | { type: "sessionListRefresh" }
+  | { type: "sessionStats"; stats: SessionStats | null }
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "triggerEditPrompt" }
   | { type: "fillPrompt"; text: string }

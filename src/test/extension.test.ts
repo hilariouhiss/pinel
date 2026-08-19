@@ -1674,6 +1674,151 @@ suite("Pinel 集成测试（假 pi）", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // 会话信息条（get_session_stats 开关 + 统计广播）
+  // ---------------------------------------------------------------------------
+
+  suite("会话信息条（get_session_stats）", () => {
+    suiteSetup(async function () {
+      this.timeout(120000);
+      // 初始清理：配置默认关（防跨 run 污染，本 suite 结束时也会还原）
+      await vscode.workspace.getConfiguration("pinel").update("showSessionStats", false, vscode.ConfigurationTarget.Global);
+    });
+
+    suiteTeardown(async () => {
+      await vscode.workspace.getConfiguration("pinel").update("showSessionStats", false, vscode.ConfigurationTarget.Global);
+    });
+
+    test("开关开启：status 同步 + 首拉统计广播（全量字段）", async function () {
+      this.timeout(60000);
+      await api.setShowSessionStats(true);
+      await waitFor(
+        () => api.getStatus().showSessionStats === true,
+        5000,
+        "开关状态同步到 status",
+      );
+      await waitFor(
+        () => api.getTestEventLog().lastSessionStats?.stats !== null && api.getTestEventLog().lastSessionStats?.stats !== undefined,
+        15000,
+        "首拉 sessionStats 广播",
+      );
+      const stats = api.getTestEventLog().lastSessionStats!.stats;
+      assert.ok(stats, "stats 非 null（首拉成功）");
+      // 相对断言（fake-pi 进程内消息/会话状态跨 suite 累积，绝对值不可预测）：
+      // 统计归属当前会话、tokens 五项为数字、cost 数字、contextUsage 结构完整
+      assert.strictEqual(stats.sessionFile, api.getCurrentSessionFile(), "统计归属当前会话");
+      for (const key of ["input", "output", "cacheRead", "cacheWrite", "total"] as const) {
+        assert.ok(typeof stats.tokens[key] === "number" && stats.tokens[key] >= 0, `tokens.${key} 为数字`);
+      }
+      assert.ok(typeof stats.cost === "number" && stats.cost > 0, "cost 存在且大于 0");
+      assert.ok(stats.contextUsage, "contextUsage 存在");
+      assert.ok(typeof stats.contextUsage!.tokens === "number", "contextUsage.tokens 为数字");
+      assert.ok(typeof stats.contextUsage!.percent === "number", "contextUsage.percent 为数字");
+    });
+
+    test("settle 后刷新：新回合结束统计更新", async function () {
+      this.timeout(60000);
+      assert.strictEqual(api.getStatus().showSessionStats, true);
+      const before = api.getTestEventLog().lastSessionStats?.stats;
+      assert.ok(before, "首拉已有 stats");
+      const beforeInput = before!.tokens.input;
+      const marker = `STATS-SETTLE-${Date.now()}`;
+      const baseline = api.getSettledCount();
+      await api.sendPrompt(marker);
+      await api.waitForSettled(30000, baseline);
+      // settle 钩子触发 refreshSessionStats → 消息数增长 → token 变大
+      await waitFor(
+        () => (api.getTestEventLog().lastSessionStats?.stats?.tokens.input ?? 0) > beforeInput,
+        15000,
+        "settle 后统计刷新",
+      );
+    });
+
+    test("切换会话后：统计归属新会话（sessionFile 更新 + 数值变化）", async function () {
+      this.timeout(60000);
+      const target = "/fake/switch-stats-target.jsonl";
+      await api.switchSession(target);
+      await waitFor(() => api.getCurrentSessionFile() === target, 15000, "切换完成");
+      // 切换钩子：先 fire null 占位再拉取覆盖 → 最终归属新会话（base=500 < 默认 1000）
+      await waitFor(
+        () => api.getTestEventLog().lastSessionStats?.stats?.sessionFile === target,
+        15000,
+        "统计归属新会话",
+      );
+      const stats = api.getTestEventLog().lastSessionStats?.stats;
+      assert.ok(stats, "切换后已有 stats");
+      assert.ok(stats.tokens.input < 1000, "切换后 base 变化（新会话统计生效）");
+    });
+
+    test("STATS-FAIL 场景：无旧值不 fire + 不弹 notice", async function () {
+      this.timeout(60000);
+      process.env.PINEL_FAKE_PI_SCENARIO = "STATS-FAIL";
+      try {
+        await api.restart();
+        await waitFor(() => api.getStatus().processState === "running", 30000, "STATS-FAIL 启动");
+        // restart 清空 stats；开关由 start 回读配置保持开启；记下 restart 后的广播状态
+        const marker = `STATS-FAIL-${Date.now()}`;
+        const baseline = api.getSettledCount();
+        await api.sendPrompt(marker);
+        await api.waitForSettled(30000, baseline);
+        // settle 触发拉取 → 失败 → 无旧值 → 不 fire（等待观察窗口后断言无更新）
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        assert.ok(
+          !api.getTestEventLog().notices.some((n) => n.text.includes("获取会话统计失败")),
+          "失败静默：不弹 notice",
+        );
+        // 无旧值：不 fire——lastSessionStats 保持重启前值（sessionFile 仍是切换目标）
+        const stats = api.getTestEventLog().lastSessionStats?.stats;
+        assert.ok(stats, "重启前存在统计");
+        assert.strictEqual(stats.sessionFile, "/fake/switch-stats-target.jsonl", "无新广播（保留重启前值）");
+      } finally {
+        delete process.env.PINEL_FAKE_PI_SCENARIO;
+        await api.restart();
+        await waitFor(() => api.getStatus().processState === "running", 30000, "恢复默认场景");
+      }
+    });
+
+    test("STATS-NOCONTEXT 场景：contextUsage 缺省（显示层占位）", async function () {
+      this.timeout(60000);
+      process.env.PINEL_FAKE_PI_SCENARIO = "STATS-NOCONTEXT";
+      try {
+        await api.restart();
+        await waitFor(() => api.getStatus().processState === "running", 30000, "STATS-NOCONTEXT 启动");
+        const marker = `STATS-NOCONTEXT-${Date.now()}`;
+        const baseline = api.getSettledCount();
+        await api.sendPrompt(marker);
+        await api.waitForSettled(30000, baseline);
+        await waitFor(
+          () => api.getTestEventLog().lastSessionStats?.stats?.contextUsage === undefined,
+          15000,
+          "contextUsage 缺省广播",
+        );
+      } finally {
+        delete process.env.PINEL_FAKE_PI_SCENARIO;
+        await api.restart();
+        await waitFor(() => api.getStatus().processState === "running", 30000, "恢复默认场景");
+      }
+    });
+
+    test("开关持久化：restart 后配置保留且 start 回读恢复", async function () {
+      this.timeout(60000);
+      // 确保开关为开（前序测试可能已置）
+      await api.setShowSessionStats(true);
+      const configValue = vscode.workspace.getConfiguration("pinel").get<boolean>("showSessionStats");
+      assert.strictEqual(configValue, true, "配置已持久化");
+      await api.restart();
+      await waitFor(() => api.getStatus().processState === "running", 30000, "重启完成");
+      // start 回读配置 → restart 重置 status 后开关恢复（防静默复位）
+      assert.strictEqual(api.getStatus().showSessionStats, true, "重启后开关保持");
+      // 且首拉统计恢复（start 首拉：running 后拉取）
+      await waitFor(
+        () => api.getTestEventLog().lastSessionStats?.stats?.sessionFile === "/fake/session.jsonl",
+        15000,
+        "重启后统计恢复（默认会话）",
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // @ 添加文件（fileList 扫描 / sendPrompt fileRefs 拼装）
   // ---------------------------------------------------------------------------
 
