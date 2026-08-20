@@ -14,7 +14,7 @@ import { Questionnaire } from "./components/Questionnaire";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import historyIcon from "../../media/history.svg";
 import newSessionIcon from "../../media/new-session.svg";
-import forkIcon from "../../media/fork.svg";
+import forkIcon from "../../media/fork-repo.svg";
 
 const initialStatus: ChatStatus = {
   processState: "stopped",

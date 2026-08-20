@@ -8,7 +8,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
-- 会话分支/回溯：顶部栏「分支」按钮（fork.svg）弹出历史用户消息选择器（数据源 pi `get_fork_messages`，序号 + 单行截断预览），选中即从该消息 fork 出新会话文件并自动切换（原会话保留在历史列表可返回；被 fork 消息原文回填输入框，可直接发送或编辑后重发）；弹层底部「Clone current branch」复制当前分支为新会话（clone RPC）；空态/失败/扩展钩子取消均有兜底提示；防御解析 `parseForkMessages`（对齐 commands.ts 模式）
+- 图标更新：fork 按钮改用仓库分支风格图标（fork-repo.svg）；活动栏/视图头图标改用 π 品牌镂空字形（pi-glyph.svg，VS Code mask 遮罩渲染要求镂空轮廓）；新增扩展市场发布图标（pi-icon.svg，package.json 顶层 `icon` 字段）
+
+- 会话分支/回溯：顶部栏「分支」按钮（fork-repo.svg）弹出历史用户消息选择器（数据源 pi `get_fork_messages`，序号 + 单行截断预览），选中即从该消息 fork 出新会话文件并自动切换（原会话保留在历史列表可返回；被 fork 消息原文回填输入框，可直接发送或编辑后重发）；弹层底部「Clone current branch」复制当前分支为新会话（clone RPC）；空态/失败/扩展钩子取消均有兜底提示；防御解析 `parseForkMessages`（对齐 commands.ts 模式）
 
 - 会话信息条：设置面板「显示会话信息」开关（pinel.showSessionStats 配置持久化，重启保留）——开启后输入框上方显示上下文占用进度条（<70% 正常 / 70-90% 警告 / >90% 危险配色，压缩后 percent 未知显示占位）、token（总量 + 输入/输出/缓存读/缓存写四项细分）、缓存命中率（对齐 pi CLI：cacheRead/(input+cacheRead+cacheWrite)，无缓存活动时隐藏）与成本（cost>0 才显示）；数据来自 pi `get_session_stats`（docs/rpc.md 已收录），每回合结束/会话切换/新建/启动时刷新，流式中不刷；失败静默保留旧值
 
