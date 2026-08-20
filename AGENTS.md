@@ -25,7 +25,7 @@
 | `src/test-no-workspace/` | 空窗口实例集成测试（独立 .vscode-test.mjs 配置，不传 workspaceFolder 启动） |
 | `scripts/` | 测试辅助脚本（clean-test-userdata.mjs：每次 npm test 前清理 .vscode-test/user-data） |
 | `webview-ui/` | React 聊天 UI（独立 tsconfig 与 esbuild 配置，与宿主完全隔离） |
-| `media/` | 图标（send/settings/stop/history/new-session/search/add/edit/delete/cache/dollar/up-arrow/down-arrow/fork-repo.svg 经 esbuild text loader 内联进 webview bundle、pi-glyph.svg 为活动栏/视图头图标（镂空 π 轮廓）、pi-icon.svg 为扩展图标兼市场发布图标（顶层 package.json icon，深底品牌图标），均入库）；webview 构建产物（gitignored，构建生成） |
+| `media/` | 图标（send/settings/stop/history/new-session/search/add/edit/delete/cache/dollar/up-arrow/down-arrow/fork-repo.svg 经 esbuild text loader 内联进 webview bundle、pi-glyph.svg 为活动栏/视图头图标（镂空 π 轮廓）、pi-icon.png 为扩展图标兼市场发布图标（顶层 package.json icon，深底品牌图标；vsce 禁止 SVG 作扩展图标，须用 PNG），均入库）；webview 构建产物（gitignored，构建生成） |
 
 ## Repository Structure
 

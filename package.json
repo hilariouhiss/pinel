@@ -4,6 +4,10 @@
   "publisher": "hilariouhiss",
   "description": "Pinel - 在 VS Code 中使用 Pi 编码智能体",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hilariouhiss/pinel.git"
+  },
   "engines": {
     "vscode": "^1.125.0"
   },
@@ -17,7 +21,7 @@
     "onView:pinel.sessionHistory"
   ],
   "main": "./dist/extension.js",
-  "icon": "media/pi-icon.svg",
+  "icon": "media/pi-icon.png",
   "contributes": {
     "commands": [
       {
