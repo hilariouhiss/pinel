@@ -714,28 +714,28 @@ body {
 }
 
 /* ------------------------------------------------------------------ 输入区 */
-/* 输入卡 + 会话信息条的叠放包裹容器：承接外层边距；
-   信息条（第二张卡）在 Composer 之后、负 margin 上移藏进输入卡背后 */
+/* footer 大卡片（输入框 + 会话信息条 + 按钮行融合为一张卡）：承接外层边距，
+   自身携带边框/背景/圆角与聚焦高亮；内部子元素（footer-card / session-stats-bar）全部透明化。
+   注意：本容器不得设置 overflow——命令/@ 补全弹窗以 bottom:calc(100%+4px) 越过顶部边界 3px 悬浮，
+   加 overflow 会裁剪弹窗 */
 .composer-stack {
   margin: 0 10px 8px;
-}
-
-.footer-card {
-  /* footer 圆角卡片：上半输入框 + 下半按钮行；命令补全弹窗的定位上下文 */
-  position: relative;
-  /* 叠放层级：高于会话信息条（信息条上沿被输入卡覆盖） */
-  z-index: 1;
-  /* 外边距迁至 .composer-stack */
-  margin: 0;
   border: 1px solid var(--vscode-input-border);
   border-radius: 8px;
   background: var(--vscode-input-background);
-  padding: 8px;
 }
 
-/* 聚焦输入框时卡片边框高亮（输入框自身扁平无边框，focus 指示由卡片承担） */
-.footer-card:focus-within {
+/* 聚焦输入框时整卡边框高亮（输入框自身扁平无边框，focus 指示由大卡片承担） */
+.composer-stack:focus-within {
   border-color: var(--vscode-focusBorder);
+}
+
+.footer-card {
+  /* 透明化：边框/背景/圆角/聚焦高亮均已上移至 .composer-stack（单卡片融合）；
+     仅保留 position:relative 作命令/@ 补全弹窗的定位上下文与内部 padding */
+  position: relative;
+  margin: 0;
+  padding: 8px;
 }
 
 /* ---------------------------------------------------------------- 命令补全 */
@@ -941,7 +941,7 @@ body {
 .composer-input {
   width: 100%;
   resize: none;
-  /* 扁平化：无边框、透明背景，融入卡片（聚焦时卡片边框高亮 .footer-card:focus-within） */
+  /* 扁平化：无边框、透明背景，融入卡片（聚焦时卡片边框高亮 .composer-stack:focus-within） */
   border: none;
   border-radius: 0;
   background: transparent;
@@ -1886,18 +1886,13 @@ body {
 }
 
 /* ------------------------------------------------------------ 会话信息条 */
-/* 输入卡正后方（设置面板「显示会话信息」开关开启时显示），从输入卡背后探出：
-   环境段（folderName on  branch [!?↑↓]）靠左 + 指标段靠右，与输入卡同宽 */
+/* 大卡片（.composer-stack）内底部信息条（设置面板「显示会话信息」开关开启时显示）：
+   透明化融入单卡片——无边框/背景/圆角，与输入区完全无缝（无分隔线）；
+   环境段（folderName on  branch [!?↑↓]）靠左 + 指标段靠右，与卡片同宽；
+   顶部间距由 .footer-card 的 padding-bottom(8px) 供给，此处 padding-top 为 0 */
 .session-stats-bar {
-  position: relative;
-  z-index: 0; /* 低于输入卡（.footer-card z-index:1），上沿被覆盖 */
-  /* -4px 上移叠进输入卡背后（遮住上边框 + 少量 padding）；与输入卡同宽 */
-  margin: -4px 0 0;
-  padding: 6px 10px;
-  border: 1px solid var(--vscode-input-border);
-  /* 独立第二张卡：全圆角（上沿被输入卡遮住，仅底部圆角可见） */
-  border-radius: 6px;
-  background: var(--vscode-editorWidget-background);
+  margin: 0;
+  padding: 0 10px 8px;
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
   display: flex;
