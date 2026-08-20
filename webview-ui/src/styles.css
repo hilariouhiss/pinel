@@ -955,21 +955,21 @@ body {
 }
 
 .composer-input:focus {
-  /* 输入框自身无边框：focus 指示由 .footer-card:focus-within 承担 */
+  /* 输入框自身无边框：focus 指示由 .composer-stack:focus-within 承担 */
   outline: none;
 }
 
 .composer-send,
 .composer-stop {
-  /* 正方形，边长 = 首行盒高（= textarea 首行盒高：line-height 1.5×字号 + 上下 padding 14px + 边框 2px），
-     随 VS Code 字号自适应；输入框增长时按钮保持贴底（.composer-row 的 align-items:flex-end） */
-  width: calc(var(--vscode-font-size) * 1.5 + 16px);
-  height: calc(var(--vscode-font-size) * 1.5 + 16px);
+  /* 正方形，边长随 VS Code 字号自适应（紧凑档：紧凑 = 首行盒高 + 8px）；
+     输入框增长时按钮保持贴底（.composer-row 的 align-items:flex-end） */
+  width: calc(var(--vscode-font-size) * 1.5 + 8px);
+  height: calc(var(--vscode-font-size) * 1.5 + 8px);
   /* 图标居中（SVG 为块级元素，不受文本 text-align 影响） */
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 5px;
   border: 1px solid var(--vscode-input-border);
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
@@ -987,8 +987,8 @@ body {
 .composer-send .icon,
 .composer-stop .icon,
 .status-settings-btn .icon {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   display: block;
 }
 
@@ -1005,13 +1005,13 @@ body {
   color: var(--vscode-errorForeground);
 }
 
-/* 卡片下半按钮行：左 ⚙ 设置 / 右 发送/停止 */
+/* 卡片下半按钮行：左 ⚙ 设置 / 右 发送/停止（紧凑档：行距收紧降低 footer 高度） */
 .footer-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-  padding-top: 4px;
+  gap: 4px;
+  margin-top: 2px;
+  padding-top: 2px;
   border-top: 1px solid var(--vscode-input-border);
 }
 
