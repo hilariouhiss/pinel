@@ -15,7 +15,6 @@ import {
   type CloneCommand,
   type ExtensionUiRequest,
   type ForkCommand,
-  type ForkData,
   type ForkMessage,
   type ForkMessagesData,
   type GetAvailableModelsData,

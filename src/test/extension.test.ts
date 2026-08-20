@@ -1837,6 +1837,36 @@ suite("Pinel 集成测试（假 pi）", () => {
       );
     });
 
+    test("CLONE-FAIL：error notice + 会话文件不变", async function () {
+      this.timeout(60000);
+      process.env.PINEL_FAKE_PI_SCENARIO = "CLONE-FAIL";
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+        20000,
+        "pi 进程启动（CLONE-FAIL）",
+      );
+      const before = api.getCurrentSessionFile();
+      const noticesBefore = api.getTestEventLog().notices.length;
+      await api.cloneSession();
+      await waitFor(
+        () => api.getTestEventLog().notices.length > noticesBefore,
+        10000,
+        "clone 失败 notice",
+      );
+      const latest = api.getTestEventLog().notices[api.getTestEventLog().notices.length - 1];
+      assert.strictEqual(latest.level, "error");
+      assert.ok(latest.text.startsWith("Clone failed"), `notice 文案: ${latest.text}`);
+      assert.strictEqual(api.getCurrentSessionFile(), before, "失败后会话文件不变");
+      delete process.env.PINEL_FAKE_PI_SCENARIO;
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+        20000,
+        "pi 进程启动（恢复默认场景）",
+      );
+    });
+
     test("空会话/无效 entryId：error notice + 状态不变", async function () {
       this.timeout(60000);
       // 新建会话清空消息：get_fork_messages 为空、fork 无效 entryId
