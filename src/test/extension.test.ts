@@ -82,8 +82,8 @@ suite("Pinel 集成测试（假 pi）", () => {
     await config.update("piPath", `node "${fakePi}"`, vscode.ConfigurationTarget.Global);
 
     // 显式激活扩展并获取测试钩子
-    const ext = vscode.extensions.getExtension<PinelTestApi>("hiss.pinel");
-    assert.ok(ext, "扩展 hiss.pinel 必须存在");
+    const ext = vscode.extensions.getExtension<PinelTestApi>("hilariouhiss.pinel");
+    assert.ok(ext, "扩展 hilariouhiss.pinel 必须存在");
     api = await ext.activate();
 
     // 打开面板（触发 resolveWebviewView）

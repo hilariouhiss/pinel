@@ -10,8 +10,8 @@ import type { PinelTestApi } from "../extension";
  */
 suite("未打开文件夹：友好状态（空窗口实例）", () => {
   test("面板显示 no-workspace 友好提示而非进程异常", async () => {
-    const ext = vscode.extensions.getExtension<PinelTestApi>("hiss.pinel");
-    assert.ok(ext, "扩展 hiss.pinel 必须存在");
+    const ext = vscode.extensions.getExtension<PinelTestApi>("hilariouhiss.pinel");
+    assert.ok(ext, "扩展 hilariouhiss.pinel 必须存在");
     const api = await ext.activate();
 
     await api.openPanel();
@@ -27,8 +27,8 @@ suite("未打开文件夹：友好状态（空窗口实例）", () => {
   });
 
   test("会话历史视图空态：无工作区时列表为空且不崩溃", async () => {
-    const ext = vscode.extensions.getExtension<PinelTestApi>("hiss.pinel");
-    assert.ok(ext, "扩展 hiss.pinel 必须存在");
+    const ext = vscode.extensions.getExtension<PinelTestApi>("hilariouhiss.pinel");
+    assert.ok(ext, "扩展 hilariouhiss.pinel 必须存在");
     const api = await ext.activate();
 
     await vscode.commands.executeCommand("pinel.sessionHistory.focus");
@@ -39,8 +39,8 @@ suite("未打开文件夹：友好状态（空窗口实例）", () => {
   });
 
   test("无工作区新建会话：前置 return 必须广播 switching:false（复位回归）", async () => {
-    const ext = vscode.extensions.getExtension<PinelTestApi>("hiss.pinel");
-    assert.ok(ext, "扩展 hiss.pinel 必须存在");
+    const ext = vscode.extensions.getExtension<PinelTestApi>("hilariouhiss.pinel");
+    assert.ok(ext, "扩展 hilariouhiss.pinel 必须存在");
     const api = await ext.activate();
 
     // 空窗口：newSession 走 !workspaceRoot 前置 return 路径。修复前该路径

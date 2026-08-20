@@ -1,7 +1,7 @@
 {
   "name": "pinel",
   "displayName": "Pinel - Pi for VS Code",
-  "publisher": "hiss",
+  "publisher": "hilariouhiss",
   "description": "Pinel - 在 VS Code 中使用 Pi 编码智能体",
   "version": "0.0.1",
   "engines": {

@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-**用途**：Pinel（扩展 ID `hiss.pinel`）是一个 VS Code 扩展，为 Pi 编码智能体（`@earendil-works/pi-coding-agent`）提供类似 Claude Code 插件的图形聊天面板。当前版本 v0.1，范围仅核心聊天体验。
+**用途**：Pinel（扩展 ID `hilariouhiss.pinel`）是一个 VS Code 扩展，为 Pi 编码智能体（`@earendil-works/pi-coding-agent`）提供类似 Claude Code 插件的图形聊天面板。当前版本 v0.1，范围仅核心聊天体验。
 
 **技术栈**：
 - 扩展宿主：TypeScript（strict，Node16 模块，ES2022），Node.js API + `vscode` API（external）
