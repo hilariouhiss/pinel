@@ -20,7 +20,7 @@ export function TodoPanel({ todos }: Props) {
     <div className="todopanel">
       <button className="todopanel-head" onClick={() => setOpen(!open)}>
         <span className="todopanel-icon">{open ? "▾" : "▸"}</span>
-        <span className="todopanel-title">待办</span>
+        <span className="todopanel-title">Todos</span>
         <span className="todopanel-count">
           {done}/{visible.length}
         </span>

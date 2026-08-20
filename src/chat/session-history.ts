@@ -320,7 +320,7 @@ export async function appendSessionName(filePath: string, name: string): Promise
   try {
     content = await fs.readFile(filePath, "utf8");
   } catch {
-    throw new Error(`读取会话文件失败：${filePath}`);
+    throw new Error(`Failed to read session file: ${filePath}`);
   }
   const ids = new Set<string>();
   let leafId: string | null = null;
@@ -370,7 +370,7 @@ export async function appendSessionName(filePath: string, name: string): Promise
   try {
     await fs.appendFile(filePath, `${prefix}${JSON.stringify(entry)}\n`, "utf8");
   } catch {
-    throw new Error(`写入会话文件失败：${filePath}`);
+    throw new Error(`Failed to write session file: ${filePath}`);
   }
 }
 

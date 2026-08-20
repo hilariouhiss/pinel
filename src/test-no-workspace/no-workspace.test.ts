@@ -23,7 +23,7 @@ suite("未打开文件夹：友好状态（空窗口实例）", () => {
     const status = api.getStatus();
     assert.strictEqual(status.processState, "no-workspace", "空窗口必须进入 no-workspace 状态");
     assert.notStrictEqual(status.processState, "error", "未打开文件夹不得伪装成进程异常");
-    assert.ok(status.error?.includes("未打开文件夹"), `提示文本必须引导用户（实际：${status.error}）`);
+    assert.ok(status.error?.includes("No folder open"), `提示文本必须引导用户（实际：${status.error}）`);
   });
 
   test("会话历史视图空态：无工作区时列表为空且不崩溃", async () => {
@@ -53,7 +53,7 @@ suite("未打开文件夹：友好状态（空窗口实例）", () => {
       "无工作区新建会话必须广播 switching:false（HistoryApp 复位依赖）",
     );
     assert.ok(
-      api.getTestEventLog().notices.some((n) => n.text.includes("请先打开一个文件夹")),
+      api.getTestEventLog().notices.some((n) => n.text.includes("Open a folder first")),
       "必须弹出引导 notice",
     );
   });

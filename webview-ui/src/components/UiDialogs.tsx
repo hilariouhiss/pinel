@@ -44,7 +44,7 @@ function DialogCard({ request }: { request: UiRequest }) {
           <DialogTitle request={request} />
           <div className="uidialog-actions">
             <button className="uidialog-btn" onClick={cancel}>
-              关闭
+              Close
             </button>
           </div>
         </div>
@@ -81,11 +81,11 @@ function SelectCard({ request, onCancel }: { request: UiRequest; onCancel: () =>
           ))}
         </div>
       ) : (
-        <div className="uidialog-empty">（无可用选项）</div>
+        <div className="uidialog-empty">No options available</div>
       )}
       <div className="uidialog-actions">
         <button className="uidialog-btn uidialog-btn-ghost" onClick={onCancel}>
-          取消
+          Cancel
         </button>
       </div>
     </div>
@@ -102,16 +102,16 @@ function ConfirmCard({ request, onCancel }: { request: UiRequest; onCancel: () =
           className="uidialog-btn uidialog-btn-primary"
           onClick={() => vscode.postMessage({ type: "uiResponse", id: request.id, confirmed: true })}
         >
-          确认
+          Confirm
         </button>
         <button
           className="uidialog-btn"
           onClick={() => vscode.postMessage({ type: "uiResponse", id: request.id, confirmed: false })}
         >
-          拒绝
+          Deny
         </button>
         <button className="uidialog-btn uidialog-btn-ghost" onClick={onCancel}>
-          取消
+          Cancel
         </button>
       </div>
     </div>
@@ -165,10 +165,10 @@ function TextCard({
       )}
       <div className="uidialog-actions">
         <button className="uidialog-btn uidialog-btn-primary" onClick={submit}>
-          提交
+          Submit
         </button>
         <button className="uidialog-btn uidialog-btn-ghost" onClick={onCancel}>
-          取消
+          Cancel
         </button>
       </div>
     </div>

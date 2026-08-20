@@ -332,6 +332,7 @@ export function getPanelHtml(webview: vscode.Webview, extensionUri: vscode.Uri, 
   const nonce = getNonce();
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "webview.js"));
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "webview.css"));
+  const fontUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "fonts", "MapleMono-NF-Regular.ttf"));
 
   // CSP：禁止远程内容；脚本仅允许本 bundle（nonce）；样式允许内联 + 本地 bundle
   const csp = [
@@ -339,11 +340,11 @@ export function getPanelHtml(webview: vscode.Webview, extensionUri: vscode.Uri, 
     `script-src 'nonce-${nonce}'`,
     `style-src 'unsafe-inline' ${webview.cspSource}`,
     "img-src data:",
-    "font-src 'none'",
+    `font-src ${webview.cspSource}`,
   ].join("; ");
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
@@ -351,6 +352,12 @@ export function getPanelHtml(webview: vscode.Webview, extensionUri: vscode.Uri, 
   <link rel="stylesheet" href="${styleUri}" />
   <title>Pinel</title>
   <style>
+    @font-face {
+      font-family: "Maple Mono NF";
+      src: url("${fontUri}") format("truetype");
+      font-weight: 400;
+      font-display: block;
+    }
     #boot-loader {
       position: fixed; inset: 0; z-index: 9999;
       display: flex; align-items: center; justify-content: center;

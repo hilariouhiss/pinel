@@ -46,13 +46,13 @@ export function MessageView({ message, tools, streamBlocks }: Props) {
     const images = userImages(message.content);
     return (
       <div className="msg msg-user">
-        <div className="msg-role">你</div>
+        <div className="msg-role">You</div>
         {images.map((img, i) => (
           <img
             key={`img-${i}`}
             className="msg-image"
             src={`data:${img.mimeType ?? "image/png"};base64,${img.data}`}
-            alt="附件图片"
+            alt="Attached image"
           />
         ))}
         {text && <div className="msg-text">{text}</div>}
@@ -131,7 +131,7 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
     <details className="thinking" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="thinking-summary">
         <span className="thinking-dot" />
-        思考过程{live ? "…" : ""}
+        Thinking{live ? "…" : ""}
         {text.length > 0 && !open && <span className="thinking-preview">{text.slice(0, 60)}</span>}
       </summary>
       <div className="msg-text thinking-body">
@@ -165,7 +165,7 @@ function ToolChip({
     <div className="toolchip">
       <button className="toolchip-head" onClick={() => setOpen(!open)}>
         <span className="toolchip-icon">🔧</span>
-        <span className="toolchip-name">{toolCall?.name || "工具调用"}</span>
+        <span className="toolchip-name">{toolCall?.name || "Tool call"}</span>
         {live && <span className="spinner" />}
         <span className="toolchip-args-preview">{args.slice(0, 60)}</span>
       </button>
@@ -193,7 +193,7 @@ function ToolResultView({ message, tools }: { message: ChatMessage; tools: Recor
           {status === "running" ? <span className="spinner" /> : status === "error" ? "✕" : "✓"}
         </span>
         <span className="toolresult-title">
-          工具结果{message.toolCallId ? ` · ${toolCard?.toolName ?? message.toolCallId}` : ""}
+          Tool result{message.toolCallId ? ` · ${toolCard?.toolName ?? message.toolCallId}` : ""}
         </span>
         <span className="toolresult-len">
           {text.length > 400 ? text.slice(0, 400).replace(/\n/g, " ") + "…" : text.slice(0, 80).replace(/\n/g, " ")}

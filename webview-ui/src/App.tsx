@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, FileItem, HostMessage, ModelInfo, QuestionnaireView, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { ChatMessage, ChatStatus, FileItem, HostMessage, ModelInfo, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
@@ -60,6 +60,8 @@ export default function App() {
   const [sessionItems, setSessionItems] = useState<SessionListItem[]>([]);
   /** 会话统计（get_session_stats 推送；null=尚未拉取）。 */
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
+  /** 会话信息条环境段（宿主 sessionEnv 推送；含文件夹名 + git 状态）。 */
+  const [sessionEnv, setSessionEnv] = useState<SessionEnv | null>(null);
   /** 工作区文件列表（@ 添加文件数据；getFileList 响应填充）。 */
   const [fileList, setFileList] = useState<FileItem[]>([]);
   /** 当前会话标题（宿主 sessionTitle 广播；snapshot 重放恢复）。 */
@@ -93,7 +95,9 @@ export default function App() {
         setMessages(msg.messages);
         setStreamBlocks([]);
         setStatus(msg.status);
-        setSessionStats(msg.sessionStats ?? null); // 快照恢复（重显/重启不留长期占位）        setPendingUi(msg.pendingUi ?? []);
+        setSessionStats(msg.sessionStats ?? null); // 快照恢复（重显/重启不留长期占位）
+        setSessionEnv(msg.sessionEnv ?? null);
+        setPendingUi(msg.pendingUi ?? []);
         setTodos(msg.todos ?? []);
         setCommands(msg.commands ?? []);
         setQuestionnaire(msg.questionnaire ?? null);
@@ -171,6 +175,9 @@ export default function App() {
         break;
       case "sessionStats":
         setSessionStats(msg.stats);
+        break;
+      case "sessionEnv":
+        setSessionEnv(msg.env);
         break;
       case "fileList":
         setFileList(msg.items);
@@ -301,23 +308,23 @@ export default function App() {
   const banner =
     status.processState === "error" ? (
       <div className="status-banner status-banner-error">
-        <span className="status-banner-text">✕ {status.error ?? "pi 进程异常"}</span>
+        <span className="status-banner-text">✕ {status.error ?? "pi process error"}</span>
         <button className="status-banner-btn" onClick={() => vscode.postMessage({ type: "restart" })}>
-          重启
+          Restart
         </button>
       </div>
     ) : status.processState === "no-workspace" ? (
       <div className="status-banner status-banner-warn">
-        <span className="status-banner-text">⚠ {status.error ?? "未打开文件夹"}</span>
+        <span className="status-banner-text">⚠ {status.error ?? "No folder open"}</span>
         <button className="status-banner-btn" onClick={() => vscode.postMessage({ type: "restart" })}>
-          重试
+          Retry
         </button>
       </div>
     ) : status.processState === "running" && status.model === null ? (
       <div className="status-banner status-banner-warn">
-        <span className="status-banner-text">⚠ 无可用模型，请检查 pi 认证后重试</span>
+        <span className="status-banner-text">⚠ No model available, check pi auth then retry</span>
         <button className="status-banner-btn" onClick={() => vscode.postMessage({ type: "restart" })}>
-          重启
+          Restart
         </button>
       </div>
     ) : null;
@@ -325,15 +332,15 @@ export default function App() {
   return (
     <div className="pinel-root">
       <div className="chat-header">
-        <span className="chat-header-title" title={sessionTitle ?? "未命名会话"}>
-          {sessionTitle ?? "未命名会话"}
+        <span className="chat-header-title" title={sessionTitle ?? "Untitled session"}>
+          {sessionTitle ?? "Untitled session"}
         </span>
         <span className="chat-header-buttons">
           <button
             ref={historyBtnRef}
             className="chat-history-btn"
-            title="会话历史（点击选择切换会话）"
-            aria-label="会话历史"
+            title="Session history (click to switch)"
+            aria-label="Session history"
             aria-haspopup="dialog"
             aria-expanded={popover === "session"}
             onClick={openSessionList}
@@ -343,8 +350,8 @@ export default function App() {
           <button
             ref={newSessionBtnRef}
             className="chat-new-session-btn"
-            title="新会话"
-            aria-label="新会话"
+            title="New session"
+            aria-label="New session"
             onClick={headerNewSession}
             disabled={switching}
             dangerouslySetInnerHTML={{ __html: newSessionIcon }}
@@ -357,13 +364,13 @@ export default function App() {
       {showBootAnimation && (
         <div className="session-boot-overlay">
           <div className="boot-spinner" />
-          <div className="session-boot-text">正在启动 Pi…</div>
+          <div className="session-boot-text">Starting Pi…</div>
         </div>
       )}
       {switching && (
         <div className="session-switch-overlay">
           <div className="boot-spinner" />
-          <div className="session-boot-text">正在切换会话…</div>
+          <div className="session-boot-text">Switching session…</div>
         </div>
       )}
       <div className="pinel-scroll" ref={scrollRef} onScroll={onScroll}>
@@ -371,9 +378,9 @@ export default function App() {
           <div className="pinel-empty">
             <div className="pinel-empty-title">Pinel — Pi for VS Code</div>
             <div className="pinel-empty-hint">
-              在下方输入消息，Pi 编码智能体将在这里流式回复。
+              Type a message below and the Pi coding agent will reply here.
               <br />
-              输入 / 可补全命令；支持粘贴图片；流式输出中按 Esc 或点击停止可中断。
+              Type / to autocomplete commands; paste images to attach; press Esc or click stop to interrupt streaming.
             </div>
           </div>
         )}
@@ -392,18 +399,20 @@ export default function App() {
         {questionnaire && <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />}
       </div>
       {todos.length > 0 && <TodoPanel todos={todos} />}
-      {status.showSessionStats && <SessionStatsBar stats={sessionStats} />}
       {banner}
-      <Composer
-        status={status}
-        commands={commands}
-        popoverOpen={popover !== null}
-        fill={fill}
-        editPromptTrigger={editPromptTrigger}
-        settingsOpen={popover === "config"}
-        onOpenSettings={openConfig}
-        fileList={fileList}
-      />
+      <div className="composer-stack">
+        <Composer
+          status={status}
+          commands={commands}
+          popoverOpen={popover !== null}
+          fill={fill}
+          editPromptTrigger={editPromptTrigger}
+          settingsOpen={popover === "config"}
+          onOpenSettings={openConfig}
+          fileList={fileList}
+        />
+        {status.showSessionStats && <SessionStatsBar stats={sessionStats} env={sessionEnv} />}
+      </div>
       <ConfigPopover
         status={status}
         open={popover === "config"}

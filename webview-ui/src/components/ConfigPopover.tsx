@@ -150,9 +150,9 @@ export function ConfigPopover({
         {expanded && (
           <div className="config-popover-options">
             {loading ? (
-              <div className="config-popover-hint">加载中…</div>
+              <div className="config-popover-hint">Loading…</div>
             ) : options.length === 0 ? (
-              <div className="config-popover-hint">无可用选项</div>
+              <div className="config-popover-hint">No options available</div>
             ) : (
               options.map((opt) => (
                 <button
@@ -172,7 +172,7 @@ export function ConfigPopover({
     );
   };
 
-  const modelLabel = status.model?.name ?? (running ? "未选择模型" : "—");
+  const modelLabel = status.model?.name ?? (running ? "No model selected" : "—");
   const modelSelectedId = status.model ? modelItemId(status.model) : null;
   const modelOptions = models.map((m) => ({
     id: modelItemId(m),
@@ -184,32 +184,32 @@ export function ConfigPopover({
   return (
     <>
       <div className="config-popover-overlay" onClick={onClose} />
-      <div className="config-popover" role="dialog" aria-label="Pi 配置面板" ref={panelRef}>
+      <div className="config-popover" role="dialog" aria-label="Pi settings" ref={panelRef}>
         <div className="config-popover-section">
-          <div className="config-popover-title">队列模式（流式中发送）</div>
+          <div className="config-popover-title">Queue mode (send while streaming)</div>
           <div className="config-popover-row">
             <span className="config-popover-label">steering</span>
-            {modeButton("steering", status.steeringMode, "all", "全部投递", () =>
+            {modeButton("steering", status.steeringMode, "all", "Deliver all", () =>
               vscode.postMessage({ type: "setSteeringMode", mode: "all" }),
             )}
-            {modeButton("steering", status.steeringMode, "one-at-a-time", "一次一条", () =>
+            {modeButton("steering", status.steeringMode, "one-at-a-time", "One at a time", () =>
               vscode.postMessage({ type: "setSteeringMode", mode: "one-at-a-time" }),
             )}
           </div>
           <div className="config-popover-row">
-            <span className="config-popover-label">跟进</span>
-            {modeButton("followUp", status.followUpMode, "all", "全部投递", () =>
+            <span className="config-popover-label">Follow-up</span>
+            {modeButton("followUp", status.followUpMode, "all", "Deliver all", () =>
               vscode.postMessage({ type: "setFollowUpMode", mode: "all" }),
             )}
-            {modeButton("followUp", status.followUpMode, "one-at-a-time", "一次一条", () =>
+            {modeButton("followUp", status.followUpMode, "one-at-a-time", "One at a time", () =>
               vscode.postMessage({ type: "setFollowUpMode", mode: "one-at-a-time" }),
             )}
           </div>
         </div>
         <div className="config-popover-section">
-          <div className="config-popover-title">自动压缩</div>
+          <div className="config-popover-title">Auto compaction</div>
           <div className="config-popover-row">
-            <span className="config-popover-value">上下文接近满时自动压缩</span>
+            <span className="config-popover-value">Auto compact when context is nearly full</span>
             <button
               role="switch"
               aria-checked={status.autoCompactionEnabled}
@@ -221,15 +221,15 @@ export function ConfigPopover({
                 )
               }
             >
-              {status.autoCompactionEnabled ? "开" : "关"}
+              {status.autoCompactionEnabled ? "On" : "Off"}
             </button>
           </div>
         </div>
         <div className="config-popover-section">
-          <div className="config-popover-title">会话信息</div>
+          <div className="config-popover-title">Session info</div>
           <div className="config-popover-row">
             {/* UI 偏好开关：不设 running 门控（不依赖 pi 进程，开启时首拉失败静默） */}
-            <span className="config-popover-value">显示 token/成本/上下文占用</span>
+            <span className="config-popover-value">Show token/cost/context usage</span>
             <button
               role="switch"
               aria-checked={Boolean(status.showSessionStats)}
@@ -241,13 +241,13 @@ export function ConfigPopover({
                 )
               }
             >
-              {status.showSessionStats ? "开" : "关"}
+              {status.showSessionStats ? "On" : "Off"}
             </button>
           </div>
         </div>
         {expandableRow(
           "model",
-          "模型",
+          "Model",
           modelLabel,
           modelSelectedId,
           modelLoading,
@@ -263,7 +263,7 @@ export function ConfigPopover({
         {status.model !== null &&
           expandableRow(
             "thinking",
-            "思考强度",
+            "Thinking effort",
             status.thinkingLevel,
             status.thinkingLevel,
             thinkingLoading,

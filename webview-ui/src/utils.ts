@@ -5,18 +5,18 @@ export function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const minutes = Math.floor(diff / 60000);
   if (minutes < 1) {
-    return "刚刚";
+    return "just now";
   }
   if (minutes < 60) {
-    return `${minutes} 分钟前`;
+    return `${minutes} min ago`;
   }
   const hours = Math.floor(minutes / 60);
   if (hours < 24) {
-    return `${hours} 小时前`;
+    return `${hours} h ago`;
   }
   const days = Math.floor(hours / 24);
   if (days < 7) {
-    return `${days} 天前`;
+    return `${days} d ago`;
   }
   return new Date(ts).toLocaleDateString();
 }

@@ -859,7 +859,7 @@ suite("Pinel 集成测试（假 pi）", () => {
       await waitFor(() => api.getTestEventLog().lastModels?.length === 0, 10000, "失败信号（空数组）送达");
       const log = api.getTestEventLog();
       assert.ok(
-        log.notices.some((n) => n.level === "warning" && n.text.includes("获取模型列表失败")),
+        log.notices.some((n) => n.level === "warning" && n.text.includes("Fetch model list failed")),
         "必须弹出获取失败 warning notice",
       );
     } finally {
@@ -913,7 +913,7 @@ suite("Pinel 集成测试（假 pi）", () => {
       assert.strictEqual(after.thinkingLevel, before.thinkingLevel, "未找到时思考等级不得变化");
       const log = api.getTestEventLog();
       assert.ok(
-        log.notices.some((n) => n.level === "error" && n.text.includes("切换模型失败")),
+        log.notices.some((n) => n.level === "error" && n.text.includes("Switch model failed")),
         "必须弹出 error notice",
       );
     } finally {
@@ -965,7 +965,7 @@ suite("Pinel 集成测试（假 pi）", () => {
       await waitFor(() => api.getTestEventLog().lastThinkingLevels?.length === 0, 10000, "失败信号（空数组）送达");
       const log = api.getTestEventLog();
       assert.ok(
-        log.notices.some((n) => n.level === "warning" && n.text.includes("获取思考强度列表失败")),
+        log.notices.some((n) => n.level === "warning" && n.text.includes("Fetch thinking effort list failed")),
         "必须弹出获取失败 warning notice",
       );
     } finally {
@@ -1011,7 +1011,7 @@ suite("Pinel 集成测试（假 pi）", () => {
       assert.strictEqual(after.thinkingLevel, before.thinkingLevel, "success:false 时思考等级不得变化");
       const log = api.getTestEventLog();
       assert.ok(
-        log.notices.some((n) => n.level === "error" && n.text.includes("设置思考强度失败")),
+        log.notices.some((n) => n.level === "error" && n.text.includes("Set thinking effort failed")),
         "必须弹出 error notice",
       );
     } finally {
@@ -1035,7 +1035,7 @@ suite("Pinel 集成测试（假 pi）", () => {
         () =>
           api
             .getTestEventLog()
-            .notices.some((n) => n.level === "warning" && n.text.includes("状态回读失败")),
+            .notices.some((n) => n.level === "warning" && n.text.includes("State read-back failed")),
         10000,
         "回读失败 warning notice",
       );
@@ -1260,7 +1260,7 @@ suite("Pinel 集成测试（假 pi）", () => {
         assert.strictEqual(api.getMessages().length, beforeCount, "取消后消息不得替换");
         const log = api.getTestEventLog();
         assert.ok(
-          log.notices.some((n) => n.text.includes("切换会话已取消")),
+          log.notices.some((n) => n.text.includes("Session switch cancelled")),
           "必须弹出取消提示",
         );
       } finally {
@@ -1605,7 +1605,7 @@ suite("Pinel 集成测试（假 pi）", () => {
         await api.renameSession(sessionC, "失败名");
         // 失败 notice（旧版 pi 无此命令 → send 抛错 → 可见反馈）
         await waitFor(
-          () => api.getTestEventLog().notices.some((n) => n.text.includes("重命名失败")),
+          () => api.getTestEventLog().notices.some((n) => n.text.includes("Rename failed")),
           10000,
           "重命名失败 notice",
         );
@@ -1651,7 +1651,7 @@ suite("Pinel 集成测试（假 pi）", () => {
       const refreshBefore = api.getTestEventLog().sessionListRefreshCount;
       await api.deleteSession(sessionA);
       assert.ok(
-        api.getTestEventLog().notices.some((n) => n.text.includes("当前会话不可删除")),
+        api.getTestEventLog().notices.some((n) => n.text.includes("Current session cannot be deleted")),
         "拒绝 notice",
       );
       assert.ok(fs.existsSync(sessionA), "文件保留");
@@ -1665,7 +1665,7 @@ suite("Pinel 集成测试（假 pi）", () => {
         vscode.window.showWarningMessage = (async () => undefined) as typeof vscode.window.showWarningMessage;
         assert.strictEqual(await confirmSessionDelete(sessionA), false, "拒绝路径返回 false");
         assert.ok(fs.existsSync(sessionA), "确认 seam 本身不删文件");
-        vscode.window.showWarningMessage = (async () => "删除") as typeof vscode.window.showWarningMessage;
+        vscode.window.showWarningMessage = (async () => "Delete") as typeof vscode.window.showWarningMessage;
         assert.strictEqual(await confirmSessionDelete(sessionA), true, "确认路径返回 true");
       } finally {
         vscode.window.showWarningMessage = orig;
@@ -1713,6 +1713,25 @@ suite("Pinel 集成测试（假 pi）", () => {
       assert.ok(stats.contextUsage, "contextUsage 存在");
       assert.ok(typeof stats.contextUsage!.tokens === "number", "contextUsage.tokens 为数字");
       assert.ok(typeof stats.contextUsage!.percent === "number", "contextUsage.percent 为数字");
+    });
+
+    test("环境段广播：folderName + 富化 git 状态字段", async function () {
+      this.timeout(60000);
+      await api.setShowSessionStats(true);
+      await waitFor(
+        () => api.getTestEventLog().lastSessionEnv?.env !== undefined,
+        15000,
+        "首拉 sessionEnv 广播",
+      );
+      const env = api.getTestEventLog().lastSessionEnv!.env;
+      assert.strictEqual(env.folderName, "pinel", "folderName = 工作区文件夹名");
+      assert.ok(env.git, "git 非 null（仓库内）");
+      const git = env.git!;
+      assert.ok(typeof git.branch === "string" && git.branch.length > 0, "branch 非空");
+      assert.ok(typeof git.ahead === "number" && git.ahead >= 0, "ahead 为数字");
+      assert.ok(typeof git.behind === "number" && git.behind >= 0, "behind 为数字");
+      assert.ok(typeof git.trackedChanges === "boolean", "trackedChanges 为布尔");
+      assert.ok(typeof git.untracked === "boolean", "untracked 为布尔");
     });
 
     test("settle 后刷新：新回合结束统计更新", async function () {

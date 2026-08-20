@@ -91,26 +91,26 @@ export default function HistoryApp() {
           dangerouslySetInnerHTML={{ __html: addIcon }}
         />
         <span className="history-new-label" onClick={newSession}>
-          新会话
+          New session
         </span>
       </div>
       {switching && (
         <div className="history-switching">
           <span className="history-switching-spinner" aria-hidden="true" />
-          正在切换…
+          Switching…
         </div>
       )}
       <SearchBox value={query} onChange={setQuery} />
       <div className="history-list">
         {items.length === 0 ? (
           <div className="history-empty">
-            <div className="history-empty-title">暂无会话</div>
-            <div className="history-empty-hint">点击上方「新会话」开始与 Pi 对话</div>
+            <div className="history-empty-title">No sessions</div>
+            <div className="history-empty-hint">Click "New session" above to start chatting with Pi</div>
           </div>
         ) : filtered.length === 0 ? (
           <div className="history-empty">
-            <div className="history-empty-title">无匹配会话</div>
-            <div className="history-empty-hint">换个关键词试试</div>
+            <div className="history-empty-title">No matching sessions</div>
+            <div className="history-empty-hint">Try a different keyword</div>
           </div>
         ) : (
           filtered.map((item) => {
@@ -140,7 +140,7 @@ export default function HistoryApp() {
                         }}
                         onBlur={() => setEditingPath(null)}
                       />
-                      {active && <span className="history-item-badge">当前</span>}
+                      {active && <span className="history-item-badge">Current</span>}
                       <span className="history-item-time">{formatRelativeTime(item.modified)}</span>
                     </div>
                     {item.preview && <div className="history-item-preview">{item.preview}</div>}
@@ -152,8 +152,8 @@ export default function HistoryApp() {
                     disabled={switching}
                   >
                     <div className="history-item-top">
-                      <span className="history-item-name">{item.name || "未命名会话"}</span>
-                      {active && <span className="history-item-badge">当前</span>}
+                      <span className="history-item-name">{item.name || "Untitled session"}</span>
+                      {active && <span className="history-item-badge">Current</span>}
                       <span className="history-item-time">{formatRelativeTime(item.modified)}</span>
                     </div>
                     {item.preview && <div className="history-item-preview">{item.preview}</div>}
@@ -162,7 +162,7 @@ export default function HistoryApp() {
                 <div className="history-item-actions">
                   <button
                     className="history-item-edit"
-                    title="重命名"
+                    title="Rename"
                     onClick={() => {
                       if (!switching) {
                         setEditingPath(item.path);
@@ -173,7 +173,7 @@ export default function HistoryApp() {
                   />
                   <button
                     className="history-item-delete"
-                    title={active ? "当前会话不可删除" : "删除会话"}
+                    title={active ? "Current session cannot be deleted" : "Delete session"}
                     onClick={() => vscode.postMessage({ type: "deleteSession", path: item.path })}
                     disabled={switching || active}
                     dangerouslySetInnerHTML={{ __html: deleteIcon }}

@@ -316,6 +316,6 @@ suite("appendSessionName 单元测试", () => {
   });
 
   test("文件不存在：抛错", async () => {
-    await assert.rejects(appendSessionName(path.join(tmp, "nope.jsonl"), "任意名"), /读取会话文件失败/);
+    await assert.rejects(appendSessionName(path.join(tmp, "nope.jsonl"), "任意名"), /Failed to read session file/);
   });
 });

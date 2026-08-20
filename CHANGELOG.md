@@ -39,6 +39,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 会话信息条 p10k 风格环境段：与输入卡同宽，左侧环境段 `folderName on  branch [!?↑↓]`（Maple Mono NF 字体打包，分支图标 U+F418）、右侧指标段按 git/上下文/缓存读/缓存写/缓存命中率/成本 顺序两头分占；git 状态富化（ahead/behind/改动/未跟踪，`[gone]`/单边 bracket 覆盖）；`gitStatus` 消息更名 `sessionEnv`（folderName + git）；整个聊天面板与宿主 notice/error 文案改英文
+- 会话信息条融合进输入框卡片：改为叠放在输入卡正后方、仅下方探出（第二张卡样式），元素间 `·` 分隔符去除（改 gap 左对齐）、两侧留白；输入卡按钮行上下留白略减
 - 聊天 header 会话历史入口 UI 微调：按钮去除「会话历史」文字只留图标（补 aria-label）；弹窗缩小（240px 宽 / 40vh 高 / 列表项紧凑）；弹层内「新会话」按钮改为顶部紧凑胶囊样式（主侧边栏历史视图样式不受影响）
 - 输入框改为单行起步（随输入换行增长，8 行封顶后内部滚动）；发送/停止按钮改为正方形（边长随 VS Code 字号自适应，与输入框首行同高）
 - 输入框 placeholder 改为「输入消息或 / 命令」（流式输出中仍显示队列提示）

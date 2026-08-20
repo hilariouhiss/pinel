@@ -32,6 +32,7 @@ import {
 } from "../rpc/protocol";
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
 import { parseSessionStats } from "./session-stats";
+import { readGitStatus, type GitStatus } from "./git-status";
 import { parseTodoTasks, type TodoTask } from "./todos";
 import { parseCommands } from "./commands";
 import { parseModels, parseThinkingLevels } from "./models";
@@ -78,8 +79,16 @@ export interface ToolCard {
   output: string;
 }
 
+/** 会话信息条环境段（工作区文件夹名 + 富化 git 状态）；随 sessionEnv 消息广播。 */
+export interface SessionEnv {
+  /** 工作区文件夹名（workspaceRoot basename）；无 workspace 时 null（防御性）。 */
+  folderName: string | null;
+  /** 富化 git 状态（分支/ahead/behind/改动/未跟踪）；非仓库/不可用 → null。 */
+  git: GitStatus | null;
+}
+
 export type OutMessage =
-  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null }
+  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null; sessionEnv: SessionEnv }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; tool: ToolCard }
@@ -97,6 +106,7 @@ export type OutMessage =
   | { type: "sessionListChanged" }
   | { type: "sessionListRefresh" }
   | { type: "sessionStats"; stats: SessionStatsData | null }
+  | { type: "sessionEnv"; env: SessionEnv }
   | { type: "triggerEditPrompt" }
   | { type: "fillPrompt"; text: string }
   | { type: "sessionTitle"; title: string | undefined }
@@ -164,6 +174,10 @@ export class ChatController {
   private status: ChatStatus = { ...initialStatus };
   /** 最近一次会话统计（get_session_stats 解析结果；切换/重启时清空）。 */
   private sessionStats: SessionStatsData | null = null;
+  /** 会话信息条环境段（文件夹名 + git 状态；重启不重置，随 refreshSessionEnv 刷新）。 */
+  private sessionEnv: SessionEnv = { folderName: null, git: null };
+  /** git 状态刷新去抖定时器（保存文件后合并短时间多次触发）。 */
+  private gitRefreshTimer: NodeJS.Timeout | null = null;
   private messages: AgentMessage[] = [];
   private partialBlocks: StreamBlock[] = [];
   private tools = new Map<string, ToolCard>();
@@ -181,6 +195,8 @@ export class ChatController {
   private workspaceWatcher: vscode.Disposable;
   /** 会话信息开关配置监听（dispose 释放）。 */
   private configWatcher: vscode.Disposable;
+  /** 保存文件监听（脏标记随保存实时更新；dispose 释放）。 */
+  private saveWatcher: vscode.Disposable;
   /** 是否已触发过自动重启自愈（手动 restart 重置；置位后初始同步短路重试）。 */
   private modelHealRestarted = false;
   /** 最近一次初始状态同步中 get_state 的尝试次数（测试钩子）。 */
@@ -225,6 +241,8 @@ export class ChatController {
       }
       this.applyShowSessionStats(enabled);
     });
+    // 保存文件 → 去抖刷新 git 状态（开关关闭时 refreshSessionEnv 内部短路）
+    this.saveWatcher = vscode.workspace.onDidSaveTextDocument(() => this.scheduleGitRefresh());
   }
 
   // -------------------------------------------------------------------------
@@ -258,6 +276,7 @@ export class ChatController {
     this.applyShowSessionStats(showStats, false);
     if (showStats) {
       void this.refreshSessionStats();
+      void this.refreshSessionEnv();
     }
 
     const client = this.client;
@@ -272,7 +291,7 @@ export class ChatController {
       if (this.client !== client) {
         return; // 已被 restart 取代：静默放弃
       }
-      this.notice("warning", `获取历史消息失败：${(err as Error).message}`);
+      this.notice("warning", `Failed to load history: ${(err as Error).message}`);
     }
     // 斜杠命令列表：fire-and-forget，不得阻塞/reject 启动流程（旧版 pi 会回 success:false）
     void this.fetchCommands();
@@ -300,7 +319,7 @@ export class ChatController {
       // 自愈：模型仍为空且未重启过 → 停止当前进程再启一次
       //（置位标记：下次同步短路为单次尝试，防止无限重启循环）
       this.modelHealRestarted = true;
-      this.notice("info", "未获取到模型信息，正在自动重启 pi 以恢复…");
+      this.notice("info", "No model info received, auto-restarting pi…");
       if (this.client !== client) {
         return "abandoned"; // 已被手动重启接管：静默放弃，由新流程自行定论
       }
@@ -320,10 +339,10 @@ export class ChatController {
       this.status = {
         ...this.status,
         processState: "no-workspace",
-        error: "当前窗口未打开文件夹。请打开一个文件夹后再使用 Pinel。",
+        error: "No folder open. Open a folder to use Pinel.",
       };
       this.fire({ type: "status", status: this.status });
-      this.notice("info", "未打开文件夹：打开文件夹后 Pi 将自动连接。");
+      this.notice("info", "No folder open: Pi will auto-connect once you open a folder.");
       return null;
     }
     this.workspaceRoot = root.uri.fsPath;
@@ -419,7 +438,7 @@ export class ChatController {
     // 自愈重启入口由 startWithHeal 触发
     this.output.appendLine(`[warn] 模型自愈：get_state ${maxAttempts} 次尝试未获得模型（${failures.join("；")}）`);
     if (this.modelHealRestarted) {
-      this.notice("warning", "未获取到模型信息：请检查 pi 认证（在终端运行 pi 验证），或点击横幅的重启按钮重试。");
+      this.notice("warning", "No model info received: check pi auth (run pi in a terminal), or click Restart on the banner.");
       return "exhausted";
     }
     return "heal-needed";
@@ -485,6 +504,11 @@ export class ChatController {
     }
     this.workspaceWatcher.dispose();
     this.configWatcher.dispose();
+    this.saveWatcher.dispose();
+    if (this.gitRefreshTimer) {
+      clearTimeout(this.gitRefreshTimer);
+      this.gitRefreshTimer = null;
+    }
     this.promptEditor.dispose();
     this.onChange.dispose();
   }
@@ -497,12 +521,12 @@ export class ChatController {
     // 收到发送即清理提示词编辑器（含下方早退分支；回填文本保留在输入框可重试）
     void this.promptEditor.disposeForSend();
     if (!this.workspaceRoot) {
-      this.notice("warning", "请先打开一个文件夹，再使用 Pinel");
+      this.notice("warning", "Open a folder first to use Pinel");
       return;
     }
     await this.ensureStarted();
     if (!this.client) {
-      this.notice("error", "pi 进程不可用，请点击横幅的重启按钮");
+      this.notice("error", "pi process unavailable, click Restart on the banner");
       return;
     }
 
@@ -525,7 +549,7 @@ export class ChatController {
       if (this.status.isStreaming) {
         // 流式中自动转 steer（排队消息，当前回合结束后投递）
         await this.client.send({ type: "steer", message: text, images });
-        this.notice("info", "已加入待处理队列（steer）");
+        this.notice("info", "Queued (steer)");
       } else {
         await this.client.send({
           type: "prompt",
@@ -536,7 +560,7 @@ export class ChatController {
       }
     } catch (err) {
       // success:false / 进程异常 → 统一错误提示
-      this.notice("error", `发送失败：${(err as Error).message}`);
+      this.notice("error", `Send failed: ${(err as Error).message}`);
     }
   }
 
@@ -548,7 +572,7 @@ export class ChatController {
     try {
       await client.send({ type: "abort" });
     } catch (err) {
-      this.notice("warning", `中断失败：${(err as Error).message}`);
+      this.notice("warning", `Abort failed: ${(err as Error).message}`);
     }
   }
 
@@ -617,7 +641,7 @@ export class ChatController {
     if (isCurrent) {
       const client = this.client;
       if (!client?.isRunning) {
-        this.notice("warning", "pi 进程不可用，无法重命名当前会话");
+        this.notice("warning", "pi process unavailable, cannot rename current session");
         return;
       }
       try {
@@ -627,7 +651,7 @@ export class ChatController {
         }
       } catch (err) {
         // 旧版 pi 无此命令（docs/rpc.md 未收录）→ send 抛错 → 可见反馈
-        this.notice("warning", `重命名失败：${(err as Error).message}`);
+        this.notice("warning", `Rename failed: ${(err as Error).message}`);
         return;
       }
       // 标题 force 重解析（响应先于落盘的极小竞态可接受，下次刷新自愈）
@@ -637,7 +661,7 @@ export class ChatController {
       try {
         await appendSessionName(sessionPath, trimmed);
       } catch (err) {
-        this.notice("warning", `重命名失败：${(err as Error).message}`);
+        this.notice("warning", `Rename failed: ${(err as Error).message}`);
         return;
       }
     }
@@ -654,13 +678,13 @@ export class ChatController {
    */
   async deleteSession(sessionPath: string): Promise<void> {
     if (sessionPath === this.status.sessionFile) {
-      this.notice("warning", "当前会话不可删除");
+      this.notice("warning", "Current session cannot be deleted");
       return;
     }
     try {
       await fs.rm(sessionPath, { force: true, maxRetries: 5, retryDelay: 100 });
     } catch (err) {
-      this.notice("error", `删除会话失败：${(err as Error).message}`);
+      this.notice("error", `Delete session failed: ${(err as Error).message}`);
       return;
     }
     this.fire({ type: "sessionListRefresh" });
@@ -677,7 +701,7 @@ export class ChatController {
     }
     const result = await scanWorkspaceFiles(root);
     if (result.truncated) {
-      this.notice("warning", "工作区文件较多，@ 文件列表已截断（上限 1000）");
+      this.notice("warning", "Many workspace files, @ file list truncated (limit 1000)");
     }
     return result;
   }
@@ -712,12 +736,12 @@ export class ChatController {
           let content = await fs.readFile(abs, "utf8");
           if (content.length > ChatController.MAX_FILE_REF_BYTES) {
             content = content.slice(0, ChatController.MAX_FILE_REF_BYTES);
-            this.notice("warning", `文件 ${ref} 超过 2MB 已截断`);
+            this.notice("warning", `File ${ref} exceeds 2MB, truncated`);
           }
           out += `\n<file name="${abs}">\n${content}\n</file>\n`;
         }
       } catch {
-        this.notice("warning", `无法读取文件 ${ref}（已跳过）`);
+        this.notice("warning", `Cannot read file ${ref} (skipped)`);
       }
     }
     return out;
@@ -736,7 +760,7 @@ export class ChatController {
       return; // 防重入：切换/新建进行中忽略（在途操作 finally 自行复位）
     }
     if (!this.workspaceRoot) {
-      this.notice("warning", "请先打开一个文件夹，再使用 Pinel");
+      this.notice("warning", "Open a folder first to use Pinel");
       // HistoryApp 已本地乐观置位 switching：前置 return 必须补发复位，
       // 否则历史面板永久卡「切换中」且后续点击被拦截（实测缺陷）
       this.fire({ type: "sessionSwitching", switching: false });
@@ -745,7 +769,7 @@ export class ChatController {
     await this.ensureStarted();
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("error", "pi 进程不可用，请点击横幅的重启按钮");
+      this.notice("error", "pi process unavailable, click Restart on the banner");
       this.fire({ type: "sessionSwitching", switching: false });
       return;
     }
@@ -758,13 +782,13 @@ export class ChatController {
         return; // restart 竞态：丢弃迟到响应，不污染新进程状态
       }
       if (data?.cancelled) {
-        this.notice("info", "切换会话已取消");
+        this.notice("info", "Session switch cancelled");
         return;
       }
       await this.afterSessionSwitch(client);
     } catch (err) {
       if (this.client === client) {
-        this.notice("error", `切换会话失败：${(err as Error).message}`);
+        this.notice("error", `Session switch failed: ${(err as Error).message}`);
       }
     } finally {
       this.sessionSwitching = false;
@@ -778,7 +802,7 @@ export class ChatController {
       return; // 防重入（在途操作 finally 自行复位）
     }
     if (!this.workspaceRoot) {
-      this.notice("warning", "请先打开一个文件夹，再使用 Pinel");
+      this.notice("warning", "Open a folder first to use Pinel");
       // 同 switchSession：前置 return 补发复位（HistoryApp 本地乐观置位兜底）
       this.fire({ type: "sessionSwitching", switching: false });
       return;
@@ -786,7 +810,7 @@ export class ChatController {
     await this.ensureStarted();
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("error", "pi 进程不可用，请点击横幅的重启按钮");
+      this.notice("error", "pi process unavailable, click Restart on the banner");
       this.fire({ type: "sessionSwitching", switching: false });
       return;
     }
@@ -799,13 +823,13 @@ export class ChatController {
         return; // restart 竞态：丢弃迟到响应
       }
       if (data?.cancelled) {
-        this.notice("info", "新建会话已取消");
+        this.notice("info", "New session cancelled");
         return;
       }
       await this.afterSessionSwitch(client);
     } catch (err) {
       if (this.client === client) {
-        this.notice("error", `新建会话失败：${(err as Error).message}`);
+        this.notice("error", `New session failed: ${(err as Error).message}`);
       }
     } finally {
       this.sessionSwitching = false;
@@ -859,7 +883,7 @@ export class ChatController {
       this.messages = data.messages ?? [];
     } catch (err) {
       if (this.client === client) {
-        this.notice("warning", `获取会话消息失败：${(err as Error).message}`);
+        this.notice("warning", `Failed to load session messages: ${(err as Error).message}`);
         this.messages = [];
       }
     }
@@ -871,7 +895,7 @@ export class ChatController {
       this.applySessionState(state);
     } catch (err) {
       if (this.client === client) {
-        this.notice("warning", `会话状态回读失败：${(err as Error).message}`);
+        this.notice("warning", `Session state read-back failed: ${(err as Error).message}`);
       }
     }
     this.fireSnapshot();
@@ -880,6 +904,7 @@ export class ChatController {
       this.sessionStats = null;
       this.fire({ type: "sessionStats", stats: null });
       void this.refreshSessionStats();
+      void this.refreshSessionEnv();
     }
     this.fire({ type: "sessionListChanged" });
   }
@@ -931,7 +956,7 @@ export class ChatController {
   async cycleModel(): Promise<void> {
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("warning", "pi 进程不可用，无法切换模型");
+      this.notice("warning", "pi process unavailable, cannot switch model");
       return;
     }
     try {
@@ -940,12 +965,12 @@ export class ChatController {
         return; // restart 竞态：丢弃迟到响应，不污染新进程状态
       }
       if (!data) {
-        this.notice("info", "仅有一个可用模型，无法切换");
+        this.notice("info", "Only one model available, cannot switch");
         return;
       }
       // 防御：响应形状异常（旧版 pi / 协议漂移）→ 仅提示不更新
       if (typeof data !== "object" || !data.model || typeof data.model !== "object" || Array.isArray(data.model)) {
-        this.notice("warning", "切换模型失败：响应数据异常");
+        this.notice("warning", "Switch model failed: unexpected response data");
         return;
       }
       this.status = {
@@ -958,7 +983,7 @@ export class ChatController {
       if (this.client !== client) {
         return;
       }
-      this.notice("error", `切换模型失败：${(err as Error).message}`);
+      this.notice("error", `Switch model failed: ${(err as Error).message}`);
     }
   }
 
@@ -966,7 +991,7 @@ export class ChatController {
   async cycleThinkingLevel(): Promise<void> {
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("warning", "pi 进程不可用，无法切换思考强度");
+      this.notice("warning", "pi process unavailable, cannot switch thinking effort");
       return;
     }
     try {
@@ -976,12 +1001,12 @@ export class ChatController {
       }
       if (!data) {
         // 仅 null：模型不支持思考（rpc-mode.js 回 success+data:null）
-        this.notice("info", "当前模型不支持思考强度切换");
+        this.notice("info", "Current model does not support thinking effort switch");
         return;
       }
       // 防御：非 null 的异常形状（旧版 pi / 协议漂移）→ 仅提示不更新
       if (typeof data !== "object" || typeof data.level !== "string") {
-        this.notice("warning", "切换思考强度失败：响应数据异常");
+        this.notice("warning", "Switch thinking effort failed: unexpected response data");
         return;
       }
       this.status = { ...this.status, thinkingLevel: data.level };
@@ -990,7 +1015,7 @@ export class ChatController {
       if (this.client !== client) {
         return;
       }
-      this.notice("error", `切换思考强度失败：${(err as Error).message}`);
+      this.notice("error", `Switch thinking effort failed: ${(err as Error).message}`);
     }
   }
 
@@ -1062,6 +1087,7 @@ export class ChatController {
     this.fire({ type: "status", status: this.status });
     if (enabled && firstFetch) {
       void this.refreshSessionStats();
+      void this.refreshSessionEnv();
     }
   }
 
@@ -1108,6 +1134,39 @@ export class ChatController {
     this.fire({ type: "sessionStats", stats: parsed });
   }
 
+  /**
+   * 拉取工作区环境段（文件夹名 + 富化 git 状态）并广播。
+   * - 开关关闭短路（环境段仅随会话信息条展示，不额外 spawn git）
+   * - git 不可用/非仓库/超时 → readGitStatus 回 null，git=null（webview 隐藏 git 部分）
+   * - 竞态：捕获发起时 workspaceRoot，fire 前校验未变（workspace 切换丢弃旧结果）
+   */
+  private async refreshSessionEnv(): Promise<void> {
+    if (!this.status.showSessionStats) {
+      return;
+    }
+    const root = this.workspaceRoot;
+    if (!root) {
+      return;
+    }
+    const git = await readGitStatus(root);
+    if (this.disposed || this.workspaceRoot !== root) {
+      return; // dispose / workspace 已切换：丢弃旧结果
+    }
+    this.sessionEnv = { folderName: path.basename(root), git };
+    this.fire({ type: "sessionEnv", env: this.sessionEnv });
+  }
+
+  /** 保存文件后去抖刷新 git 脏标记（合并短时间内的连续保存）。 */
+  private scheduleGitRefresh(): void {
+    if (this.gitRefreshTimer) {
+      clearTimeout(this.gitRefreshTimer);
+    }
+    this.gitRefreshTimer = setTimeout(() => {
+      this.gitRefreshTimer = null;
+      void this.refreshSessionEnv();
+    }, 300);
+  }
+
   // -------------------------------------------------------------------------
   // 模型/思考强度列表（设置面板内嵌展开；每次展开时拉取）
   // -------------------------------------------------------------------------
@@ -1120,7 +1179,7 @@ export class ChatController {
   async getModels(): Promise<void> {
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("warning", "pi 进程不可用，无法获取模型列表");
+      this.notice("warning", "pi process unavailable, cannot fetch model list");
       this.fire({ type: "models", models: [] });
       return;
     }
@@ -1131,14 +1190,14 @@ export class ChatController {
       }
       const models = parseModels(data);
       if (models.length === 0) {
-        this.notice("warning", "未获取到模型列表");
+        this.notice("warning", "No model list received");
       }
       this.fire({ type: "models", models });
     } catch (err) {
       if (this.client !== client) {
         return;
       }
-      this.notice("warning", `获取模型列表失败：${(err as Error).message}`);
+      this.notice("warning", `Fetch model list failed: ${(err as Error).message}`);
       this.fire({ type: "models", models: [] });
     }
   }
@@ -1152,7 +1211,7 @@ export class ChatController {
   async setModel(provider: string, modelId: string): Promise<void> {
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("warning", "pi 进程不可用，无法切换模型");
+      this.notice("warning", "pi process unavailable, cannot switch model");
       return;
     }
     try {
@@ -1173,7 +1232,7 @@ export class ChatController {
         typeof data.provider !== "string" ||
         data.provider.trim().length === 0
       ) {
-        this.notice("warning", "切换模型失败：响应数据异常");
+        this.notice("warning", "Switch model failed: unexpected response data");
         return;
       }
       this.status = { ...this.status, model: data };
@@ -1184,7 +1243,7 @@ export class ChatController {
       if (this.client !== client) {
         return;
       }
-      this.notice("error", `切换模型失败：${(err as Error).message}`);
+      this.notice("error", `Switch model failed: ${(err as Error).message}`);
     }
   }
 
@@ -1195,7 +1254,7 @@ export class ChatController {
   async getThinkingLevels(): Promise<void> {
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("warning", "pi 进程不可用，无法获取思考强度列表");
+      this.notice("warning", "pi process unavailable, cannot fetch thinking effort list");
       this.fire({ type: "thinkingLevels", levels: [] });
       return;
     }
@@ -1206,14 +1265,14 @@ export class ChatController {
       }
       const levels = parseThinkingLevels(data);
       if (levels.length === 0) {
-        this.notice("warning", "未获取到思考强度列表");
+        this.notice("warning", "No thinking effort list received");
       }
       this.fire({ type: "thinkingLevels", levels });
     } catch (err) {
       if (this.client !== client) {
         return;
       }
-      this.notice("warning", `获取思考强度列表失败：${(err as Error).message}`);
+      this.notice("warning", `Fetch thinking effort list failed: ${(err as Error).message}`);
       this.fire({ type: "thinkingLevels", levels: [] });
     }
   }
@@ -1226,7 +1285,7 @@ export class ChatController {
   async setThinkingLevel(level: string): Promise<void> {
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("warning", "pi 进程不可用，无法设置思考强度");
+      this.notice("warning", "pi process unavailable, cannot set thinking effort");
       return;
     }
     try {
@@ -1239,7 +1298,7 @@ export class ChatController {
       if (this.client !== client) {
         return;
       }
-      this.notice("error", `设置思考强度失败：${(err as Error).message}`);
+      this.notice("error", `Set thinking effort failed: ${(err as Error).message}`);
     }
   }
 
@@ -1259,7 +1318,7 @@ export class ChatController {
       if (this.client !== client) {
         return;
       }
-      this.notice("warning", `状态回读失败（切换已生效，界面可能未同步）：${(err as Error).message}`);
+      this.notice("warning", `State read-back failed (switch applied, UI may be out of sync): ${(err as Error).message}`);
     }
   }
 
@@ -1274,7 +1333,7 @@ export class ChatController {
   ): Promise<void> {
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("warning", "pi 进程不可用");
+      this.notice("warning", "pi process unavailable");
       return;
     }
     try {
@@ -1349,6 +1408,8 @@ export class ChatController {
         void this.fetchCommands();
         // 会话统计随回合结束刷新（token/成本/上下文占用变化）
         void this.refreshSessionStats();
+        // git 状态随回合结束刷新（agent 可能经工具改动了文件）
+        void this.refreshSessionEnv();
         // 会话数据可能已更新（名称/消息）：通知历史视图刷新（provider 内部节流）
         this.fire({ type: "sessionListChanged" });
         break;
@@ -1477,7 +1538,7 @@ export class ChatController {
         break;
 
       case "auto_retry_start":
-        this.notice("info", "pi 正在自动重试…");
+        this.notice("info", "pi is auto-retrying…");
         break;
 
       case "extension_ui_request": {
@@ -1507,7 +1568,7 @@ export class ChatController {
       }
 
       case "extension_error":
-        this.notice("error", `扩展错误：${JSON.stringify(event)}`.slice(0, 300));
+        this.notice("error", `Extension error: ${JSON.stringify(event)}`.slice(0, 300));
         break;
     }
   }
@@ -1525,7 +1586,7 @@ export class ChatController {
     this.status = {
       ...this.status,
       processState: "error",
-      error: `无法启动 pi：${err.message}。请确认已安装 pi（npm install -g @earendil-works/pi-coding-agent）或在设置中配置 pinel.piPath`,
+      error: `Cannot start pi: ${err.message}. Please confirm pi is installed (npm install -g @earendil-works/pi-coding-agent) or configure pinel.piPath in settings`,
     };
     this.fire({ type: "status", status: this.status });
     this.notice("error", this.status.error!);
@@ -1536,7 +1597,7 @@ export class ChatController {
     this.status = {
       ...this.status,
       processState: "error",
-      error: `pi 进程已退出（code=${code}）`,
+      error: `pi process exited (code=${code})`,
       isStreaming: false,
     };
     this.partialBlocks = [];
@@ -1836,6 +1897,7 @@ export class ChatController {
       questionnaire: this.questionnaireView(),
       sessionTitle: this.sessionTitleCache,
       sessionStats: this.sessionStats,
+      sessionEnv: this.sessionEnv,
     });
     // 会话文件变化（首次/切换/新建/重启后恢复）→ 异步解析标题；重放去重不重复解析
     if (this.status.sessionFile !== this.lastTitleSessionFile) {
@@ -1979,11 +2041,11 @@ function sleep(ms: number): Promise<void> {
 export async function confirmSessionDelete(sessionPath: string): Promise<boolean> {
   const label = path.basename(sessionPath);
   const pick = await vscode.window.showWarningMessage(
-    `确定删除会话「${label}」吗？此操作不可撤销。`,
+    `Delete session "${label}"? This cannot be undone.`,
     { modal: true },
-    "删除",
+    "Delete",
   );
-  return pick === "删除";
+  return pick === "Delete";
 }
 
 export type { AgentMessage };

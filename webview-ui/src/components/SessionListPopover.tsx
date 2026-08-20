@@ -152,7 +152,7 @@ export function SessionListPopover({
       <div
         className="session-popover"
         role="dialog"
-        aria-label="会话历史"
+        aria-label="Session history"
         tabIndex={-1}
         ref={panelRef}
         style={pos}
@@ -161,13 +161,13 @@ export function SessionListPopover({
         <div className="history-list session-popover-list">
           {items.length === 0 ? (
             <div className="history-empty session-popover-empty">
-              <div className="history-empty-title">暂无会话</div>
-              <div className="history-empty-hint">点击 header 的「新会话」按钮开始与 Pi 对话</div>
+              <div className="history-empty-title">No sessions</div>
+              <div className="history-empty-hint">Click the "New session" button in the header to start chatting with Pi</div>
             </div>
           ) : filtered.length === 0 ? (
             <div className="history-empty session-popover-empty">
-              <div className="history-empty-title">无匹配会话</div>
-              <div className="history-empty-hint">换个关键词试试</div>
+              <div className="history-empty-title">No matching sessions</div>
+              <div className="history-empty-hint">Try a different keyword</div>
             </div>
           ) : (
             filtered.map((item) => {
@@ -197,7 +197,7 @@ export function SessionListPopover({
                           }}
                           onBlur={() => setEditingPath(null)}
                         />
-                        {active && <span className="history-item-badge">当前</span>}
+                        {active && <span className="history-item-badge">Current</span>}
                         <span className="history-item-time">{formatRelativeTime(item.modified)}</span>
                       </div>
                       {item.preview && <div className="history-item-preview">{item.preview}</div>}
@@ -209,8 +209,8 @@ export function SessionListPopover({
                       disabled={switching}
                     >
                       <div className="history-item-top">
-                        <span className="history-item-name">{item.name || "未命名会话"}</span>
-                        {active && <span className="history-item-badge">当前</span>}
+                        <span className="history-item-name">{item.name || "Untitled session"}</span>
+                        {active && <span className="history-item-badge">Current</span>}
                         <span className="history-item-time">{formatRelativeTime(item.modified)}</span>
                       </div>
                       {item.preview && <div className="history-item-preview">{item.preview}</div>}
@@ -219,7 +219,7 @@ export function SessionListPopover({
                   <div className="history-item-actions">
                     <button
                       className="history-item-edit"
-                      title="重命名"
+                      title="Rename"
                       onClick={() => {
                         if (!switching) {
                           setEditingPath(item.path);
@@ -230,7 +230,7 @@ export function SessionListPopover({
                     />
                     <button
                       className="history-item-delete"
-                      title={active ? "当前会话不可删除" : "删除会话"}
+                      title={active ? "Current session cannot be deleted" : "Delete session"}
                       onClick={() => vscode.postMessage({ type: "deleteSession", path: item.path })}
                       disabled={switching || active}
                       dangerouslySetInnerHTML={{ __html: deleteIcon }}

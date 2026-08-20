@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { ChatController, type ChatStatus, type ToolCard } from "./chat/controller";
+import { ChatController, type ChatStatus, type SessionEnv, type ToolCard } from "./chat/controller";
 import type { SessionStatsData } from "./rpc/protocol";
 import { ChatPanelProvider } from "./chat/panel";
 import { SessionHistoryProvider, revealChatView } from "./chat/session-history-provider";
@@ -24,6 +24,8 @@ export interface TestEventLog {
   sessionListRefreshCount: number;
   /** 最近一次会话统计广播（对象包裹区分「未广播」与「广播 null」）。 */
   lastSessionStats: { stats: SessionStatsData | null } | undefined;
+  /** 最近一次环境段广播（folderName + git；对象包裹区分「未广播」与「广播」）。 */
+  lastSessionEnv: { env: SessionEnv } | undefined;
 }
 
 /** 暴露给集成测试的钩子接口（通过扩展 exports 获取）。 */
@@ -170,6 +172,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
   let lastSessionTitle: { title: string | undefined } | undefined;
   let sessionListRefreshCount = 0;
   let lastSessionStats: { stats: SessionStatsData | null } | undefined;
+  let lastSessionEnv: { env: SessionEnv } | undefined;
   ctrl.onChange.event((msg) => {
     if (msg.type === "notice") {
       notices.push({ level: msg.level, text: msg.text });
@@ -190,6 +193,8 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       sessionListRefreshCount++;
     } else if (msg.type === "sessionStats") {
       lastSessionStats = { stats: msg.stats };
+    } else if (msg.type === "sessionEnv") {
+      lastSessionEnv = { env: msg.env };
     }
   });
 
@@ -245,6 +250,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       lastSessionTitle,
       sessionListRefreshCount,
       lastSessionStats,
+      lastSessionEnv,
     }),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {
       const deadline = Date.now() + timeoutMs;

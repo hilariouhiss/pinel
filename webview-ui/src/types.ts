@@ -152,8 +152,23 @@ export interface SessionStats {
   contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null };
 }
 
+/** 工作区 git 状态（宿主 readGitStatus 结果镜像；null = git 不可用/非仓库）。 */
+export interface GitStatus {
+  branch: string;
+  ahead: number;
+  behind: number;
+  trackedChanges: boolean;
+  untracked: boolean;
+}
+
+/** 会话信息条环境段（文件夹名 + git 状态）；随 sessionEnv 消息广播。 */
+export interface SessionEnv {
+  folderName: string | null;
+  git: GitStatus | null;
+}
+
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "tool"; tool: ToolCard }
@@ -171,6 +186,7 @@ export type HostMessage =
   | { type: "sessionListChanged" }
   | { type: "sessionListRefresh" }
   | { type: "sessionStats"; stats: SessionStats | null }
+  | { type: "sessionEnv"; env: SessionEnv }
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "triggerEditPrompt" }
   | { type: "fillPrompt"; text: string }

@@ -36,13 +36,13 @@ interface Props {
 function sourceLabel(source: string | undefined): string {
   switch (source) {
     case "extension":
-      return "扩展";
+      return "Extension";
     case "prompt":
-      return "提示模板";
+      return "Prompt";
     case "skill":
-      return "技能";
+      return "Skill";
     default:
-      return "其他";
+      return "Other";
   }
 }
 
@@ -361,7 +361,7 @@ export function Composer({
   return (
     <div className="footer-card">
       {popupVisible && (
-        <div className="composer-suggest" role="listbox" aria-label="命令补全" ref={suggestRef}>
+        <div className="composer-suggest" role="listbox" aria-label="Command suggestions" ref={suggestRef}>
           {candidates.map((cmd, i) => (
             <div
               key={`${cmd.name}-${i}`}
@@ -382,9 +382,9 @@ export function Composer({
         </div>
       )}
       {filePopupVisible && (
-        <div className="composer-file-suggest" role="listbox" aria-label="添加文件" ref={fileSuggestRef}>
+        <div className="composer-file-suggest" role="listbox" aria-label="Add file" ref={fileSuggestRef}>
           {fileCandidates.length === 0 ? (
-            <div className="composer-file-suggest-empty">无匹配文件</div>
+            <div className="composer-file-suggest-empty">No matching files</div>
           ) : (
             fileCandidates.map((file, i) => (
               <div
@@ -397,7 +397,7 @@ export function Composer({
                 onClick={() => acceptFile(file)}
               >
                 <span className="composer-file-suggest-path">{file.path}</span>
-                {file.isImage && <span className="composer-file-suggest-type">图片</span>}
+                {file.isImage && <span className="composer-file-suggest-type">Image</span>}
               </div>
             ))
           )}
@@ -407,10 +407,10 @@ export function Composer({
         <div className="composer-attachments">
           {attachments.map((a) => (
             <div key={a.id} className="composer-attachment">
-              <img src={`data:${a.mimeType};base64,${a.data}`} alt="附件" />
+              <img src={`data:${a.mimeType};base64,${a.data}`} alt="Attachment" />
               <button
                 className="composer-attachment-remove"
-                title="移除"
+                title="Remove"
                 onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
               >
                 ✕
@@ -426,7 +426,7 @@ export function Composer({
               <span className="composer-file-ref-name">📄 {ref}</span>
               <button
                 className="composer-file-ref-remove"
-                title="移除"
+                title="Remove"
                 onClick={() => removeFileRef(ref)}
               >
                 ✕
@@ -439,7 +439,7 @@ export function Composer({
         ref={inputRef}
         className="composer-input"
         placeholder={
-          busy ? "流式输出中——发送将加入队列（steer）" : "输入消息，Ctrl+G 用编辑器编辑"
+          busy ? "Streaming — sending will be queued (steer)" : "Type a message, Ctrl+G to edit in editor"
         }
         rows={rows}
         value={text}
@@ -456,8 +456,8 @@ export function Composer({
       <div className="footer-actions">
         <button
           className="status-settings-btn"
-          title="设置"
-          aria-label="设置"
+          title="Settings"
+          aria-label="Settings"
           aria-haspopup="dialog"
           aria-expanded={settingsOpen}
           onClick={onOpenSettings}
@@ -468,14 +468,14 @@ export function Composer({
         {busy ? (
           <button
             className="composer-stop"
-            title="中断当前操作 (Esc)"
+            title="Stop current operation (Esc)"
             onClick={() => vscode.postMessage({ type: "abort" })}
             dangerouslySetInnerHTML={{ __html: stopIcon }}
           />
         ) : (
           <button
             className="composer-send"
-            title="发送 (Enter)"
+            title="Send (Enter)"
             onClick={send}
             disabled={!text.trim() && attachments.length === 0 && fileRefs.length === 0}
             dangerouslySetInnerHTML={{ __html: sendIcon }}

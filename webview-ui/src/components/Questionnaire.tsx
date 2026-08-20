@@ -12,18 +12,18 @@ interface Props {
 /** 答案摘要（确认标签 Q&A 行显示）。 */
 function answerSummary(question: QuestionnaireQuestion, answer: QuestionnaireAnswer | null): string {
   if (!answer) {
-    return "（未回答）";
+    return "Unanswered";
   }
   if (answer.kind === "custom") {
-    return `自定义：${answer.text}`;
+    return `Custom: ${answer.text}`;
   }
   if (answer.kind === "option") {
-    return question.options[answer.optionIndex]?.label ?? "（无）";
+    return question.options[answer.optionIndex]?.label ?? "None";
   }
   const labels = answer.optionIndices
     .map((i) => question.options[i]?.label ?? "")
     .filter((l) => l.length > 0);
-  return labels.length > 0 ? labels.join("、") : "（未选择）";
+  return labels.length > 0 ? labels.join(", ") : "None selected";
 }
 
 /** 标签文案：header 优先，无 header 用 Q题号。 */
@@ -176,8 +176,8 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
       }}
     >
       <div className="qna-head">
-        提问问卷（已答 {answeredCount}/{q.questions.length}）
-        {locked ? " · 已提交，等待 Pi 继续…" : ""}
+        Questionnaire ({answeredCount}/{q.questions.length} answered)
+        {locked ? " · Submitted, waiting for Pi…" : ""}
       </div>
       <div className="qna-tabs" role="tablist">
         {q.questions.map((question, i) => (
@@ -199,7 +199,7 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
             className={`qna-tab qna-tab-confirm${activeTab === "confirm" ? " active" : ""}`}
             onClick={() => selectTab("confirm", "confirm")}
           >
-            确认
+            Confirm
           </button>
         )}
       </div>
@@ -227,7 +227,7 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
       ) : (
         <div className="qna-review" ref={reviewRef}>
           <div className="qna-review-title">
-            {q.phase === "reviewing" ? "请确认你的回答（可修改后提交）" : "你的回答"}
+            {q.phase === "reviewing" ? "Please confirm your answers (edit before submit)" : "Your answers"}
           </div>
           {q.questions.map((question, i) => (
             <div key={i} className="qna-review-row">
@@ -238,7 +238,7 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
                   className="uidialog-btn uidialog-btn-ghost"
                   onClick={() => selectTab(i, "question")}
                 >
-                  修改
+                  Edit
                 </button>
               )}
             </div>
@@ -246,10 +246,10 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
           {q.phase === "reviewing" && (
             <div className="qna-review-actions">
               <button className="uidialog-btn uidialog-btn-primary qna-confirm" onClick={confirm}>
-                确认提交
+                Submit
               </button>
               <button className="uidialog-btn uidialog-btn-ghost" onClick={cancel}>
-                取消问卷
+                Cancel questionnaire
               </button>
             </div>
           )}
@@ -329,7 +329,7 @@ function QuestionCard({
       </div>
       {selectedPreview && (
         <details className="qna-preview">
-          <summary>选项预览</summary>
+          <summary>Option preview</summary>
           <Markdown content={selectedPreview} />
         </details>
       )}
@@ -337,7 +337,7 @@ function QuestionCard({
         <input
           className="uidialog-input"
           value={draft}
-          placeholder="或输入自定义答案（Type something）"
+          placeholder="Or type a custom answer"
           disabled={locked}
           onChange={(e) => onDraftChange(e.target.value)}
         />
@@ -346,13 +346,13 @@ function QuestionCard({
           disabled={locked || draft.trim().length === 0}
           onClick={() => onAnswer({ kind: "custom", text: draft }, true)}
         >
-          使用自定义答案
+          Use custom answer
         </button>
       </div>
       {question.multiSelect && showNext && (
         <div className="qna-next-row">
           <button className="uidialog-btn uidialog-btn-ghost qna-next" disabled={locked} onClick={onNext}>
-            下一题 →
+            Next →
           </button>
         </div>
       )}
