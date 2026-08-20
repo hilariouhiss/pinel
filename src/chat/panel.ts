@@ -121,6 +121,19 @@ interface WebviewNewSessionMessage {
   type: "newSession";
 }
 
+interface WebviewGetForkMessagesMessage {
+  type: "getForkMessages";
+}
+
+interface WebviewForkMessage {
+  type: "fork";
+  entryId: string;
+}
+
+interface WebviewCloneSessionMessage {
+  type: "cloneSession";
+}
+
 interface WebviewGetFileListMessage {
   type: "getFileList";
 }
@@ -150,6 +163,9 @@ type WebviewInMessage =
   | WebviewToggleSessionStatsMessage
   | WebviewSwitchSessionMessage
   | WebviewNewSessionMessage
+  | WebviewGetForkMessagesMessage
+  | WebviewForkMessage
+  | WebviewCloneSessionMessage
   | WebviewGetFileListMessage
   | WebviewReadyMessage;
 
@@ -290,6 +306,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "newSession":
         void this.controller.newSession();
+        break;
+      case "getForkMessages":
+        void this.controller.getForkMessages();
+        break;
+      case "fork":
+        void this.controller.forkSession(msg.entryId);
+        break;
+      case "cloneSession":
+        void this.controller.cloneSession();
         break;
       case "getFileList":
         void this.postFileList();

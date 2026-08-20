@@ -45,10 +45,10 @@ function recordsAfterPrompt(records: Array<Record<string, unknown>>, marker: str
   return startIndex >= 0 ? records.slice(startIndex) : records;
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs: number, what: string): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs: number, what: string): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (predicate()) {
+    if (await predicate()) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -1670,6 +1670,211 @@ suite("Pinel 集成测试（假 pi）", () => {
       } finally {
         vscode.window.showWarningMessage = orig;
       }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 会话分支/回溯（fork/clone：header 分支选择器链路）
+  // ---------------------------------------------------------------------------
+
+  suite("会话分支/回溯（fork/clone）", () => {
+    let sessionDir: string;
+
+    suiteSetup(async function () {
+      this.timeout(120000);
+      // 临时会话目录：fork/clone 物理落盘目标（fake-pi 经 PINEL_FAKE_PI_SESSION_DIR 写入）
+      sessionDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pinel-fork-sessions-"));
+      const config = vscode.workspace.getConfiguration("pinel");
+      await config.update("sessionDir", sessionDir, vscode.ConfigurationTarget.Global);
+      process.env.PINEL_FAKE_PI_SESSION_DIR = sessionDir;
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+        20000,
+        "pi 进程启动（fork 套件）",
+      );
+    });
+
+    suiteTeardown(async () => {
+      const config = vscode.workspace.getConfiguration("pinel");
+      await config.update("sessionDir", "", vscode.ConfigurationTarget.Global);
+      delete process.env.PINEL_FAKE_PI_SESSION_DIR;
+      await fs.promises.rm(sessionDir, { recursive: true, force: true });
+      await api.restart();
+    });
+
+    /** 产生 N 条 user 消息（prompt 流式后 fake-pi 落内存态，get_fork_messages 派生）。 */
+    const sendAndSettle = async (text: string) => {
+      const baseline = api.getSettledCount();
+      await api.sendPrompt(text);
+      await api.waitForSettled(30000, baseline);
+    };
+
+    test("getForkMessages 送达：历史用户消息列表（防御解析）", async function () {
+      this.timeout(60000);
+      await sendAndSettle("分支测试第一条");
+      await sendAndSettle("分支测试第二条");
+      await api.getForkMessages();
+      const log = api.getTestEventLog();
+      assert.ok(log.lastForkMessages, "forkMessages 广播送达");
+      const msgs = log.lastForkMessages!;
+      assert.strictEqual(msgs.length, 2, "两条 user 消息（assistant/toolResult 排除）");
+      assert.strictEqual(msgs[0].entryId, "fork-msg-0");
+      assert.strictEqual(msgs[0].text, "分支测试第一条");
+      assert.strictEqual(msgs[1].entryId, "fork-msg-1");
+      assert.strictEqual(msgs[1].text, "分支测试第二条");
+    });
+
+    test("fork 全链路：切换新会话 + 消息截断 + 输入框回填 + 物理落盘 + 列表刷新", async function () {
+      this.timeout(60000);
+      const before = api.getCurrentSessionFile();
+      await api.forkSession("fork-msg-1");
+      // fork 后 pi 自动 rebind 新文件（客户端不得再发 switch_session）
+      await waitFor(() => api.getCurrentSessionFile() !== before, 15000, "fork 后会话文件变化");
+      const sessionFile = api.getCurrentSessionFile()!;
+      assert.ok(sessionFile.startsWith(sessionDir), "新会话文件落在 sessionDir");
+      assert.ok(fs.existsSync(sessionFile), "fork 文件物理落盘");
+      // 落盘内容：header + 截断至 fork 点的祖先链（可被 scanSessions 解析）
+      const content = fs.readFileSync(sessionFile, "utf8");
+      assert.ok(content.startsWith('{"type":"session"'), "header 对齐 createBranchedSession");
+      assert.ok(content.includes("分支测试第一条"), "祖先链含 fork 点前消息");
+      assert.ok(content.includes("分支测试第二条"), "fork 点消息含在祖先链内（可回填重发）");
+      // 截断验证：header + 4 条祖先链消息（fork 点之后的 assistant/toolResult 不落盘）
+      const lines = content.trim().split("\n");
+      assert.strictEqual(lines.length, 5, "落盘 = header + 截断至 fork 点的消息");
+      // 消息截断：原 6 条（user/assistant/toolResult 交错）→ fork-msg-1 含其自身共 4 条
+      const msgs = api.getMessages();
+      assert.strictEqual(msgs.length, 4, "消息截断至 fork 点");
+      assert.strictEqual(msgs[3].content, "分支测试第二条", "fork 点消息保留（可回填重发）");
+      // 输入框回填被 fork 消息文本（fillPrompt；替换草稿语义对齐 Ctrl+G）
+      assert.strictEqual(api.getTestEventLog().lastFillPrompt, "分支测试第二条");
+      // 会话列表出现新文件（scanSessions 可解析）
+      await waitFor(
+        async () => (await api.getChatSessionList()).some((i) => i.path === sessionFile),
+        10000,
+        "会话列表出现 fork 文件",
+      );
+    });
+
+    test("clone：复制当前分支为新会话文件并切换（副本内容一致）", async function () {
+      this.timeout(60000);
+      const before = api.getCurrentSessionFile();
+      await api.cloneSession();
+      await waitFor(() => api.getCurrentSessionFile() !== before, 15000, "clone 后会话文件变化");
+      const sessionFile = api.getCurrentSessionFile()!;
+      assert.ok(sessionFile.startsWith(sessionDir), "clone 文件落在 sessionDir");
+      assert.ok(fs.existsSync(sessionFile), "clone 文件物理落盘");
+      const content = fs.readFileSync(sessionFile, "utf8");
+      assert.ok(content.includes("分支测试第一条"), "副本含原分支消息");
+      // 消息保持完整（clone 不截断）
+      assert.strictEqual(api.getMessages().length, 4, "clone 后消息完整");
+      await waitFor(
+        async () => (await api.getChatSessionList()).some((i) => i.path === sessionFile),
+        10000,
+        "会话列表出现 clone 文件",
+      );
+    });
+
+    test("FORK-FAIL：error notice + 会话文件不变", async function () {
+      this.timeout(60000);
+      process.env.PINEL_FAKE_PI_SCENARIO = "FORK-FAIL";
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+        20000,
+        "pi 进程启动（FORK-FAIL）",
+      );
+      const before = api.getCurrentSessionFile();
+      const noticesBefore = api.getTestEventLog().notices.length;
+      await api.forkSession("fork-msg-0");
+      await waitFor(
+        () => api.getTestEventLog().notices.length > noticesBefore,
+        10000,
+        "fork 失败 notice",
+      );
+      const latest = api.getTestEventLog().notices[api.getTestEventLog().notices.length - 1];
+      assert.strictEqual(latest.level, "error");
+      assert.ok(latest.text.startsWith("Fork failed"), `notice 文案: ${latest.text}`);
+      assert.strictEqual(api.getCurrentSessionFile(), before, "失败后会话文件不变");
+      delete process.env.PINEL_FAKE_PI_SCENARIO;
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+        20000,
+        "pi 进程启动（恢复默认场景）",
+      );
+    });
+
+    test("FORK-CANCELLED：info notice + 不刷新 + 不回填", async function () {
+      this.timeout(60000);
+      process.env.PINEL_FAKE_PI_SCENARIO = "FORK-CANCELLED";
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+        20000,
+        "pi 进程启动（FORK-CANCELLED）",
+      );
+      const before = api.getCurrentSessionFile();
+      const fillBefore = api.getTestEventLog().lastFillPrompt;
+      const noticesBefore = api.getTestEventLog().notices.length;
+      await api.forkSession("fork-msg-0");
+      await waitFor(
+        () => api.getTestEventLog().notices.length > noticesBefore,
+        10000,
+        "fork 取消 notice",
+      );
+      const latest = api.getTestEventLog().notices[api.getTestEventLog().notices.length - 1];
+      assert.strictEqual(latest.level, "info");
+      assert.strictEqual(latest.text, "Fork cancelled");
+      assert.strictEqual(api.getCurrentSessionFile(), before, "取消后会话文件不变");
+      assert.strictEqual(api.getTestEventLog().lastFillPrompt, fillBefore, "取消不回填输入框");
+      delete process.env.PINEL_FAKE_PI_SCENARIO;
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+        20000,
+        "pi 进程启动（恢复默认场景）",
+      );
+    });
+
+    test("空会话/无效 entryId：error notice + 状态不变", async function () {
+      this.timeout(60000);
+      // 新建会话清空消息：get_fork_messages 为空、fork 无效 entryId
+      await api.newSession();
+      const before = api.getCurrentSessionFile();
+      const noticesBefore = api.getTestEventLog().notices.length;
+      await api.forkSession("fork-msg-999");
+      await waitFor(
+        () => api.getTestEventLog().notices.length > noticesBefore,
+        10000,
+        "无效 entryId notice",
+      );
+      const latest = api.getTestEventLog().notices[api.getTestEventLog().notices.length - 1];
+      assert.strictEqual(latest.level, "error");
+      assert.ok(latest.text.startsWith("Fork failed"), `notice 文案: ${latest.text}`);
+      assert.strictEqual(api.getCurrentSessionFile(), before, "失败后会话文件不变");
+      // 恢复：回到 fork 前的会话（newSession 后消息为空，需重新产生）
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+        20000,
+        "pi 进程启动（恢复）",
+      );
+      // 供后续 suite 使用：重新产生一条 user 消息（防残留空会话影响断言）
+      await sendAndSettle("分支测试回填");
+    });
+
+    test("流式中 fork：prepareForSessionChange 正常 abort 后执行", async function () {
+      this.timeout(60000);
+      const before = api.getCurrentSessionFile();
+      // ABORTME：慢速流（每事件 400ms），不等待 settle 直接 fork
+      const baseline = api.getSettledCount();
+      void api.sendPrompt("ABORTME 流式中 fork");
+      await new Promise((resolve) => setTimeout(resolve, 300)); // 确保流已开始
+      assert.ok(api.getStatus().isStreaming, "流已开始");
+      await api.forkSession("fork-msg-0");
+      await waitFor(() => api.getCurrentSessionFile() !== before, 15000, "流式中 fork 成功");
+      assert.ok(api.getStatus().isStreaming === false, "abort 后流停止");
     });
   });
 

@@ -138,6 +138,12 @@ export interface FileItem {
   isImage: boolean;
 }
 
+/** 可 fork 的历史用户消息项（宿主 get_fork_messages 防御解析结果镜像）。 */
+export interface ForkMessageItem {
+  entryId: string;
+  text: string;
+}
+
 /** 会话统计（宿主 parseSessionStats 镜像；contextUsage.tokens/percent 可为 null）。 */
 export interface SessionStats {
   sessionFile?: string;
@@ -192,6 +198,7 @@ export type HostMessage =
   | { type: "fillPrompt"; text: string }
   | { type: "sessionTitle"; title: string | undefined }
   | { type: "fileList"; items: FileItem[]; truncated: boolean }
+  | { type: "forkMessages"; messages: ForkMessageItem[] }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {

@@ -5,7 +5,7 @@ import { ChatPanelProvider } from "./chat/panel";
 import { SessionHistoryProvider, revealChatView } from "./chat/session-history-provider";
 import type { SessionListItem } from "./chat/session-history";
 import type { FileItem } from "./chat/file-scanner";
-import type { AgentMessage, ExtensionUiRequest, Model, SlashCommand } from "./rpc/protocol";
+import type { AgentMessage, ExtensionUiRequest, ForkMessage, Model, SlashCommand } from "./rpc/protocol";
 import type { TodoTask } from "./chat/todos";
 import type { QuestionnaireView } from "./chat/questionnaire";
 
@@ -26,6 +26,8 @@ export interface TestEventLog {
   lastSessionStats: { stats: SessionStatsData | null } | undefined;
   /** 最近一次环境段广播（folderName + git；对象包裹区分「未广播」与「广播」）。 */
   lastSessionEnv: { env: SessionEnv } | undefined;
+  /** 最近一次可 fork 消息广播（forkMessages；fork 选择器数据源）。 */
+  lastForkMessages: ForkMessage[] | undefined;
 }
 
 /** 暴露给集成测试的钩子接口（通过扩展 exports 获取）。 */
@@ -64,6 +66,12 @@ export interface PinelTestApi {
   switchSession(sessionPath: string): Promise<void>;
   /** 新建会话（会话历史顶部按钮）。 */
   newSession(): Promise<void>;
+  /** 拉取可 fork 的历史用户消息（get_fork_messages；fork 选择器数据源）。 */
+  getForkMessages(): Promise<void>;
+  /** 从历史用户消息 fork 新会话分支（fork RPC；成功后回填输入框）。 */
+  forkSession(entryId: string): Promise<void>;
+  /** 复制当前活动分支为新会话文件（clone RPC）。 */
+  cloneSession(): Promise<void>;
   /** 重命名会话（双路径：当前→RPC set_session_name，非当前→文件追加）。 */
   renameSession(sessionPath: string, name: string): Promise<void>;
   /** 删除会话（当前会话拒绝；无确认弹窗——UI 层 confirmSessionDelete 负责）。 */
@@ -173,6 +181,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
   let sessionListRefreshCount = 0;
   let lastSessionStats: { stats: SessionStatsData | null } | undefined;
   let lastSessionEnv: { env: SessionEnv } | undefined;
+  let lastForkMessages: ForkMessage[] | undefined;
   ctrl.onChange.event((msg) => {
     if (msg.type === "notice") {
       notices.push({ level: msg.level, text: msg.text });
@@ -195,6 +204,8 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       lastSessionStats = { stats: msg.stats };
     } else if (msg.type === "sessionEnv") {
       lastSessionEnv = { env: msg.env };
+    } else if (msg.type === "forkMessages") {
+      lastForkMessages = msg.messages;
     }
   });
 
@@ -219,6 +230,9 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     getPendingPromptUriPath: () => ctrl.getPendingPromptUri()?.fsPath,
     switchSession: (sessionPath: string) => ctrl.switchSession(sessionPath),
     newSession: () => ctrl.newSession(),
+    getForkMessages: () => ctrl.getForkMessages(),
+    forkSession: (entryId: string) => ctrl.forkSession(entryId),
+    cloneSession: () => ctrl.cloneSession(),
     renameSession: (sessionPath: string, name: string) => ctrl.renameSession(sessionPath, name),
     deleteSession: (sessionPath: string) => ctrl.deleteSession(sessionPath),
     setShowSessionStats: (enabled: boolean) => ctrl.setShowSessionStats(enabled),
@@ -251,6 +265,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
       sessionListRefreshCount,
       lastSessionStats,
       lastSessionEnv,
+      lastForkMessages,
     }),
     waitForSettled: async (timeoutMs: number, baseline?: number) => {
       const deadline = Date.now() + timeoutMs;

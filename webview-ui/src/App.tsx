@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, FileItem, HostMessage, ModelInfo, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { ChatMessage, ChatStatus, FileItem, ForkMessageItem, HostMessage, ModelInfo, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
+import { ForkPopover } from "./components/ForkPopover";
 import { SessionStatsBar } from "./components/SessionStatsBar";
 import { MessageView } from "./components/MessageView";
 import { Notices } from "./components/Notices";
@@ -13,6 +14,7 @@ import { Questionnaire } from "./components/Questionnaire";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import historyIcon from "../../media/history.svg";
 import newSessionIcon from "../../media/new-session.svg";
+import forkIcon from "../../media/fork.svg";
 
 const initialStatus: ChatStatus = {
   processState: "stopped",
@@ -30,8 +32,8 @@ const initialStatus: ChatStatus = {
 
 let noticeSeq = 0;
 
-/** 弹窗互斥：任一时刻只开一个（⚙ 设置面板 / 会话历史）。 */
-type PopoverKind = "config" | "session" | null;
+/** 弹窗互斥：任一时刻只开一个（⚙ 设置面板 / 会话历史 / 分支选择器）。 */
+type PopoverKind = "config" | "session" | "fork" | null;
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -56,6 +58,10 @@ export default function App() {
   const historyBtnRef = useRef<HTMLButtonElement>(null);
   /** 新会话按钮元素引用（锚定不需要，与 historyBtnRef 同组）。 */
   const newSessionBtnRef = useRef<HTMLButtonElement>(null);
+  /** 分支按钮元素引用（ForkPopover 锚定）。 */
+  const forkBtnRef = useRef<HTMLButtonElement>(null);
+  /** 可 fork 的历史用户消息（getForkMessages 响应填充；打开时拉取）。 */
+  const [forkMessages, setForkMessages] = useState<ForkMessageItem[]>([]);
   /** 会话历史列表（header 弹层数据；getSessionList 响应填充）。 */
   const [sessionItems, setSessionItems] = useState<SessionListItem[]>([]);
   /** 会话统计（get_session_stats 推送；null=尚未拉取）。 */
@@ -91,6 +97,9 @@ export default function App() {
         if (msg.status.sessionFile !== sessionFileRef.current) {
           setTools({});
           sessionFileRef.current = msg.status.sessionFile;
+          // 分支弹层数据属于旧会话：关闭弹层并清空，防选中旧 entryId 报错（评审 S2）
+          setPopover((prev) => (prev === "fork" ? null : prev));
+          setForkMessages([]);
         }
         setMessages(msg.messages);
         setStreamBlocks([]);
@@ -181,6 +190,9 @@ export default function App() {
         break;
       case "fileList":
         setFileList(msg.items);
+        break;
+      case "forkMessages":
+        setForkMessages(msg.messages);
         break;
       case "triggerEditPrompt":
         setEditPromptTrigger((v) => v + 1);
@@ -290,6 +302,13 @@ export default function App() {
     vscode.postMessage({ type: "getSessionList" });
   };
 
+  // 分支选择器弹层：打开时拉取可 fork 消息（打开期间快照语义，不实时刷新）
+  const openFork = () => {
+    setPopover((prev) => (prev === "fork" ? null : "fork")); // 已开则关闭（toggle）
+    setForkMessages([]);
+    vscode.postMessage({ type: "getForkMessages" });
+  };
+
   // 选择会话/新会话：乐观置位 switching（controller 的 sessionSwitching 广播在
   // ensureStarted 之后才发，点击到广播之间需本地禁点防重开弹层——HistoryApp 同款）
   const selectSession = (path: string) => {
@@ -336,6 +355,17 @@ export default function App() {
           {sessionTitle ?? "Untitled session"}
         </span>
         <span className="chat-header-buttons">
+          <button
+            ref={forkBtnRef}
+            className="chat-fork-btn"
+            title="Fork from a previous message"
+            aria-label="Fork from a previous message"
+            aria-haspopup="dialog"
+            aria-expanded={popover === "fork"}
+            onClick={openFork}
+            disabled={switching}
+            dangerouslySetInnerHTML={{ __html: forkIcon }}
+          />
           <button
             ref={historyBtnRef}
             className="chat-history-btn"
@@ -432,6 +462,12 @@ export default function App() {
         currentSessionFile={status.sessionFile}
         switching={switching}
         onSelect={selectSession}
+        onClose={() => setPopover(null)}
+      />
+      <ForkPopover
+        anchor={popover === "fork" ? forkBtnRef.current : null}
+        messages={forkMessages}
+        switching={switching}
         onClose={() => setPopover(null)}
       />
     </div>

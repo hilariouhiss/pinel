@@ -59,6 +59,13 @@
  *   SWITCH-LATE-END：switch_session 正常响应后延迟 ~400ms 补发旧流的
  *     agent_end（携带切换前旧消息）——模拟真实 pi 的异步乱序，验证客户端
  *     settle 后迟到事件的代际防护（agent_end 在 isStreaming=false 时丢弃）
+ *   FORK-FAIL：fork 回 success:false（fork 失败；客户端应 notice 且状态不变）
+ *   FORK-CANCELLED：fork 回 data.cancelled:true（session_before_fork 扩展钩子取消）
+ * - get_fork_messages / fork / clone：默认行为（真实 pi 镜像）——get_fork_messages
+ *   从当前消息派生 [{entryId,text}]（仅非空 user 消息）；fork 按 entryId 截断消息
+ *   至选中点并切换会话（设 PINEL_FAKE_PI_SESSION_DIR 时物理落盘新会话文件，
+ *   header 对齐真实 pi createBranchedSession），回 {text,cancelled:false}；
+ *   clone 复制当前会话文件为新文件并切换，回 {cancelled:false}
  * - switch_session / new_session：默认行为（真实 pi 镜像）——switch_session
  *   把当前会话文件回显为传入 sessionPath 并重置消息为 B 会话数据；
  *   new_session 清空消息并生成新会话文件（get_state/get_messages 回读）
@@ -105,6 +112,8 @@ let messages = [];
 let currentSessionFile = "/fake/session.jsonl";
 let currentSessionId = "fake-session";
 let newSessionCount = 0;
+let forkCount = 0;
+let cloneCount = 0;
 /** 当前会话显示名（set_session_name 写入；get_state 镜像 sessionName 字段）。 */
 let currentSessionName = undefined;
 
@@ -195,6 +204,61 @@ function appendSessionInfoToFile(filePath, name) {
   };
   const prefix = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
   fs.appendFileSync(filePath, prefix + JSON.stringify(entry) + "\n", "utf8");
+}
+
+/**
+ * fork 物理落盘：在 PINEL_FAKE_PI_SESSION_DIR 指向的目录写新会话文件
+ * （真实 pi createBranchedSession 镜像：header {type:session,id,timestamp,cwd,
+ * parentSession} + 截断至 fork 点的消息）。未设 env 时返回 null（仅内存态）。
+ */
+function writeBranchedSession(entryIndex) {
+  const dir = process.env.PINEL_FAKE_PI_SESSION_DIR;
+  if (!dir) {
+    return null;
+  }
+  const filePath = path.join(dir, `${Date.now()}_${crypto.randomUUID()}.jsonl`);
+  const lines = [
+    JSON.stringify({
+      type: "session",
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      cwd: process.cwd(),
+      parentSession: currentSessionFile,
+    }),
+  ];
+  for (let i = 0; i <= entryIndex && i < messages.length; i++) {
+    lines.push(JSON.stringify(messages[i]));
+  }
+  fs.writeFileSync(filePath, lines.join("\n") + "\n", "utf8");
+  return filePath;
+}
+
+/** clone 物理落盘：复制当前会话文件内容到新文件；当前文件不存在时写 header + 消息。 */
+function writeCloneSession() {
+  const dir = process.env.PINEL_FAKE_PI_SESSION_DIR;
+  if (!dir) {
+    return null;
+  }
+  const filePath = path.join(dir, `${Date.now()}_${crypto.randomUUID()}.jsonl`);
+  try {
+    const content = fs.readFileSync(currentSessionFile, "utf8");
+    fs.writeFileSync(filePath, content, "utf8");
+  } catch {
+    const lines = [
+      JSON.stringify({
+        type: "session",
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        cwd: process.cwd(),
+        parentSession: currentSessionFile,
+      }),
+    ];
+    for (const m of messages) {
+      lines.push(JSON.stringify(m));
+    }
+    fs.writeFileSync(filePath, lines.join("\n") + "\n", "utf8");
+  }
+  return filePath;
 }
 
 const MODEL = { id: "fake-model", name: "Fake Model", provider: "fake" };
@@ -725,6 +789,86 @@ async function handleCommand(record) {
         // 文件不存在（默认 /fake/session.jsonl 内存态）：仅更新内存态
       }
       respond(id, "set_session_name", true);
+      break;
+    }
+
+    case "get_fork_messages": {
+      // 真实 pi 镜像（agent-session.js getUserMessagesForForking）：
+      // 仅非空 user 消息；entryId 为派生稳定标识（fork 命令回传解析）。
+      const result = [];
+      let userIndex = 0;
+      messages.forEach((m) => {
+        if (m && m.role === "user" && typeof m.content === "string" && m.content.trim()) {
+          result.push({ entryId: `fork-msg-${userIndex}`, text: m.content });
+          userIndex++;
+        }
+      });
+      respond(id, "get_fork_messages", true, { messages: result });
+      break;
+    }
+
+    case "fork": {
+      // 场景检查先于 entryId 校验：FORK-FAIL/FORK-CANCELLED 经 env 激活（restart
+      // 后消息为空时仍生效——对齐 SWITCH-CANCEL 的 SCENARIO 前置模式）
+      if (SCENARIO === "FORK-FAIL") {
+        respond(id, "fork", false, undefined, "Fork failed (fake)");
+        break;
+      }
+      if (SCENARIO === "FORK-CANCELLED") {
+        respond(id, "fork", true, { cancelled: true });
+        break;
+      }
+      const entryId = String(record.entryId ?? "");
+      const match = entryId.match(/^fork-msg-(\d+)$/);
+      const userIndex = match ? parseInt(match[1], 10) : -1;
+      // user 计数 → 数组索引（user 消息在 messages 中与 assistant/toolResult 交错）
+      let entryIndex = -1;
+      let userCount = 0;
+      for (let i = 0; i < messages.length; i++) {
+        if (messages[i] && messages[i].role === "user" && typeof messages[i].content === "string") {
+          if (userCount === userIndex) {
+            entryIndex = i;
+            break;
+          }
+          userCount++;
+        }
+      }
+      if (entryIndex < 0) {
+        respond(id, "fork", false, undefined, "Invalid entry ID for forking");
+        break;
+      }
+      // 流状态复位（S7）：流式中 fork 场景防 get_messages 回读混入旧流残余
+      streaming = false;
+      abortGeneration++;
+      const newFile = writeBranchedSession(entryIndex);
+      forkCount++;
+      currentSessionFile = newFile || `/fake/fork-${forkCount}.jsonl`;
+      currentSessionId = "forked-session";
+      currentSessionName = undefined;
+      // fork 后消息 = 祖先链（截断至 fork 点；真实 pi 语义）
+      messages = messages.slice(0, entryIndex + 1);
+      respond(id, "fork", true, { text: messages[entryIndex].content, cancelled: false });
+      break;
+    }
+
+    case "clone": {
+      // 空会话（无 leaf）时真实 pi 回 success:false（rpc-mode.js）
+      if (SCENARIO === "CLONE-FAIL" || !messages.length) {
+        respond(id, "clone", false, undefined, "Cannot clone session: no current entry selected");
+        break;
+      }
+      if (SCENARIO === "CLONE-CANCELLED") {
+        respond(id, "clone", true, { cancelled: true });
+        break;
+      }
+      streaming = false;
+      abortGeneration++;
+      const newFile = writeCloneSession();
+      cloneCount++;
+      currentSessionFile = newFile || `/fake/clone-${cloneCount}.jsonl`;
+      currentSessionId = "cloned-session";
+      currentSessionName = undefined;
+      respond(id, "clone", true, { cancelled: false });
       break;
     }
 

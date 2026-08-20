@@ -1371,9 +1371,10 @@ body {
   flex: none;
 }
 
-/* 会话历史/新会话按钮（仅图标，作为弹层锚点/独立入口） */
+/* 会话历史/新会话/分支按钮（仅图标，作为弹层锚点/独立入口） */
 .chat-history-btn,
-.chat-new-session-btn {
+.chat-new-session-btn,
+.chat-fork-btn {
   display: flex;
   align-items: center;
   background: none;
@@ -1383,7 +1384,8 @@ body {
 }
 
 .chat-history-btn:disabled,
-.chat-new-session-btn:disabled {
+.chat-new-session-btn:disabled,
+.chat-fork-btn:disabled {
   cursor: default;
   opacity: 0.5;
 }
@@ -1391,14 +1393,16 @@ body {
 /* SVG 图标：尺寸覆写（文件内硬编码 200px）+ path 级主题色
    （fill 在 <path> 上，必须 path 级选择器覆盖 presentation attribute） */
 .chat-history-btn .icon,
-.chat-new-session-btn .icon {
+.chat-new-session-btn .icon,
+.chat-fork-btn .icon {
   width: 16px;
   height: 16px;
   display: block;
 }
 
 .chat-history-btn .icon path,
-.chat-new-session-btn .icon path {
+.chat-new-session-btn .icon path,
+.chat-fork-btn .icon path {
   fill: var(--vscode-descriptionForeground);
 }
 
@@ -1491,6 +1495,108 @@ body {
 .session-popover-empty {
   margin-top: 16px;
   padding-bottom: 8px;
+}
+
+/* ------------------------------------------------------ 分支选择器弹层 */
+.fork-popover-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+.fork-popover {
+  position: fixed;
+  z-index: 100;
+  width: min(240px, calc(100vw - 16px));
+  background: var(--vscode-menu-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-input-border));
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 6px;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+}
+
+.fork-popover-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  padding: 4px 8px 6px;
+}
+
+.fork-popover-list {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.fork-popover-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fork-popover-item:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.fork-popover-item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.fork-popover-index {
+  flex: none;
+  min-width: 16px;
+  text-align: right;
+  color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+}
+
+.fork-popover-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fork-popover-empty {
+  padding: 10px 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.fork-popover-clone {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: none;
+  border-top: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-input-border));
+  border-radius: 0;
+  background: none;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fork-popover-clone:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.fork-popover-clone:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 /* ------------------------------------------------------------ 会话历史 */

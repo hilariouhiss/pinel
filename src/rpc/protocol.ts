@@ -173,6 +173,54 @@ export interface SessionSwitchData {
   cancelled: boolean;
 }
 
+/** 获取可 fork 的历史用户消息（fork 选择器数据源）。 */
+export interface GetForkMessagesCommand {
+  type: "get_fork_messages";
+}
+
+/** 可 fork 的用户消息条目（get_fork_messages 响应成员；仅非空 user message）。 */
+export interface ForkMessage {
+  entryId: string;
+  text: string;
+}
+
+export interface ForkMessagesData {
+  messages: ForkMessage[];
+}
+
+/**
+ * 从历史用户消息创建新会话分支（fork 选择器选中后触发）。
+ * pi 创建新会话文件并自动 rebind（无需再发 switch_session），
+ * 返回 data.text（被 fork 消息原文，客户端可回填输入框供编辑重发）。
+ * 可被 session_before_fork 扩展钩子取消（data.cancelled:true）。
+ */
+export interface ForkCommand {
+  type: "fork";
+  entryId: string;
+}
+
+/**
+ * fork 响应 data。text 可选：cancelled 时 pi 序列化省略该字段
+ * （实测 rpc-mode.js:485），客户端仅 `!cancelled && typeof text === "string"` 时回填。
+ */
+export interface ForkData {
+  text?: string;
+  cancelled: boolean;
+}
+
+/**
+ * 复制当前活动分支为新会话文件并自动 rebind（fork 选择器底部「克隆」项）。
+ * 可被 session_before_fork 扩展钩子取消；空会话（无 leaf）时是
+ * success:false error（"Cannot clone session: no current entry selected"）而非 cancelled。
+ */
+export interface CloneCommand {
+  type: "clone";
+}
+
+export interface CloneData {
+  cancelled: boolean;
+}
+
 /**
  * 设置当前会话显示名（会话重命名链路）。
  * 注意：docs/rpc.md 未收录此命令（文档漂移），实测 pi 0.84.x 实现：
@@ -245,6 +293,9 @@ export type ClientCommand =
   | GetCommandsCommand
   | SwitchSessionCommand
   | NewSessionCommand
+  | GetForkMessagesCommand
+  | ForkCommand
+  | CloneCommand
   | SetSessionNameCommand
   | GetSessionStatsCommand;
 

@@ -12,20 +12,26 @@ import {
   type ClientCommand,
   type CycleModelData,
   type CycleThinkingLevelData,
+  type CloneCommand,
   type ExtensionUiRequest,
+  type ForkCommand,
+  type ForkData,
+  type ForkMessage,
+  type ForkMessagesData,
   type GetAvailableModelsData,
   type GetAvailableThinkingLevelsData,
   type GetCommandsData,
   type GetMessagesData,
   type ImageContent,
   type Model,
+  type NewSessionCommand,
   type QueueUpdateEvent,
   type RpcEvent,
   type RpcRecord,
   type SessionState,
   type SessionStatsData,
-  type SessionSwitchData,
   type SlashCommand,
+  type SwitchSessionCommand,
   type ToolExecutionEndEvent,
   type ToolExecutionStartEvent,
   type ToolExecutionUpdateEvent,
@@ -35,6 +41,7 @@ import { parseSessionStats } from "./session-stats";
 import { readGitStatus, type GitStatus } from "./git-status";
 import { parseTodoTasks, type TodoTask } from "./todos";
 import { parseCommands } from "./commands";
+import { parseForkMessages } from "./fork-messages";
 import { parseModels, parseThinkingLevels } from "./models";
 import type { SessionListItem } from "./session-history";
 import {
@@ -112,6 +119,7 @@ export type OutMessage =
   | { type: "sessionTitle"; title: string | undefined }
   | { type: "fileList"; items: FileItem[]; truncated: boolean }
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
+  | { type: "forkMessages"; messages: ForkMessage[] }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
@@ -756,8 +764,56 @@ export class ChatController {
    * settle 后旧流事件必已消费完。
    */
   async switchSession(sessionPath: string): Promise<void> {
+    await this.runSessionChange(
+      { type: "switch_session", sessionPath },
+      {
+        cancelledNotice: "Session switch cancelled",
+        failedNotice: (err) => `Session switch failed: ${err.message}`,
+      },
+    );
+  }
+
+  /** 新建会话（会话历史顶部按钮）。流程与 switchSession 一致。 */
+  async newSession(): Promise<void> {
+    await this.runSessionChange(
+      { type: "new_session" },
+      {
+        cancelledNotice: "New session cancelled",
+        failedNotice: (err) => `New session failed: ${err.message}`,
+      },
+    );
+  }
+
+  /**
+   * 会话变更（切换/新建/fork/clone）共用骨架。
+   *
+   * 竞态防护（评审 B1 结论）：controller 的 agent_end 无条件替换 messages、
+   * 无代际过滤，旧流迟到事件会覆盖新会话快照——因此流程为
+   * 「abort + 清扫未决 UI → 等待 settle（5s 超时兑底）→ 再发变更命令」,
+   * settle 后旧流事件必已消费完。
+   *
+   * 不变量（评审 M4，重构 switchSession/newSession 的回归兑底）：
+   *  (a) no-workspace / client 不可用早退必须双发 sessionSwitching:false
+   *      （HistoryApp 本地乐观置位依赖它复位，否则面板永久卡「切换中」）；
+   *  (b) sessionSwitching=true 在 ensureStarted + client 校验之后；
+   *  (c) cancelled 分支不走 afterSessionSwitch（onSuccess 仅在 !cancelled 时执行）；
+   *  (d) client 身份校验三处：send 后 + afterSessionSwitch 内 get_messages/get_state 各一次；
+   *  (e) finally 复位 + 广播。
+   *
+   * @param command 变更命令（switch_session/new_session/fork/clone）
+   * @param onSuccess 成功（cancelled:false）回调，在 afterSessionSwitch 之前执行
+   *        （如 fork 回填被 fork 消息文本到输入框）
+   */
+  private async runSessionChange(
+    command: ForkCommand | CloneCommand | SwitchSessionCommand | NewSessionCommand,
+    opts: {
+      cancelledNotice: string;
+      failedNotice: (err: Error) => string;
+      onSuccess?: (data: { cancelled?: boolean; text?: string }) => void;
+    },
+  ): Promise<void> {
     if (this.sessionSwitching) {
-      return; // 防重入：切换/新建进行中忽略（在途操作 finally 自行复位）
+      return; // 防重入：变更进行中忽略（在途操作 finally 自行复位）
     }
     if (!this.workspaceRoot) {
       this.notice("warning", "Open a folder first to use Pinel");
@@ -777,18 +833,19 @@ export class ChatController {
     this.fire({ type: "sessionSwitching", switching: true });
     try {
       await this.prepareForSessionChange(client);
-      const data = await client.send<SessionSwitchData>({ type: "switch_session", sessionPath });
+      const data = await client.send<{ cancelled?: boolean; text?: string }>(command);
       if (this.client !== client) {
         return; // restart 竞态：丢弃迟到响应，不污染新进程状态
       }
       if (data?.cancelled) {
-        this.notice("info", "Session switch cancelled");
+        this.notice("info", opts.cancelledNotice);
         return;
       }
+      opts.onSuccess?.(data);
       await this.afterSessionSwitch(client);
     } catch (err) {
       if (this.client === client) {
-        this.notice("error", `Session switch failed: ${(err as Error).message}`);
+        this.notice("error", opts.failedNotice(err as Error));
       }
     } finally {
       this.sessionSwitching = false;
@@ -796,45 +853,61 @@ export class ChatController {
     }
   }
 
-  /** 新建会话（会话历史顶部按钮）。流程与 switchSession 一致。 */
-  async newSession(): Promise<void> {
-    if (this.sessionSwitching) {
-      return; // 防重入（在途操作 finally 自行复位）
-    }
-    if (!this.workspaceRoot) {
-      this.notice("warning", "Open a folder first to use Pinel");
-      // 同 switchSession：前置 return 补发复位（HistoryApp 本地乐观置位兜底）
-      this.fire({ type: "sessionSwitching", switching: false });
-      return;
-    }
-    await this.ensureStarted();
+  /**
+   * 获取可 fork 的历史用户消息（fork 选择器数据源；防御解析见 fork-messages.ts）。
+   * 失败时 error notice + 广播空列表（webview 弹层显示空态）。
+   */
+  async getForkMessages(): Promise<void> {
     const client = this.client;
     if (!client?.isRunning) {
-      this.notice("error", "pi process unavailable, click Restart on the banner");
-      this.fire({ type: "sessionSwitching", switching: false });
+      this.notice("warning", "pi process unavailable, cannot load fork messages");
+      this.fire({ type: "forkMessages", messages: [] });
       return;
     }
-    this.sessionSwitching = true;
-    this.fire({ type: "sessionSwitching", switching: true });
     try {
-      await this.prepareForSessionChange(client);
-      const data = await client.send<SessionSwitchData>({ type: "new_session" });
+      const data = await client.send<ForkMessagesData>({ type: "get_fork_messages" });
       if (this.client !== client) {
-        return; // restart 竞态：丢弃迟到响应
+        return; // restart 竞态：丢弃迟到结果，不污染新进程状态
       }
-      if (data?.cancelled) {
-        this.notice("info", "New session cancelled");
-        return;
-      }
-      await this.afterSessionSwitch(client);
+      this.fire({ type: "forkMessages", messages: parseForkMessages(data) });
     } catch (err) {
       if (this.client === client) {
-        this.notice("error", `New session failed: ${(err as Error).message}`);
+        this.notice("error", `Failed to load fork messages: ${(err as Error).message}`);
+        this.fire({ type: "forkMessages", messages: [] });
       }
-    } finally {
-      this.sessionSwitching = false;
-      this.fire({ type: "sessionSwitching", switching: false });
     }
+  }
+
+  /**
+   * 从历史用户消息 fork 新会话分支（fork 选择器选中后触发）。
+   * pi 创建新会话文件并自动 rebind（无需再发 switch_session）；
+   * 成功后把被 fork 消息原文回填输入框（fillPrompt，替换草稿语义对齐 Ctrl+G），
+   * 供用户直接发送或编辑后重发（「从这里重新开始」语义）。
+   */
+  async forkSession(entryId: string): Promise<void> {
+    await this.runSessionChange(
+      { type: "fork", entryId },
+      {
+        cancelledNotice: "Fork cancelled",
+        failedNotice: (err) => `Fork failed: ${err.message}`,
+        onSuccess: (data) => {
+          if (typeof data.text === "string" && data.text.length > 0) {
+            this.fire({ type: "fillPrompt", text: data.text });
+          }
+        },
+      },
+    );
+  }
+
+  /** 复制当前活动分支为新会话文件（fork 选择器底部「克隆」项）。 */
+  async cloneSession(): Promise<void> {
+    await this.runSessionChange(
+      { type: "clone" },
+      {
+        cancelledNotice: "Clone cancelled",
+        failedNotice: (err) => `Clone failed: ${err.message}`,
+      },
+    );
   }
 
   /**
