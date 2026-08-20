@@ -15,15 +15,32 @@ export function TodoPanel({ todos }: Props) {
   const [open, setOpen] = useState(true);
   const visible = todos.filter((t) => t.status !== "deleted");
   const done = visible.filter((t) => t.status === "completed").length;
+  // 折叠态单行：进行中任务优先（第一个 + 多余 +N），无则回落计数
+  const active = visible.filter((t) => t.status === "in_progress");
+  const activeSummary =
+    active.length > 0
+      ? `${active[0].subject}${active[0].activeForm ? ` · ${active[0].activeForm}` : ""}${
+          active.length > 1 ? ` +${active.length - 1}` : ""
+        }`
+      : null;
 
   return (
     <div className="todopanel">
       <button className="todopanel-head" onClick={() => setOpen(!open)}>
         <span className="todopanel-icon">{open ? "▾" : "▸"}</span>
-        <span className="todopanel-title">Todos</span>
-        <span className="todopanel-count">
-          {done}/{visible.length}
-        </span>
+        {!open && activeSummary ? (
+          <span className="todopanel-task">
+            <span className="todopanel-task-icon">●</span>
+            <span className="todopanel-task-text">{activeSummary}</span>
+          </span>
+        ) : (
+          <>
+            <span className="todopanel-title">Todos</span>
+            <span className="todopanel-count">
+              {done}/{visible.length}
+            </span>
+          </>
+        )}
       </button>
       {open && (
         <div className="todopanel-body">

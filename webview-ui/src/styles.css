@@ -613,7 +613,8 @@ body {
 .todopanel {
   border: 1px solid var(--vscode-input-border);
   border-radius: 6px;
-  margin-bottom: 6px;
+  /* 水平缩进与消息区（padding 8px 10px）和输入卡（margin 0 10px 8px）对齐 */
+  margin: 0 10px 6px;
   overflow: hidden;
   /* 位于输入框上方：限高 30vh 内部滚动，任务多时不挤压消息区与输入框 */
   max-height: 30vh;
@@ -638,6 +639,27 @@ body {
 
 .todopanel-title {
   font-weight: 600;
+}
+
+/* 折叠态单行：进行中任务（● + 文本，超长 ellipsis 截断） */
+.todopanel-task {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.todopanel-task-icon {
+  flex-shrink: 0;
+  color: var(--vscode-focusBorder, #007acc);
+}
+
+.todopanel-task-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .todopanel-count {
