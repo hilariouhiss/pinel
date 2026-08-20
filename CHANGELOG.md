@@ -8,6 +8,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- footer 单卡片融合：会话信息条与输入框/按钮行融合为一张大卡片（边框/背景/圆角/聚焦高亮统一到外层容器，消除两卡片交汇处圆角不平整；信息条无分隔线显示在卡片内底部，开关关闭时无残留）；按钮行紧凑化：设置/发送/停止按钮边长 ≈27px（随字号自适应）、图标 16→12px、行距收紧，footer 总高度约降 12px
+
 - 图标更新：fork 按钮改用仓库分支风格图标（fork-repo.svg）；活动栏/视图头图标改用 π 品牌镂空字形（pi-glyph.svg，VS Code mask 遮罩渲染要求镂空轮廓）；新增扩展市场发布图标（pi-icon.svg，package.json 顶层 `icon` 字段）
 
 - 会话分支/回溯：顶部栏「分支」按钮（fork-repo.svg）弹出历史用户消息选择器（数据源 pi `get_fork_messages`，序号 + 单行截断预览），选中即从该消息 fork 出新会话文件并自动切换（原会话保留在历史列表可返回；被 fork 消息原文回填输入框，可直接发送或编辑后重发）；弹层底部「Clone current branch」复制当前分支为新会话（clone RPC）；空态/失败/扩展钩子取消均有兜底提示；防御解析 `parseForkMessages`（对齐 commands.ts 模式）
