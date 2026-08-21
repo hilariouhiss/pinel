@@ -10,6 +10,9 @@ esbuild.js
 vsc-extension-quickstart.md
 AGENTS.md
 .pi/**
+.codegraph/**
+.github/**
+scripts/**
 **/tsconfig.json
 **/eslint.config.mjs
 **/*.map
