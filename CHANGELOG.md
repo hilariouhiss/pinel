@@ -8,6 +8,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- 待办状态图标 SVG 化：todo 列表任务状态改用图标（todo.svg 空圈/in-progressing.svg 半填充圆/done.svg 勾选圆，主题自适应：pending 前景色/in_progress 蓝/completed 绿；折叠态单行用 in-progressing 图标）
+
+- Maple Mono NF 字体补齐 Bold + Italic 字重（panel.ts 注册 400 normal / 700 normal / 400 italic 三个 @font-face），加粗/斜体不再合成（faux）
+
+- 全扩展统一字体：聊天面板与会话历史视图整体改用 Maple Mono NF（`media/fonts/MapleMono-NF-Regular.ttf`，SIL OFL 1.1），styles.css `:root` 定义 `--pinel-font-family`/`--pinel-mono-font-family` 变量（UI 文本与代码块均以 Maple Mono NF 领先，回退 VS Code 字体）
+
 - 扩展管理：footer 卡片 ⚙ 设置按钮旁新增「扩展」按钮（extension.svg 图标）弹出扩展管理弹层——浏览已安装的 pi 智能体扩展（本地扩展 + settings.json packages 分组，含全局/项目徽标与 filtered 标记），每项提供启用/禁用开关（本地 = 文件重命名 .ts/.js↔.disabled、包 = settings.json 字符串↔对象空数组）与卸载按钮（本地 = 删除文件/目录、npm/git 包 = `pi remove`、本地路径包 = 删 settings 条目）；卸载前确认，任何修改后弹「Reload」确认（点击重启 pi 使变更生效）；不提供安装
 
 - 待办面板对齐与折叠：面板左右边缘与聊天消息/输入框对齐（10px 水平缩进统一）；折叠后仅剩一行并显示进行中任务（● 任务名 · 状态，多个进行中任务显示第一个 +N，无进行中任务时回落显示任务计数），点击一行展开/收起

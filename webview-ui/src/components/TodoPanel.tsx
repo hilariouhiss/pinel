@@ -1,5 +1,9 @@
 import { useState } from "react";
 import type { TodoTask } from "../types";
+// SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题/状态色）
+import todoIcon from "../../../media/todo.svg";
+import inProgressIcon from "../../../media/in-progressing.svg";
+import doneIcon from "../../../media/done.svg";
 
 interface Props {
   todos: TodoTask[];
@@ -30,7 +34,7 @@ export function TodoPanel({ todos }: Props) {
         <span className="todopanel-icon">{open ? "▾" : "▸"}</span>
         {!open && activeSummary ? (
           <span className="todopanel-task">
-            <span className="todopanel-task-icon">●</span>
+            <span className="todopanel-task-icon" dangerouslySetInnerHTML={{ __html: inProgressIcon }} />
             <span className="todopanel-task-text">{activeSummary}</span>
           </span>
         ) : (
@@ -46,9 +50,13 @@ export function TodoPanel({ todos }: Props) {
         <div className="todopanel-body">
           {visible.map((task) => (
             <div key={task.id} className={`todotask status-${task.status}`}>
-              <span className="todotask-icon">
-                {task.status === "completed" ? "✓" : task.status === "in_progress" ? "●" : "○"}
-              </span>
+              <span
+                className="todotask-icon"
+                dangerouslySetInnerHTML={{
+                  __html:
+                    task.status === "completed" ? doneIcon : task.status === "in_progress" ? inProgressIcon : todoIcon,
+                }}
+              />
               <span className="todotask-subject">
                 {task.subject}
                 {task.status === "in_progress" && task.activeForm ? ` · ${task.activeForm}` : ""}
