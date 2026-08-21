@@ -164,6 +164,19 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
     }
   };
 
+  // 提交后（提交中/已提交）：收起为一行状态条。用户交互已完成，剩余帧由宿主
+  // 自动回填，无需展示题卡/确认区；不带容器级 Esc（提交后取消无意义，且防
+  // 误触把 walker 后续帧甩入逐卡路径）。App 按 qnaFlowIndex 将其插入消息流
+  // 原位——后续消息（toolResult/流式回复）落在其下方，随消息流上移。
+  if (q.phase === "submitting" || q.phase === "submitted") {
+    return (
+      <div className="qna qna-collapsed">
+        <span className="qna-collapsed-check">✓</span>
+        Questionnaire answered ({answeredCount}/{q.questions.length})
+      </div>
+    );
+  }
+
   return (
     <div
       className="qna"

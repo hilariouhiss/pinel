@@ -420,6 +420,21 @@ body {
   background: color-mix(in srgb, var(--vscode-input-background) 40%, transparent);
 }
 
+/* 提交后收起：一行状态条（App 插入消息流原位，随消息上移） */
+.qna.qna-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-color: var(--vscode-input-border);
+  color: var(--vscode-descriptionForeground);
+}
+
+.qna-collapsed-check {
+  color: var(--vscode-testing-iconPassed, #73c991);
+  font-weight: 700;
+}
+
 .qna-head {
   font-weight: 600;
   font-size: 12px;

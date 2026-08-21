@@ -69,6 +69,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Fixed
 
+- 调查问卷提交后不再钉在消息流底部展开挡住最新消息——点击 Submit 后自动收起为一行状态条「✓ Questionnaire answered (n/n)」并插入消息流原位（提交瞬间的消息位置），后续消息（工具结果/流式回复）出现在其下方随流上移，行为如正常消息；settle 后随问卷清除消失（权威转录中工具结果卡保留答案信封）
+
 - 会话面板卡「切换中」且后续点击无响应——新建/切换会话在「无工作区」「pi 不可用」前置路径返回时不广播切换状态复位（历史面板本地乐观置位后无法恢复）；现所有路径保证广播 `sessionSwitching:false`
 - 次侧边栏容器标题「Pinel 聊天」改为「Pinel」
 - 设置面板改由 `/settings` 命令触发（输入框发送时拦截，不发给模型——pi 的 `/settings` 是 TUI 内置命令，RPC 模式下发送无效），移除状态栏 ⚙ 设置按钮

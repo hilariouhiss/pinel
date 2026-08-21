@@ -85,6 +85,8 @@ export default function App() {
   const [focusDialogId, setFocusDialogId] = useState<string | null>(null);
   /** 问卷推送版本：每次收到 questionnaire 消息（非快照）自增，驱动问卷重新聚焦。 */
   const [qnaFocusVersion, setQnaFocusVersion] = useState(0);
+  /** 问卷提交后收起状态条在消息流中的插入位置（提交瞬间的消息数；null=未捕获/无）。 */
+  const [qnaFlowIndex, setQnaFlowIndex] = useState<number | null>(null);
   /** Ctrl+G 编辑器保存回填（seq 递增驱动 Composer 重复回填）。 */
   const [fill, setFill] = useState<{ seq: number; text: string }>({ seq: 0, text: "" });
   /** Ctrl+G 命令触发版本（宿主 pinel.editPrompt 命令广播；webview 取输入内容发起编辑）。 */
@@ -105,6 +107,9 @@ export default function App() {
           // 分支弹层数据属于旧会话：关闭弹层并清空，防选中旧 entryId 报错（评审 S2）
           setPopover((prev) => (prev === "fork" ? null : prev));
           setForkMessages([]);
+          // 消息列表整体替换：问卷收起条位置失效，置 null 由捕获 effect 重新捕获
+          //（同会话 agent_end 快照不动这里——submitted 问卷尚在，状态条保持原位）
+          setQnaFlowIndex(null);
         }
         setMessages(msg.messages);
         setStreamBlocks([]);
@@ -167,9 +172,15 @@ export default function App() {
       case "questionnaire":
         setQuestionnaire(msg.questionnaire);
         setQnaFocusVersion((v) => v + 1); // 新问卷推送：触发聚焦（快照恢复不触发）
+        // 答题/确认阶段的广播（含重入问卷——enterQuestionnaire 不广播
+        // questionnaireCleared）：旧收起条位置作废，等提交时重新捕获
+        if (msg.questionnaire.phase !== "submitting" && msg.questionnaire.phase !== "submitted") {
+          setQnaFlowIndex(null);
+        }
         break;
       case "questionnaireCleared":
         setQuestionnaire(null);
+        setQnaFlowIndex(null);
         break;
       case "sessionSwitching":
         setSwitching(msg.switching);
@@ -258,6 +269,19 @@ export default function App() {
     }
   }, [messages, streamBlocks, tools, pendingUi]);
 
+  // 问卷提交后收起为一行状态条：捕获提交瞬间的消息数作为流内插入位置。
+  // 答题/确认期间 agent 被对话框阻塞、无新 message 事件，消息数恒定；
+  // 仅位置未知时捕获（同会话 agent_end 快照重放不移动已捕获位置）。
+  useEffect(() => {
+    if (
+      questionnaire &&
+      (questionnaire.phase === "submitting" || questionnaire.phase === "submitted") &&
+      qnaFlowIndex === null
+    ) {
+      setQnaFlowIndex(messages.length);
+    }
+  }, [questionnaire, qnaFlowIndex, messages]);
+
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) {
@@ -267,6 +291,15 @@ export default function App() {
   }, []);
 
   const hasConversation = messages.length > 0 || streamBlocks.length > 0;
+
+  // 问卷提交后收起为一行状态条：插入消息流原位（最后一条已完成消息之后、
+  // 流式气泡之上），后续消息（toolResult/流式回复）落在其下方随流上移——
+  // 行为如正常消息。越界兜底（消息列表被重建且更短）：状态条回落末尾。
+  const qnaCollapsed =
+    questionnaire !== null &&
+    (questionnaire.phase === "submitting" || questionnaire.phase === "submitted");
+  const qnaMid =
+    qnaFlowIndex !== null && qnaFlowIndex <= messages.length ? qnaFlowIndex : messages.length;
 
   // 启动动画（阶段 2）：pi 启动/重启期间且无会话内容；error（错误横幅）与
   // no-workspace（引导文案）态有各自 UI，不覆盖
@@ -452,8 +485,14 @@ export default function App() {
             </div>
           </div>
         )}
-        {messages.map((m, i) => (
+        {messages.slice(0, qnaMid).map((m, i) => (
           <MessageView key={`m-${i}`} message={m} tools={tools} />
+        ))}
+        {qnaCollapsed && questionnaire && (
+          <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />
+        )}
+        {messages.slice(qnaMid).map((m, i) => (
+          <MessageView key={`m-${qnaMid + i}`} message={m} tools={tools} />
         ))}
         {streamBlocks.length > 0 && (
           <MessageView
@@ -464,7 +503,9 @@ export default function App() {
           />
         )}
         <UiDialogs requests={pendingUi} />
-        {questionnaire && <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />}
+        {!qnaCollapsed && questionnaire && (
+          <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />
+        )}
       </div>
       {todos.length > 0 && <TodoPanel todos={todos} />}
       {banner}
