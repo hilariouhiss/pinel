@@ -5,6 +5,7 @@ import { ChatPanelProvider } from "./chat/panel";
 import { SessionHistoryProvider, revealChatView } from "./chat/session-history-provider";
 import type { SessionListItem } from "./chat/session-history";
 import type { FileItem } from "./chat/file-scanner";
+import type { ExtensionItem, ExtensionKind, ExtensionScope } from "./chat/extensions";
 import type { AgentMessage, ExtensionUiRequest, ForkMessage, Model, SlashCommand } from "./rpc/protocol";
 import type { TodoTask } from "./chat/todos";
 import type { QuestionnaireView } from "./chat/questionnaire";
@@ -68,6 +69,12 @@ export interface PinelTestApi {
   newSession(): Promise<void>;
   /** 拉取可 fork 的历史用户消息（get_fork_messages；fork 选择器数据源）。 */
   getForkMessages(): Promise<void>;
+  /** 扫描 pi 智能体扩展列表（本地扩展 + settings.json packages 合并）。 */
+  getExtensionList(): Promise<ExtensionItem[]>;
+  /** 启停扩展（本地重命名 / 包 settings 编辑；无确认弹窗）。 */
+  setExtensionEnabled(id: string, kind: ExtensionKind, scope: ExtensionScope, enabled: boolean): Promise<void>;
+  /** 卸载扩展（本地删除 / 包 pi remove 或 settings 编辑；无确认弹窗——UI 层 seam 负责）。 */
+  uninstallExtension(id: string, kind: ExtensionKind, scope: ExtensionScope, source: string): Promise<void>;
   /** 从历史用户消息 fork 新会话分支（fork RPC；成功后回填输入框）。 */
   forkSession(entryId: string): Promise<void>;
   /** 复制当前活动分支为新会话文件（clone RPC）。 */
@@ -231,6 +238,9 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     switchSession: (sessionPath: string) => ctrl.switchSession(sessionPath),
     newSession: () => ctrl.newSession(),
     getForkMessages: () => ctrl.getForkMessages(),
+    getExtensionList: () => ctrl.getExtensionList(),
+    setExtensionEnabled: (id, kind, scope, enabled) => ctrl.setExtensionEnabled(id, kind, scope, enabled),
+    uninstallExtension: (id, kind, scope, source) => ctrl.uninstallExtension(id, kind, scope, source),
     forkSession: (entryId: string) => ctrl.forkSession(entryId),
     cloneSession: () => ctrl.cloneSession(),
     renameSession: (sessionPath: string, name: string) => ctrl.renameSession(sessionPath, name),

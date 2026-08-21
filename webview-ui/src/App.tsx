@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, FileItem, ForkMessageItem, HostMessage, ModelInfo, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { ChatMessage, ChatStatus, ExtensionItem, FileItem, ForkMessageItem, HostMessage, ModelInfo, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
+import { ExtensionPopover } from "./components/ExtensionPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
 import { ForkPopover } from "./components/ForkPopover";
 import { SessionStatsBar } from "./components/SessionStatsBar";
@@ -32,8 +33,8 @@ const initialStatus: ChatStatus = {
 
 let noticeSeq = 0;
 
-/** 弹窗互斥：任一时刻只开一个（⚙ 设置面板 / 会话历史 / 分支选择器）。 */
-type PopoverKind = "config" | "session" | "fork" | null;
+/** 弹窗互斥：任一时刻只开一个（⚙ 设置面板 / 扩展管理 / 会话历史 / 分支选择器）。 */
+type PopoverKind = "config" | "session" | "fork" | "ext" | null;
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -60,8 +61,12 @@ export default function App() {
   const newSessionBtnRef = useRef<HTMLButtonElement>(null);
   /** 分支按钮元素引用（ForkPopover 锚定）。 */
   const forkBtnRef = useRef<HTMLButtonElement>(null);
+  /** 扩展按钮元素引用（ExtensionPopover 锚定；按钮在 Composer footer 内渲染）。 */
+  const extensionBtnRef = useRef<HTMLButtonElement>(null);
   /** 可 fork 的历史用户消息（getForkMessages 响应填充；打开时拉取）。 */
   const [forkMessages, setForkMessages] = useState<ForkMessageItem[]>([]);
+  /** 扩展列表（getExtensionList 响应填充；打开时拉取，启停/卸载后宿主重发）。 */
+  const [extensions, setExtensions] = useState<ExtensionItem[]>([]);
   /** 会话历史列表（header 弹层数据；getSessionList 响应填充）。 */
   const [sessionItems, setSessionItems] = useState<SessionListItem[]>([]);
   /** 会话统计（get_session_stats 推送；null=尚未拉取）。 */
@@ -194,6 +199,9 @@ export default function App() {
       case "forkMessages":
         setForkMessages(msg.messages);
         break;
+      case "extensionList":
+        setExtensions(msg.items);
+        break;
       case "triggerEditPrompt":
         setEditPromptTrigger((v) => v + 1);
         break;
@@ -307,6 +315,36 @@ export default function App() {
     setPopover((prev) => (prev === "fork" ? null : "fork")); // 已开则关闭（toggle）
     setForkMessages([]);
     vscode.postMessage({ type: "getForkMessages" });
+  };
+
+  // 扩展管理弹层：打开时拉取列表（每次打开实时扫描）
+  const openExtensions = () => {
+    setPopover((prev) => (prev === "ext" ? null : "ext")); // 已开则关闭（toggle）
+    setExtensions([]);
+    vscode.postMessage({ type: "getExtensionList" });
+  };
+
+  // 启停扩展：发 setExtensionEnabled（宿主执行后重发列表 + reload 提示）
+  const toggleExtension = (item: ExtensionItem, enabled: boolean) => {
+    vscode.postMessage({
+      type: "setExtensionEnabled",
+      id: item.id,
+      kind: item.kind,
+      scope: item.scope,
+      enabled,
+    });
+  };
+
+  // 卸载扩展：发 uninstallExtension（宿主确认后执行 + 重发列表 + reload 提示）
+  const uninstallExtension = (item: ExtensionItem) => {
+    vscode.postMessage({
+      type: "uninstallExtension",
+      id: item.id,
+      kind: item.kind,
+      scope: item.scope,
+      source: item.source,
+      name: item.name,
+    });
   };
 
   // 选择会话/新会话：乐观置位 switching（controller 的 sessionSwitching 广播在
@@ -439,6 +477,9 @@ export default function App() {
           editPromptTrigger={editPromptTrigger}
           settingsOpen={popover === "config"}
           onOpenSettings={openConfig}
+          extensionOpen={popover === "ext"}
+          onOpenExtensions={openExtensions}
+          extensionBtnRef={extensionBtnRef}
           fileList={fileList}
         />
         {status.showSessionStats && <SessionStatsBar stats={sessionStats} env={sessionEnv} />}
@@ -468,6 +509,13 @@ export default function App() {
         anchor={popover === "fork" ? forkBtnRef.current : null}
         messages={forkMessages}
         switching={switching}
+        onClose={() => setPopover(null)}
+      />
+      <ExtensionPopover
+        anchor={popover === "ext" ? extensionBtnRef.current : null}
+        items={extensions}
+        onToggle={toggleExtension}
+        onUninstall={uninstallExtension}
         onClose={() => setPopover(null)}
       />
     </div>

@@ -997,6 +997,7 @@ body {
   color: var(--vscode-button-foreground);
   cursor: pointer;
   font-size: 13px;
+  padding: 0;
 }
 
 .composer-send:disabled {
@@ -1008,9 +1009,10 @@ body {
    选择器才能覆盖 presentation attribute；文件内 #707070 保留作兜底） */
 .composer-send .icon,
 .composer-stop .icon,
-.status-settings-btn .icon {
-  width: 12px;
-  height: 12px;
+.status-settings-btn .icon,
+.status-extensions-btn .icon {
+  width: 14px;
+  height: 14px;
   display: block;
 }
 
@@ -1051,6 +1053,23 @@ body {
 }
 
 .status-settings-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* 下半扩展按钮：与设置按钮同型（无背景描边，图标主题自适应）；
+   与设置按钮间距拉大（视觉上不挨在一起） */
+.status-extensions-btn {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  margin-left: 10px;
+}
+
+.status-extensions-btn:disabled {
   cursor: default;
   opacity: 0.5;
 }
@@ -1123,6 +1142,10 @@ body {
 /* ------------------------------------------------------------------ 配置面板 */
 /* 设置按钮图标：随描述文字色（fill 在 <path> 上，path 级选择器覆盖） */
 .status-settings-btn .icon path {
+  fill: var(--vscode-descriptionForeground);
+}
+
+.status-extensions-btn .icon path {
   fill: var(--vscode-descriptionForeground);
 }
 
@@ -1619,6 +1642,138 @@ body {
 .fork-popover-clone:disabled {
   cursor: default;
   opacity: 0.5;
+}
+
+/* ------------------------------------------------------ 扩展管理弹层 */
+.extension-popover-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+.extension-popover {
+  position: fixed;
+  z-index: 100;
+  width: min(260px, calc(100vw - 16px));
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--vscode-menu-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-input-border));
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 6px;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+}
+
+.extension-popover-section + .extension-popover-section {
+  border-top: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-input-border));
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.extension-popover-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  padding: 4px 8px;
+}
+
+.extension-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.extension-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.extension-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.extension-item-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.extension-item-badge {
+  flex: none;
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--vscode-badge-background, var(--vscode-button-background));
+  color: var(--vscode-badge-foreground, var(--vscode-button-foreground));
+}
+
+.extension-item-tag {
+  flex: none;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.extension-item-toggle {
+  flex: none;
+  min-width: 34px;
+  padding: 2px 6px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  background: none;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.extension-item-toggle.on {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.extension-item-delete {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.extension-item-delete:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.extension-item-delete .icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.extension-item-delete .icon path {
+  fill: var(--vscode-descriptionForeground);
+}
+
+.extension-item-delete:hover .icon path {
+  fill: var(--vscode-errorForeground);
+}
+
+.extension-popover-empty {
+  padding: 10px 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
 }
 
 /* ------------------------------------------------------------ 会话历史 */

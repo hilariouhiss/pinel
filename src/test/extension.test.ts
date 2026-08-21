@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { PinelTestApi } from "../extension";
-import { confirmSessionDelete } from "../chat/controller";
+import { confirmExtensionReload, confirmExtensionUninstall, confirmSessionDelete } from "../chat/controller";
 
 /** 读取假 pi 日志中的所有记录。 */
 function readFakePiLog(logPath: string): Array<Record<string, unknown>> {
@@ -2226,6 +2226,117 @@ suite("Pinel 集成测试（假 pi）", () => {
       // 收尾：手动关闭新标签页，保持 pending 干净（后续测试无残留）
       await closeTabFor(secondPath);
       await waitFor(() => api.getPendingPromptUriPath() === undefined, 10000, "收尾清理");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 扩展管理（本地扩展 + settings.json packages；纯文件操作不依赖 pi 进程）
+  // -------------------------------------------------------------------------
+
+  suite("扩展管理（本地扩展 + packages）", () => {
+    let agentDir: string;
+
+    suiteSetup(async () => {
+      agentDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pinel-agent-dir-"));
+      await fs.promises.mkdir(path.join(agentDir, "extensions"), { recursive: true });
+      process.env.PI_CODING_AGENT_DIR = agentDir;
+    });
+
+    suiteTeardown(async () => {
+      delete process.env.PI_CODING_AGENT_DIR;
+      await fs.promises.rm(agentDir, { recursive: true, force: true });
+    });
+
+    test("getExtensionList：本地扩展 + packages 合并（enabled/filtered/scope 判定）", async function () {
+      this.timeout(30000);
+      await fs.promises.writeFile(path.join(agentDir, "extensions", "foo.ts"), "export default () => {}");
+      await fs.promises.writeFile(path.join(agentDir, "extensions", "off.ts.disabled"), "export default () => {}");
+      await fs.promises.writeFile(
+        path.join(agentDir, "settings.json"),
+        JSON.stringify({
+          packages: [
+            "npm:a",
+            { source: "npm:b", extensions: [], skills: [], prompts: [], themes: [] },
+            { source: "npm:c", extensions: [] },
+          ],
+        }),
+      );
+      const items = await api.getExtensionList();
+      const byName = new Map(items.map((i) => [i.name, i]));
+      assert.strictEqual(byName.get("foo")?.kind, "local");
+      assert.strictEqual(byName.get("foo")?.enabled, true);
+      assert.strictEqual(byName.get("off")?.enabled, false);
+      assert.strictEqual(byName.get("a")?.kind, "package");
+      assert.strictEqual(byName.get("a")?.enabled, true);
+      assert.strictEqual(byName.get("b")?.enabled, false);
+      assert.strictEqual(byName.get("c")?.enabled, true);
+      assert.strictEqual(byName.get("c")?.filtered, true);
+      for (const i of items) {
+        assert.strictEqual(i.scope, "global");
+      }
+    });
+
+    test("setExtensionEnabled：本地重命名往返 + 包 settings 编辑往返", async function () {
+      this.timeout(30000);
+      const foo = path.join(agentDir, "extensions", "foo.ts");
+      // 本地禁用 → 启用
+      await api.setExtensionEnabled(foo, "local", "global", false);
+      assert.ok(!fs.existsSync(foo), "foo.ts 应被重命名");
+      assert.ok(fs.existsSync(`${foo}.disabled`), "foo.ts.disabled 应存在");
+      await api.setExtensionEnabled(foo, "local", "global", true);
+      assert.ok(fs.existsSync(foo), "foo.ts 应恢复");
+
+      // 包禁用 → 启用（settings.json round-trip，保留其他键）
+      const settingsPath = path.join(agentDir, "settings.json");
+      await api.setExtensionEnabled("npm:a", "package", "global", false);
+      let parsed = JSON.parse(await fs.promises.readFile(settingsPath, "utf8"));
+      assert.deepStrictEqual(parsed.packages[0], {
+        source: "npm:a",
+        extensions: [],
+        skills: [],
+        prompts: [],
+        themes: [],
+      });
+      await api.setExtensionEnabled("npm:a", "package", "global", true);
+      parsed = JSON.parse(await fs.promises.readFile(settingsPath, "utf8"));
+      assert.deepStrictEqual(parsed.packages[0], "npm:a");
+    });
+
+    test("uninstallExtension：本地删除 + 本地路径包 settings 条目移除", async function () {
+      this.timeout(30000);
+      // 本地删除（foo.ts 已在上一测试恢复启用）
+      const foo = path.join(agentDir, "extensions", "foo.ts");
+      await api.uninstallExtension(foo, "local", "global", foo);
+      assert.ok(!fs.existsSync(foo), "本地扩展应被删除");
+
+      // 本地路径包：不触发 pi remove（pi remove 不支持 local source）
+      const settingsPath = path.join(agentDir, "settings.json");
+      const parsed = JSON.parse(await fs.promises.readFile(settingsPath, "utf8"));
+      const packages = [...parsed.packages, "./local-ext"];
+      await fs.promises.writeFile(settingsPath, JSON.stringify({ ...parsed, packages }));
+      await api.uninstallExtension("./local-ext", "package", "global", "./local-ext");
+      const after = JSON.parse(await fs.promises.readFile(settingsPath, "utf8"));
+      assert.ok(!after.packages.includes("./local-ext"), "本地路径包应从 settings 移除");
+    });
+
+    test("卸载确认 seam + reload 提示 seam：拒绝/接受两条路径", async function () {
+      this.timeout(30000);
+      const warnOrig = vscode.window.showWarningMessage;
+      const infoOrig = vscode.window.showInformationMessage;
+      try {
+        vscode.window.showWarningMessage = (async () => undefined) as typeof vscode.window.showWarningMessage;
+        assert.strictEqual(await confirmExtensionUninstall("x"), false);
+        vscode.window.showWarningMessage = (async () => "Uninstall") as typeof vscode.window.showWarningMessage;
+        assert.strictEqual(await confirmExtensionUninstall("x"), true);
+
+        vscode.window.showInformationMessage = (async () => undefined) as typeof vscode.window.showInformationMessage;
+        assert.strictEqual(await confirmExtensionReload(), false);
+        vscode.window.showInformationMessage = (async () => "Reload") as typeof vscode.window.showInformationMessage;
+        assert.strictEqual(await confirmExtensionReload(), true);
+      } finally {
+        vscode.window.showWarningMessage = warnOrig;
+        vscode.window.showInformationMessage = infoOrig;
+      }
     });
   });
 });

@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { RpcClient } from "../rpc/client";
+import { spawn } from "node:child_process";
+import { RpcClient, resolveSpawnSpec } from "../rpc/client";
 import { PromptEditorManager } from "./prompt-editor";
 import { parseSessionMeta, scanSessions, toItem, resolveSessionsRoot, appendSessionName } from "./session-history";
 import { scanWorkspaceFiles, imageMimeType, isImageFile, type FileItem, type ScanResult } from "./file-scanner";
@@ -43,6 +44,19 @@ import { parseCommands } from "./commands";
 import { parseForkMessages } from "./fork-messages";
 import { parseModels, parseThinkingLevels } from "./models";
 import type { SessionListItem } from "./session-history";
+import {
+  defaultAgentDir,
+  projectConfigDir,
+  removePackageFromSettings,
+  scanLocalExtensions,
+  scanPackages,
+  setLocalExtensionEnabled,
+  setPackageEnabled,
+  uninstallLocalExtension,
+  type ExtensionItem,
+  type ExtensionKind,
+  type ExtensionScope,
+} from "./extensions";
 import {
   inputResponseFor,
   parseQuestionnaireAnswer,
@@ -119,6 +133,7 @@ export type OutMessage =
   | { type: "fileList"; items: FileItem[]; truncated: boolean }
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "forkMessages"; messages: ForkMessage[] }
+  | { type: "extensionList"; items: ExtensionItem[] }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
@@ -711,6 +726,95 @@ export class ChatController {
       this.notice("warning", "Many workspace files, @ file list truncated (limit 1000)");
     }
     return result;
+  }
+
+  // -------------------------------------------------------------------------
+  // 扩展管理（浏览/启停/卸载；见 extensions.ts 头注释）
+  // -------------------------------------------------------------------------
+
+  /**
+   * 扫描 pi 智能体扩展列表（本地扩展 + settings.json packages 合并）。
+   * 纯文件操作，不依赖 pi 进程状态（pi 未启动时也能浏览/管理）。
+   */
+  async getExtensionList(): Promise<ExtensionItem[]> {
+    const agentDir = defaultAgentDir();
+    const root = this.workspaceRoot;
+    const projectDir = root ? projectConfigDir(root) : undefined;
+    const local = await scanLocalExtensions(
+      path.join(agentDir, "extensions"),
+      projectDir ? path.join(projectDir, "extensions") : undefined,
+    );
+    const packages = await scanPackages(
+      path.join(agentDir, "settings.json"),
+      projectDir ? path.join(projectDir, "settings.json") : undefined,
+    );
+    return [...local, ...packages];
+  }
+
+  /**
+   * 启停扩展：本地 = 文件重命名；包 = settings.json 字符串 ↔ 对象空数组。
+   * 失败 notice（不抛）；成功后由面板层刷新列表 + reload 提示。
+   */
+  async setExtensionEnabled(
+    id: string,
+    kind: ExtensionKind,
+    scope: ExtensionScope,
+    enabled: boolean,
+  ): Promise<void> {
+    try {
+      if (kind === "local") {
+        await setLocalExtensionEnabled(id, enabled);
+      } else {
+        await setPackageEnabled(this.settingsPathForScope(scope), id, enabled);
+      }
+    } catch (err) {
+      this.notice("error", `Failed to ${enabled ? "enable" : "disable"} extension: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * 卸载扩展：本地 = 删除文件/目录；包 = npm/git 走 `pi remove`、本地路径包删 settings 条目。
+   * 确认弹窗不在本方法内（UI 层 confirmExtensionUninstall，PinelTestApi 直调不卡框）。
+   */
+  async uninstallExtension(
+    id: string,
+    kind: ExtensionKind,
+    scope: ExtensionScope,
+    source: string,
+  ): Promise<void> {
+    try {
+      if (kind === "local") {
+        await uninstallLocalExtension(source);
+      } else if (/^(npm:|git:)/.test(source) || /^(https?|ssh|git):\/\//.test(source)) {
+        await this.removePackageViaCli(source, scope);
+      } else {
+        // 本地路径包：pi remove 不支持 local source（抛 Unsupported remove source）
+        await removePackageFromSettings(this.settingsPathForScope(scope), source);
+      }
+    } catch (err) {
+      this.notice("error", `Failed to uninstall extension: ${(err as Error).message}`);
+    }
+  }
+
+  /** scope → settings.json 路径（全局 = <agentDir>/settings.json；项目 = .pi/settings.json）。 */
+  private settingsPathForScope(scope: ExtensionScope): string {
+    if (scope === "project") {
+      const root = this.workspaceRoot;
+      if (!root) {
+        throw new Error("no workspace folder");
+      }
+      return path.join(projectConfigDir(root), "settings.json");
+    }
+    return path.join(defaultAgentDir(), "settings.json");
+  }
+
+  /** spawn `pi remove <source> [-l]`（官方卸载路径：npm uninstall + git 清理 + settings 清理）。 */
+  private removePackageViaCli(source: string, scope: ExtensionScope): Promise<void> {
+    const command = this.resolvePiCommand();
+    const args = ["remove", source, ...(scope === "project" ? ["-l"] : [])];
+    // 项目 scope 需在 workspace 根执行（.pi/settings.json 解析）；全局用 agentDir 即可
+    const cwd = scope === "project" ? (this.workspaceRoot ?? defaultAgentDir()) : defaultAgentDir();
+    return runPiCommand(command, args, cwd);
   }
 
   /** 文本文件引用最大字节数（超限截断 + notice）。 */
@@ -2118,6 +2222,68 @@ export async function confirmSessionDelete(sessionPath: string): Promise<boolean
     "Delete",
   );
   return pick === "Delete";
+}
+
+/**
+ * 卸载扩展确认（UI 层共享 seam，聊天面板 handler 调用）。
+ * 包 vscode.window.showWarningMessage：返回 true 仅当用户点击「Uninstall」。
+ * 独立导出以便集成测试 stub showWarningMessage 后直调覆盖拒绝/接受两条路径。
+ */
+export async function confirmExtensionUninstall(name: string): Promise<boolean> {
+  const pick = await vscode.window.showWarningMessage(
+    `Uninstall extension "${name}"? This cannot be undone.`,
+    { modal: true },
+    "Uninstall",
+  );
+  return pick === "Uninstall";
+}
+
+/**
+ * 扩展修改后的 reload 提示（原生确认框，点「Reload」才重载 pi）。
+ * 独立导出以便集成测试 stub showInformationMessage 后直调覆盖两条路径。
+ */
+export async function confirmExtensionReload(): Promise<boolean> {
+  const pick = await vscode.window.showInformationMessage(
+    "Extension changed. Reload pi to apply changes?",
+    "Reload",
+  );
+  return pick === "Reload";
+}
+
+/**
+ * 一次性 spawn pi 子命令（`pi remove`），复用 client.ts 的 Windows shim 解析
+ *（where.exe → .cmd 优先 + cmd.exe /d /s /c + verbatim 参数）。
+ * 非零退出/超时抛错（stderr 兜底信息）。
+ */
+function runPiCommand(command: string, args: string[], cwd: string, timeoutMs = 30000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const spec = resolveSpawnSpec(command, args, cwd);
+    const child = spawn(spec.cmd, spec.args, spec.options);
+    let stderr = "";
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        // 已退出
+      }
+      reject(new Error("pi command timed out"));
+    }, timeoutMs);
+    child.stderr?.on("data", (d: Buffer | string) => {
+      stderr += String(d);
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(stderr.trim() || `pi exited with code ${code}`));
+      }
+    });
+  });
 }
 
 export type { AgentMessage };

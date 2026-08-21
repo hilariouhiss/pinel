@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { confirmSessionDelete, type ChatController, type OutMessage } from "./controller";
+import { confirmExtensionReload, confirmExtensionUninstall, confirmSessionDelete, type ChatController, type OutMessage } from "./controller";
 
 interface WebviewPromptMessage {
   type: "sendPrompt";
@@ -138,6 +138,27 @@ interface WebviewGetFileListMessage {
   type: "getFileList";
 }
 
+interface WebviewGetExtensionListMessage {
+  type: "getExtensionList";
+}
+
+interface WebviewSetExtensionEnabledMessage {
+  type: "setExtensionEnabled";
+  id: string;
+  kind: "local" | "package";
+  scope: "global" | "project";
+  enabled: boolean;
+}
+
+interface WebviewUninstallExtensionMessage {
+  type: "uninstallExtension";
+  id: string;
+  kind: "local" | "package";
+  scope: "global" | "project";
+  source: string;
+  name: string;
+}
+
 type WebviewInMessage =
   | WebviewPromptMessage
   | WebviewAbortMessage
@@ -167,6 +188,9 @@ type WebviewInMessage =
   | WebviewForkMessage
   | WebviewCloneSessionMessage
   | WebviewGetFileListMessage
+  | WebviewGetExtensionListMessage
+  | WebviewSetExtensionEnabledMessage
+  | WebviewUninstallExtensionMessage
   | WebviewReadyMessage;
 
 /**
@@ -319,6 +343,31 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       case "getFileList":
         void this.postFileList();
         break;
+      case "getExtensionList":
+        void this.postExtensionList();
+        break;
+      case "setExtensionEnabled":
+        void (async () => {
+          await this.controller.setExtensionEnabled(msg.id, msg.kind, msg.scope, msg.enabled);
+          await this.postExtensionList();
+          if (await confirmExtensionReload()) {
+            await this.controller.restart();
+          }
+        })();
+        break;
+      case "uninstallExtension":
+        void (async () => {
+          // 破坏性操作：确认后再卸载（共享 seam，PinelTestApi 直调不卡框）
+          if (!(await confirmExtensionUninstall(msg.name))) {
+            return;
+          }
+          await this.controller.uninstallExtension(msg.id, msg.kind, msg.scope, msg.source);
+          await this.postExtensionList();
+          if (await confirmExtensionReload()) {
+            await this.controller.restart();
+          }
+        })();
+        break;
       case "toggleSessionStats":
         // 开关是 pinel UI 偏好（不依赖 pi 运行）：取当前 status 值翻转
         void this.controller.setShowSessionStats(!this.controller.getStatus().showSessionStats);
@@ -333,6 +382,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       this.post({ type: "fileList", items, truncated });
     } catch {
       // 扫描异常：不弹 notice（弹窗空列表即可），仅忽略
+    }
+  }
+
+  /** 扫描扩展列表并回发（扩展管理弹层数据源；每次打开/操作后实时扫描）。 */
+  private async postExtensionList(): Promise<void> {
+    try {
+      const items = await this.controller.getExtensionList();
+      this.post({ type: "extensionList", items });
+    } catch {
+      // 扫描异常：不弹 notice（弹层空列表即可），仅忽略
     }
   }
 

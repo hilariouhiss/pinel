@@ -1,0 +1,323 @@
+import * as assert from "assert";
+import { promises as fs } from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import {
+  defaultAgentDir,
+  packageDisplayName,
+  projectConfigDir,
+  resolveAgentDir,
+  scanLocalExtensions,
+  scanPackages,
+  setLocalExtensionEnabled,
+  setPackageEnabled,
+  uninstallLocalExtension,
+} from "../chat/extensions";
+
+/** 建临时目录，测试结束清理。 */
+async function tmpdir(prefix: string): Promise<string> {
+  return fs.mkdtemp(path.join(os.tmpdir(), prefix));
+}
+
+async function write(p: string, content: string): Promise<void> {
+  await fs.mkdir(path.dirname(p), { recursive: true });
+  await fs.writeFile(p, content, "utf8");
+}
+
+suite("resolveAgentDir", () => {
+  test("优先 PI_CODING_AGENT_DIR env", () => {
+    assert.strictEqual(
+      resolveAgentDir("/home/u", { PI_CODING_AGENT_DIR: "/custom/agent" }),
+      "/custom/agent",
+    );
+  });
+
+  test("空 env 回退 ~/.pi/agent", () => {
+    assert.strictEqual(resolveAgentDir("/home/u", {}), path.join("/home/u", ".pi", "agent"));
+    assert.strictEqual(resolveAgentDir("/home/u", { PI_CODING_AGENT_DIR: "  " }), path.join("/home/u", ".pi", "agent"));
+  });
+
+  test("defaultAgentDir 使用 os.homedir + process.env（真实环境不抛错）", () => {
+    assert.ok(defaultAgentDir().length > 0);
+  });
+
+  test("projectConfigDir 拼接 .pi", () => {
+    assert.strictEqual(projectConfigDir("/ws"), path.join("/ws", ".pi"));
+  });
+});
+
+suite("packageDisplayName", () => {
+  test("npm 裸名 / 带版本 / scope", () => {
+    assert.strictEqual(packageDisplayName("npm:pi-web-access"), "pi-web-access");
+    assert.strictEqual(packageDisplayName("npm:pi-web-access@1.0.0"), "pi-web-access");
+    assert.strictEqual(packageDisplayName("npm:@scope/pkg"), "pkg");
+    assert.strictEqual(packageDisplayName("npm:@scope/pkg@2.0.0"), "pkg");
+  });
+
+  test("git / url / 本地路径", () => {
+    assert.strictEqual(packageDisplayName("git:github.com/user/repo@v1"), "repo");
+    assert.strictEqual(packageDisplayName("https://github.com/user/repo@v1"), "repo");
+    assert.strictEqual(packageDisplayName("/abs/path/my-ext"), "my-ext");
+    assert.strictEqual(packageDisplayName("./rel/ext-dir"), "ext-dir");
+  });
+});
+
+suite("scanLocalExtensions", () => {
+  test("布局：顶层 .ts/.js + 子目录 index.ts + .disabled 判定", async () => {
+    const dir = await tmpdir("pinel-ext-");
+    try {
+      await write(path.join(dir, "foo.ts"), "export default () => {}");
+      await write(path.join(dir, "bar.js"), "module.exports = () => {}");
+      await write(path.join(dir, "off.ts.disabled"), "export default () => {}");
+      await write(path.join(dir, "sub", "index.ts"), "export default () => {}");
+      await write(path.join(dir, "suboff", "index.js.disabled"), "module.exports = () => {}");
+      await write(path.join(dir, "skip.txt"), "not an extension");
+
+      const items = await scanLocalExtensions(dir);
+      const byName = new Map(items.map((i) => [i.name, i]));
+      assert.strictEqual(items.length, 5);
+      assert.strictEqual(byName.get("foo")?.enabled, true);
+      assert.strictEqual(byName.get("bar")?.enabled, true);
+      assert.strictEqual(byName.get("off")?.enabled, false);
+      assert.strictEqual(byName.get("off")?.id, path.join(dir, "off.ts"));
+      assert.strictEqual(byName.get("sub")?.enabled, true);
+      assert.strictEqual(byName.get("sub")?.source, path.join(dir, "sub")); // 目录样式卸载目标=目录
+      assert.strictEqual(byName.get("suboff")?.enabled, false);
+      assert.ok(!byName.has("skip"));
+      for (const i of items) {
+        assert.strictEqual(i.scope, "global");
+        assert.strictEqual(i.kind, "local");
+      }
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("跳过 dotfiles 与 node_modules", async () => {
+    const dir = await tmpdir("pinel-ext-");
+    try {
+      await write(path.join(dir, ".hidden.ts"), "x");
+      await write(path.join(dir, "node_modules", "pkg", "index.ts"), "x");
+      await write(path.join(dir, "real.ts"), "x");
+      const items = await scanLocalExtensions(dir);
+      assert.deepStrictEqual(items.map((i) => i.name), ["real"]);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test(".gitignore 过滤（目录尾斜杠）", async () => {
+    const dir = await tmpdir("pinel-ext-");
+    try {
+      await write(path.join(dir, ".gitignore"), "ignored/\nvendor.ts\n");
+      await write(path.join(dir, "ignored", "index.ts"), "x");
+      await write(path.join(dir, "vendor.ts"), "x");
+      await write(path.join(dir, "kept.ts"), "x");
+      const items = await scanLocalExtensions(dir);
+      assert.deepStrictEqual(items.map((i) => i.name), ["kept"]);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("目录不存在 → 空列表；全局+项目合并", async () => {
+    const g = await tmpdir("pinel-ext-g-");
+    const p = await tmpdir("pinel-ext-p-");
+    try {
+      await write(path.join(g, "g.ts"), "x");
+      await write(path.join(p, "p.ts"), "x");
+      const items = await scanLocalExtensions(path.join(g, "missing"), p);
+      assert.deepStrictEqual(items.map((i) => i.name), ["p"]);
+      assert.strictEqual(items[0].scope, "project");
+    } finally {
+      await fs.rm(g, { recursive: true, force: true });
+      await fs.rm(p, { recursive: true, force: true });
+    }
+  });
+});
+
+suite("setLocalExtensionEnabled", () => {
+  test("禁用/启用重命名往返（文件样式）", async () => {
+    const dir = await tmpdir("pinel-ext-");
+    try {
+      const file = path.join(dir, "foo.ts");
+      await write(file, "x");
+      await setLocalExtensionEnabled(file, false);
+      assert.ok(await exists(`${file}.disabled`));
+      assert.ok(!(await exists(file)));
+      await setLocalExtensionEnabled(file, true);
+      assert.ok(await exists(file));
+      assert.ok(!(await exists(`${file}.disabled`)));
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+suite("uninstallLocalExtension", () => {
+  test("文件样式：删除文件 + .disabled 变体", async () => {
+    const dir = await tmpdir("pinel-ext-");
+    try {
+      const file = path.join(dir, "foo.ts");
+      await write(`${file}.disabled`, "x");
+      await uninstallLocalExtension(file);
+      assert.ok(!(await exists(`${file}.disabled`)));
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("目录样式：递归删除目录", async () => {
+    const dir = await tmpdir("pinel-ext-");
+    try {
+      await write(path.join(dir, "sub", "index.ts"), "x");
+      await write(path.join(dir, "sub", "helper.ts"), "x");
+      await uninstallLocalExtension(path.join(dir, "sub"));
+      assert.ok(!(await exists(path.join(dir, "sub"))));
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+suite("scanPackages", () => {
+  async function withSettings(content: string): Promise<string> {
+    const dir = await tmpdir("pinel-settings-");
+    const p = path.join(dir, "settings.json");
+    await write(p, content);
+    return p;
+  }
+
+  test("字符串=启用；对象全类型空数组=禁用；部分过滤=启用+filtered；autoload:false=禁用", async () => {
+    const p = await withSettings(
+      JSON.stringify({
+        packages: [
+          "npm:a",
+          { source: "npm:b", extensions: [], skills: [], prompts: [], themes: [] },
+          { source: "npm:c", extensions: [] },
+          { source: "npm:d", autoload: false },
+        ],
+      }),
+    );
+    try {
+      const items = await scanPackages(p);
+      const byId = new Map(items.map((i) => [i.id, i]));
+      assert.strictEqual(items.length, 4);
+      assert.deepStrictEqual(
+        { enabled: byId.get("npm:a")?.enabled, filtered: byId.get("npm:a")?.filtered },
+        { enabled: true, filtered: undefined },
+      );
+      assert.deepStrictEqual(
+        { enabled: byId.get("npm:b")?.enabled, filtered: byId.get("npm:b")?.filtered },
+        { enabled: false, filtered: undefined },
+      );
+      assert.deepStrictEqual(
+        { enabled: byId.get("npm:c")?.enabled, filtered: byId.get("npm:c")?.filtered },
+        { enabled: true, filtered: true },
+      );
+      assert.strictEqual(byId.get("npm:d")?.enabled, false);
+      for (const i of items) {
+        assert.strictEqual(i.kind, "package");
+        assert.strictEqual(i.scope, "global");
+      }
+    } finally {
+      await fs.rm(path.dirname(p), { recursive: true, force: true });
+    }
+  });
+
+  test("packages 非数组 / 文件不存在 → 空列表（不抛错）", async () => {
+    const p = await withSettings(JSON.stringify({ packages: "oops" }));
+    try {
+      assert.deepStrictEqual(await scanPackages(p), []);
+    } finally {
+      await fs.rm(path.dirname(p), { recursive: true, force: true });
+    }
+    const dir = await tmpdir("pinel-settings-");
+    try {
+      assert.deepStrictEqual(await scanPackages(path.join(dir, "nope.json")), []);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("全局+项目合并（scope 区分）", async () => {
+    const g = await withSettings(JSON.stringify({ packages: ["npm:g"] }));
+    const p = await withSettings(JSON.stringify({ packages: ["npm:p"] }));
+    try {
+      const items = await scanPackages(g, p);
+      assert.strictEqual(items.length, 2);
+      assert.strictEqual(items.find((i) => i.id === "npm:g")?.scope, "global");
+      assert.strictEqual(items.find((i) => i.id === "npm:p")?.scope, "project");
+    } finally {
+      await fs.rm(path.dirname(g), { recursive: true, force: true });
+      await fs.rm(path.dirname(p), { recursive: true, force: true });
+    }
+  });
+});
+
+suite("setPackageEnabled", () => {
+  test("字符串 → 禁用：写入对象空数组，保留其他键", async () => {
+    const dir = await tmpdir("pinel-settings-");
+    const p = path.join(dir, "settings.json");
+    await write(p, JSON.stringify({ defaultModel: "m1", packages: ["npm:a", "npm:b"] }));
+    try {
+      await setPackageEnabled(p, "npm:a", false);
+      const parsed = JSON.parse(await fs.readFile(p, "utf8")) as Record<string, unknown>;
+      assert.strictEqual(parsed.defaultModel, "m1");
+      assert.deepStrictEqual(parsed.packages, [
+        { source: "npm:a", extensions: [], skills: [], prompts: [], themes: [] },
+        "npm:b",
+      ]);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("禁用 → 启用：恢复字符串形式", async () => {
+    const dir = await tmpdir("pinel-settings-");
+    const p = path.join(dir, "settings.json");
+    await write(
+      p,
+      JSON.stringify({ packages: [{ source: "npm:a", extensions: [], skills: [], prompts: [], themes: [] }] }),
+    );
+    try {
+      await setPackageEnabled(p, "npm:a", true);
+      const parsed = JSON.parse(await fs.readFile(p, "utf8")) as Record<string, unknown>;
+      assert.deepStrictEqual(parsed.packages, ["npm:a"]);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("source 不存在 → 抛错", async () => {
+    const dir = await tmpdir("pinel-settings-");
+    const p = path.join(dir, "settings.json");
+    await write(p, JSON.stringify({ packages: ["npm:a"] }));
+    try {
+      await assert.rejects(() => setPackageEnabled(p, "npm:missing", false), /not found/);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("损坏 JSON → 抛错且不覆盖原文件", async () => {
+    const dir = await tmpdir("pinel-settings-");
+    const p = path.join(dir, "settings.json");
+    await write(p, "{ not valid json ");
+    try {
+      await assert.rejects(() => setPackageEnabled(p, "npm:a", false), /not valid JSON/);
+      assert.strictEqual(await fs.readFile(p, "utf8"), "{ not valid json ");
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+async function exists(p: string): Promise<boolean> {
+  try {
+    await fs.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}

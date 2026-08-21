@@ -6,6 +6,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
   type MouseEvent,
+  type RefObject,
 } from "react";
 import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
@@ -14,6 +15,7 @@ import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
 import sendIcon from "../../../media/send.svg";
 import stopIcon from "../../../media/stop.svg";
 import settingsIcon from "../../../media/settings.svg";
+import extensionIcon from "../../../media/extension.svg";
 
 interface Props {
   status: ChatStatus;
@@ -28,6 +30,12 @@ interface Props {
   settingsOpen?: boolean;
   /** 下半 ⚙ 设置按钮（toggle 打开配置面板）。 */
   onOpenSettings?: () => void;
+  /** 扩展管理弹层开合态（下半扩展按钮 aria-expanded）。 */
+  extensionOpen?: boolean;
+  /** 下半扩展按钮（toggle 打开扩展管理弹层）。 */
+  onOpenExtensions?: () => void;
+  /** 扩展按钮元素引用（App 持有，ExtensionPopover 锚定用）。 */
+  extensionBtnRef?: RefObject<HTMLButtonElement | null>;
   /** 工作区文件列表（@ 添加文件数据；App 持有，getFileList 响应填充）。 */
   fileList?: FileItem[];
 }
@@ -80,6 +88,9 @@ export function Composer({
   editPromptTrigger = 0,
   settingsOpen = false,
   onOpenSettings,
+  extensionOpen = false,
+  onOpenExtensions,
+  extensionBtnRef,
   fileList = [],
 }: Props) {
   const [text, setText] = useState("");
@@ -463,6 +474,17 @@ export function Composer({
           onClick={onOpenSettings}
           disabled={!onOpenSettings}
           dangerouslySetInnerHTML={{ __html: settingsIcon }}
+        />
+        <button
+          ref={extensionBtnRef}
+          className="status-extensions-btn"
+          title="Extensions"
+          aria-label="Extensions"
+          aria-haspopup="dialog"
+          aria-expanded={extensionOpen}
+          onClick={onOpenExtensions}
+          disabled={!onOpenExtensions}
+          dangerouslySetInnerHTML={{ __html: extensionIcon }}
         />
         <span className="footer-actions-spacer" />
         {busy ? (

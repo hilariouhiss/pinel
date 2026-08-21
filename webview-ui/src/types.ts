@@ -144,6 +144,24 @@ export interface ForkMessageItem {
   text: string;
 }
 
+/** 扩展作用域/类型（与宿主 extensions.ts 对齐）。 */
+export type ExtensionScope = "global" | "project";
+export type ExtensionKind = "local" | "package";
+
+/** pi 智能体扩展列表项（宿主扫描结果镜像）。 */
+export interface ExtensionItem {
+  /** 唯一键：本地 = 入口文件绝对路径（不含 .disabled）；包 = source spec。 */
+  id: string;
+  kind: ExtensionKind;
+  name: string;
+  scope: ExtensionScope;
+  enabled: boolean;
+  /** 包对象形式仅部分过滤。 */
+  filtered?: boolean;
+  /** 卸载目标：本地 = 文件/目录绝对路径；包 = source spec。 */
+  source: string;
+}
+
 /** 会话统计（宿主 parseSessionStats 镜像；contextUsage.tokens/percent 可为 null）。 */
 export interface SessionStats {
   sessionFile?: string;
@@ -199,6 +217,7 @@ export type HostMessage =
   | { type: "sessionTitle"; title: string | undefined }
   | { type: "fileList"; items: FileItem[]; truncated: boolean }
   | { type: "forkMessages"; messages: ForkMessageItem[] }
+  | { type: "extensionList"; items: ExtensionItem[] }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {
