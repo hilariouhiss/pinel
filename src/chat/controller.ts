@@ -552,6 +552,15 @@ export class ChatController {
       return;
     }
 
+    // /new 本地拦截：pi 的 slash 命令 interactive-only，RPC 模式不展开（rpc-mode.js
+    // 零 slash 逻辑、get_commands 不含内置命令）——精确匹配且无附件时改走 newSession。
+    // 流式中 runSessionChange 会 abort 并等 settle 后新建；与在途会话变更并发时
+    // runSessionChange 防重入静默返回（窗口极小，输入已清空，接受现状）。
+    if (input.text.trim() === "/new" && !input.images?.length && !input.fileRefs?.length) {
+      await this.newSession();
+      return;
+    }
+
     const images: ImageContent[] = (input.images ?? []).map((img) => ({
       type: "image",
       data: img.data,

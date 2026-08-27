@@ -8,6 +8,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- `/new` 新建会话：输入框发送 `/new` 直接新建会话（pi 的 slash 命令 RPC 模式不展开，pinel 本地拦截——精确匹配且无附件时改走 `new_session`，带参数/附件原样发送；流式中自动中断并新建；旧会话保留在历史列表可随时切回）
+
 - 图标全面迁移 lucide：webview 全部 UI 图标改用 lucide（lucide-static 1.34.0，ISC）——发送/停止（send/square）、设置/扩展（settings/puzzle）、历史/新建/分支（history/plus/git-fork）、搜索（search）、行内编辑/删除（pencil/trash-2）、统计条（arrow-up/arrow-down/dollar-sign/database 缓存命中率）与待办三态（circle/circle-dot/circle-check-big）；统计条 git 分支符号由 Maple Mono NF 字型（U+F418）改为 lucide git-branch 内联 SVG；主题自适应简化为容器级 color 继承（lucide stroke=currentColor），删除全部 path 级 fill 覆盖规则；旧手绘图标从 media/ 移除（pi-glyph.svg/pi-icon.png 品牌图标保留）
 
 - 待办状态图标 SVG 化：todo 列表任务状态改用图标（todo.svg 空圈/in-progressing.svg 半填充圆/done.svg 勾选圆，主题自适应：pending 前景色/in_progress 蓝/completed 绿；折叠态单行用 in-progressing 图标）

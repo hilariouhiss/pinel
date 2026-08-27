@@ -1249,6 +1249,59 @@ suite("Pinel 集成测试（假 pi）", () => {
       assert.ok(news.length >= 1, "new_session 命令送达");
     });
 
+    test("/new 命令：本地拦截并新建会话", async function () {
+      this.timeout(60000);
+      const oldFile = api.getCurrentSessionFile();
+      await api.sendPrompt("/new");
+      await waitFor(
+        () => api.getCurrentSessionFile() !== undefined && api.getCurrentSessionFile() !== oldFile,
+        10000,
+        "新会话文件生成",
+      );
+      assert.deepStrictEqual(api.getMessages(), [], "新建后消息清空");
+      // /new 不得作为 prompt 送达 pi（精确匹配断言免疫跨测试累积；
+      // 不得断言「最近 in 为 new_session」——后随 get_messages/get_state 入站）
+      const records = readFakePiLog(logPath);
+      const slashPrompts = records.filter((r) => {
+        const rec = r.record as { dir?: string; record?: { type?: string; message?: string } } | undefined;
+        return rec?.dir === "in" && rec?.record?.type === "prompt" && rec?.record?.message === "/new";
+      });
+      assert.strictEqual(slashPrompts.length, 0, "/new 不得作为 prompt 送达 pi");
+    });
+
+    test("/new 带参数时原样送达 pi（不拦截）", async function () {
+      this.timeout(60000);
+      const marker = `/new extra-${Date.now()}`;
+      const before = api.getCurrentSessionFile();
+      const baseline = api.getSettledCount();
+      await api.sendPrompt(marker);
+      await api.waitForSettled(30000, baseline);
+      const records = readFakePiLog(logPath);
+      const after = recordsAfterPrompt(records, marker);
+      const promptRecs = logRecordsWith(after, "in", "prompt");
+      assert.ok(promptRecs.length >= 1, "/new 带参数必须作为 prompt 送达");
+      assert.strictEqual(api.getCurrentSessionFile(), before, "带参数不得触发新建");
+    });
+
+    test("流式中 /new：abort 后新建会话", async function () {
+      this.timeout(60000);
+      const before = api.getCurrentSessionFile();
+      // ABORTME：慢速流（每事件 400ms），不等待 settle 直接发 /new
+      void api.sendPrompt("ABORTME 流式中 /new");
+      await new Promise((resolve) => setTimeout(resolve, 300)); // 确保流已开始
+      assert.ok(api.getStatus().isStreaming, "流已开始");
+      await api.sendPrompt("/new");
+      await waitFor(() => api.getCurrentSessionFile() !== before, 15000, "流式中 /new 成功");
+      assert.ok(api.getStatus().isStreaming === false, "abort 后流停止");
+      // 拦截早退在 isStreaming 分支之前：/new 不得转为 steer 送达
+      const records = readFakePiLog(logPath);
+      const steers = records.filter((r) => {
+        const rec = r.record as { dir?: string; record?: { type?: string; message?: string } } | undefined;
+        return rec?.dir === "in" && rec?.record?.type === "steer" && rec?.record?.message === "/new";
+      });
+      assert.strictEqual(steers.length, 0, "/new 不得转为 steer 送达");
+    });
+
     test("SWITCH-CANCEL：切换被取消 → 状态保持 + info notice", async function () {
       this.timeout(60000);
       process.env.PINEL_FAKE_PI_SCENARIO = "SWITCH-CANCEL";
@@ -2146,6 +2199,25 @@ suite("Pinel 集成测试（假 pi）", () => {
       );
       // 注：settle 后用户消息为权威列表（含 <file> markup）——显示层剥离由
       // MessageView 处理（webview 逻辑，宿主不可断言，F5 覆盖）
+    });
+
+    test("/new 带 fileRefs 时原样发送（不拦截）", async function () {
+      this.timeout(60000);
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+      const relNote = path.relative(root, path.join(fixtureDir, "note.txt")).replace(/\\/g, "/");
+      const before = api.getCurrentSessionFile();
+      const baseline = api.getSettledCount();
+      await api.sendPrompt("/new", [relNote]);
+      await api.waitForSettled(30000, baseline);
+      // prompt 送达且以 /new 开头（attachFileRefs 在文本后追加 <file> 内容）
+      const records = readFakePiLog(logPath);
+      const promptRecs = logRecordsWith(records, "in", "prompt");
+      const rec = (promptRecs[promptRecs.length - 1] as { record?: { record?: { message?: unknown } } })
+        ?.record?.record;
+      const msg = String(rec?.message ?? "");
+      assert.ok(msg.startsWith("/new"), "带 fileRefs 的 /new 必须原样送达");
+      assert.ok(msg.includes("<file name="), "fileRefs 注入必须保留");
+      assert.strictEqual(api.getCurrentSessionFile(), before, "带 fileRefs 不得触发新建");
     });
   });
 
