@@ -483,7 +483,28 @@ export function Composer({
         onBlur={() => vscode.postMessage({ type: "inputFocus", focused: false })}
       />
       <div className="footer-actions">
-        {/* 模型/思考 chip：常显当前值，点击弹锚定下拉切换（唯一切换入口）；
+        <button
+          className="status-settings-btn"
+          title="Settings"
+          aria-label="Settings"
+          aria-haspopup="dialog"
+          aria-expanded={settingsOpen}
+          onClick={onOpenSettings}
+          disabled={!onOpenSettings}
+          dangerouslySetInnerHTML={{ __html: settingsIcon }}
+        />
+        <button
+          ref={extensionBtnRef}
+          className="status-extensions-btn"
+          title="Extensions"
+          aria-label="Extensions"
+          aria-haspopup="dialog"
+          aria-expanded={extensionOpen}
+          onClick={onOpenExtensions}
+          disabled={!onOpenExtensions}
+          dangerouslySetInnerHTML={{ __html: extensionIcon }}
+        />
+        {/* 模型/思考 chip：常显当前值（设置/扩展按钮右侧），点击弹锚定下拉切换（唯一切换入口）；
             无模型时模型 chip 禁用、思考 chip 隐藏（对齐 ConfigPopover 思考行先例）；
             流式中不禁用（变更自下一回合生效） */}
         {status.model === null ? (
@@ -516,27 +537,6 @@ export function Composer({
             <span className="composer-chip-label">{status.thinkingLevel}</span>
           </button>
         )}
-        <button
-          className="status-settings-btn"
-          title="Settings"
-          aria-label="Settings"
-          aria-haspopup="dialog"
-          aria-expanded={settingsOpen}
-          onClick={onOpenSettings}
-          disabled={!onOpenSettings}
-          dangerouslySetInnerHTML={{ __html: settingsIcon }}
-        />
-        <button
-          ref={extensionBtnRef}
-          className="status-extensions-btn"
-          title="Extensions"
-          aria-label="Extensions"
-          aria-haspopup="dialog"
-          aria-expanded={extensionOpen}
-          onClick={onOpenExtensions}
-          disabled={!onOpenExtensions}
-          dangerouslySetInnerHTML={{ __html: extensionIcon }}
-        />
         <span className="footer-actions-spacer" />
         {busy ? (
           <button

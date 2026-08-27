@@ -1085,18 +1085,19 @@ body {
 }
 
 /* 模型/思考 chip：常显当前值，点击弹锚定下拉切换（唯一切换入口）；
-   文本型按钮（区别于图标按钮），超长省略号截断，tooltip 显示完整 provider/id */
+   高度/字号与同排图标按钮统一（高度同发送/停止的 calc 式，字号随 VS Code）；
+   超长省略号截断，tooltip 显示完整 provider/id */
 .composer-chip {
   display: inline-flex;
   align-items: center;
   max-width: 140px;
-  padding: 0 8px;
-  height: 20px;
+  padding: 0 10px;
+  height: calc(var(--vscode-font-size) * 1.5 + 8px);
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 5px;
   color: var(--vscode-descriptionForeground);
-  font-size: 11px;
+  font-size: var(--vscode-font-size);
   font-family: var(--pinel-font-family);
   cursor: pointer;
 }
