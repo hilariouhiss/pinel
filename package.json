@@ -16,10 +16,6 @@
     "Chat",
     "Other"
   ],
-  "activationEvents": [
-    "onView:pinel.chatView",
-    "onView:pinel.sessionHistory"
-  ],
   "main": "./dist/extension.js",
   "icon": "media/pi-icon.png",
   "contributes": {
