@@ -26,8 +26,12 @@ export type QuestionnaireAnswer =
 
 export type QuestionnairePhase = "answering" | "reviewing" | "submitting" | "submitted";
 
-/** 广播给 webview 的问卷视图（不含回填游标等宿主内部状态）。 */
+/** 广播给 webview 的问卷视图（不含回填游标等宿主内部状态）。
+ * id：本次问卷实例的稳定标识（ask_user_question 的 toolCallId）。webview 端每条
+ * postMessage 都是结构化克隆的新对象，questions 引用比较恒为真，重入判定必须
+ * 按 id 比较而非引用比较。 */
 export interface QuestionnaireView {
+  id: string;
   questions: QuestionnaireQuestion[];
   answers: Array<QuestionnaireAnswer | null>;
   phase: QuestionnairePhase;

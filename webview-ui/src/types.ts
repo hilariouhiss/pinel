@@ -114,8 +114,10 @@ export type QuestionnaireAnswer =
 
 export type QuestionnairePhase = "answering" | "reviewing" | "submitting" | "submitted";
 
-/** 问卷视图（宿主权威状态的镜像）。 */
+/** 问卷视图（宿主权威状态的镜像）。id：问卷实例稳定标识，webview 重入判定按 id 比较
+ * （postMessage 结构化克隆使 questions 引用比较恒为真）。 */
 export interface QuestionnaireView {
+  id: string;
   questions: QuestionnaireQuestion[];
   answers: Array<QuestionnaireAnswer | null>;
   phase: QuestionnairePhase;

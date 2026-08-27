@@ -493,12 +493,14 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.strictEqual(q.phase, "answering");
     assert.strictEqual(q.questions[0].question, "问题一？");
     assert.strictEqual(q.questions[1].multiSelect, true);
+    assert.strictEqual(q.id, "qna_1", "问卷 id 必须来自 tool_execution_start 的 toolCallId");
 
     // 答题：Q1 选 A、Q2 多选 1/3、Q3 自定义
     api.questionnaireAnswer(0, { kind: "option", optionIndex: 0 });
     api.questionnaireAnswer(1, { kind: "multi", optionIndices: [2, 0] });
     api.questionnaireAnswer(2, { kind: "custom", text: "自定义三" });
     await waitFor(() => api.getQuestionnaire()?.phase === "reviewing", 5000, "全答完转 reviewing");
+    assert.strictEqual(api.getQuestionnaire()?.id, "qna_1", "答题广播后问卷 id 必须保持稳定");
 
     // 确认前修改：Q1 改答 B（最终答案为准）
     api.questionnaireAnswer(0, { kind: "option", optionIndex: 1 });
@@ -559,12 +561,15 @@ suite("Pinel 集成测试（假 pi）", () => {
     const baseline = api.getSettledCount();
     await api.sendPrompt(marker);
     await waitFor(() => (api.getQuestionnaire()?.questions.length ?? 0) === 3, 10000, "问卷进入");
+    const qnaId = api.getQuestionnaire()?.id;
+    assert.ok(qnaId, "问卷必须有稳定 id");
 
     // 问卷期间穿插的通用 select（标题不匹配任何题目）→ 逐卡广播
     await waitFor(() => api.getPendingUi().length > 0, 10000, "通用对话框逐卡广播");
     const pending = api.getPendingUi()[0];
     assert.strictEqual(pending.id, "ui-generic-1", "必须广播通用对话框而非缓冲");
     assert.notStrictEqual(api.getQuestionnaire(), null, "问卷保持活动");
+    assert.strictEqual(api.getQuestionnaire()?.id, qnaId, "通用对话框广播后问卷 id 不变");
     api.uiRespond(pending.id, { value: "1. Yes" });
 
     // 完成问卷（Q2 多选空选择 → 回空串）
@@ -572,6 +577,7 @@ suite("Pinel 集成测试（假 pi）", () => {
     api.questionnaireAnswer(1, { kind: "multi", optionIndices: [] });
     api.questionnaireAnswer(2, { kind: "option", optionIndex: 0 });
     await waitFor(() => api.getQuestionnaire()?.phase === "reviewing", 5000, "reviewing");
+    assert.strictEqual(api.getQuestionnaire()?.id, qnaId, "答题广播后问卷 id 必须保持稳定");
     api.questionnaireConfirm();
     await api.waitForSettled(30000, baseline);
 
@@ -588,6 +594,44 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.strictEqual(responseFor("qna-2").value, "", "多选空选择必须回空串");
     assert.strictEqual(responseFor("qna-1").value, "1. A — 选项 A");
     assert.strictEqual(responseFor("qna-3").value, "1. M — 选项 M");
+  });
+
+  test("问卷重入：同 prompt 第二份问卷重置 id 与答案", async function () {
+    this.timeout(60000);
+    const marker = `QUESTIONNAIRE-TWICE-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+
+    // 第一份问卷
+    await waitFor(() => (api.getQuestionnaire()?.questions.length ?? 0) === 3, 10000, "第一份问卷进入");
+    assert.strictEqual(api.getQuestionnaire()?.id, "qna_1", "第一份问卷 id 必须为 toolCallId");
+    api.questionnaireAnswer(0, { kind: "option", optionIndex: 0 });
+    api.questionnaireAnswer(1, { kind: "multi", optionIndices: [0] });
+    api.questionnaireAnswer(2, { kind: "option", optionIndex: 0 });
+    await waitFor(() => api.getQuestionnaire()?.phase === "reviewing", 5000, "第一份全答完转 reviewing");
+    api.questionnaireConfirm();
+    await waitFor(() => api.getQuestionnaire()?.phase === "submitted", 15000, "第一份回填完成转 submitted");
+
+    // 第一份 settle 清卷后，第二份同题问卷到达：新 id + 答案归零（重入重置分支）
+    await waitFor(
+      () => {
+        const q2 = api.getQuestionnaire();
+        return (
+          q2 !== null &&
+          q2.id !== "qna_1" &&
+          q2.phase === "answering" &&
+          q2.answers.every((a) => a === null)
+        );
+      },
+      30000,
+      "第二份问卷重入：新 id + 答案归零",
+    );
+    assert.strictEqual(api.getQuestionnaire()?.id, "qna_2", "第二份问卷 id 必须为新 toolCallId");
+
+    // 清理：取消第二份（walker 收到 cancelled 放弃后续题目）
+    api.questionnaireCancel();
+    await waitFor(() => api.getQuestionnaire() === null, 5000, "取消清卷");
+    await api.waitForSettled(30000, baseline);
   });
 
   // -------------------------------------------------------------------------

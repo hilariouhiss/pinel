@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import checkSquareIcon from "lucide-static/icons/check-square.svg";
+import squareIcon from "lucide-static/icons/square.svg";
 import { vscode } from "../index";
 import type { QuestionnaireAnswer, QuestionnaireQuestion, QuestionnaireView } from "../types";
 import { Markdown } from "./Markdown";
@@ -41,6 +43,8 @@ function tabLabel(question: QuestionnaireQuestion, index: number): string {
  * - 自动切换全部由点击处理器显式驱动：单选选项/自定义答案提交后切下一未答题
  *  （仅当前方存在未答题时前进，最后一题交给跃迁 effect）；多选勾选不切 +
  *   「下一题」按钮；reviewing 阶段修改重答不自动切回确认
+ * - 重入判定按问卷实例 id 比较（postMessage 结构化克隆使 questions 引用比较
+ *   恒为真——每次广播都会误判重入，多选勾选后被拽到首个未答题）
  * - 确认标签自动切换仅发生在 answering→reviewing 单一跃迁（prevPhase ref）
  * - 聚焦：activeTab 变化聚焦对应目标；两个 effect 均 firstRun 门控（快照恢复
  *   不抢焦点）+ document.hasFocus 守卫
@@ -53,7 +57,7 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
   );
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const prevPhase = useRef(q.phase);
-  const lastQuestions = useRef(q.questions);
+  const lastQuestionnaireId = useRef<string | null>(null);
   const firstPhaseRun = useRef(true);
   const firstTabRun = useRef(true);
   /** 下一次 activeTab 变化后的聚焦目标（题 → 首选项；确认 → 确认按钮）。 */
@@ -83,12 +87,12 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
     target?.focus();
   };
 
-  // 新问卷替换旧问卷：清空草稿（题目引用变化即重入）
+  // 新问卷替换旧问卷：清空草稿（问卷实例 id 变化即重入）
   useEffect(() => {
     setDrafts({});
-  }, [q.questions]);
+  }, [q.id]);
 
-  // 跃迁/重入 effect：仅响应「questions 引用变化（重入替换）」与
+  // 跃迁/重入 effect：仅响应「问卷实例 id 变化（重入替换）」与
   //「answering→reviewing 跃迁」；不得对每次广播无条件重算（否则多选勾选/
   // reviewing 修改会被拽走——H1）。
   useEffect(() => {
@@ -96,11 +100,12 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
     prevPhase.current = q.phase;
     if (firstPhaseRun.current) {
       firstPhaseRun.current = false;
-      return; // 挂载即快照恢复：activeTab 初始值已正确，不抢焦点
+      lastQuestionnaireId.current = q.id; // 挂载即快照恢复：同 id 后续广播不重置
+      return;
     }
-    if (q.questions !== lastQuestions.current) {
-      // 重入替换新问卷：重置激活标签到首个未答题并聚焦
-      lastQuestions.current = q.questions;
+    if (q.id !== lastQuestionnaireId.current) {
+      // 重入替换新问卷：更新 id 并重置激活标签到首个未答题 + 聚焦
+      lastQuestionnaireId.current = q.id;
       const next = q.answers.findIndex((a) => a === null);
       setActiveTab(next >= 0 ? next : "confirm");
       pendingFocus.current = next >= 0 ? "question" : "confirm";
@@ -332,7 +337,10 @@ function QuestionCard({
               }}
             >
               {question.multiSelect && (
-                <span className="qna-check">{selected ? "☑" : "☐"}</span>
+                <span
+                  className="qna-check"
+                  dangerouslySetInnerHTML={{ __html: selected ? checkSquareIcon : squareIcon }}
+                />
               )}
               <span className="qna-option-label">{opt.label}</span>
               {opt.description && <span className="qna-option-desc">{opt.description}</span>}

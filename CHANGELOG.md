@@ -6,6 +6,14 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### Fixed
+
+- 问卷多选自动跳题：webview 用 questions 引用比较判断问卷重入，而 postMessage 每条广播都是结构化克隆的新对象（引用恒变）——每次答题广播都被误判重入并重置到首个未答题（多选勾选即跳下一题；单选乱序作答回跳；输入草稿每次广播被清空）。修复：`QuestionnaireView` 增加稳定 `id`（tool_execution_start 的 toolCallId），webview 重入判定与草稿清理均按 id 比较
+
+### Changed
+
+- 问卷多选选择框改用 lucide 图标（check-square/square，未选灰选中蓝，与全扩展 lucide 图标体系一致）
+
 ### Added
 
 - `/new` 新建会话：输入框发送 `/new` 直接新建会话（pi 的 slash 命令 RPC 模式不展开，pinel 本地拦截——精确匹配且无附件时改走 `new_session`，带参数/附件原样发送；流式中自动中断并新建；旧会话保留在历史列表可随时切回）

@@ -1651,7 +1651,7 @@ export class ChatController {
         if (e.toolName === "ask_user_question") {
           const questions = parseQuestionnaireArgs(e.args);
           if (questions) {
-            this.enterQuestionnaire(questions);
+            this.enterQuestionnaire(e.toolCallId, questions);
           }
           // 参数解析失败（插件改名/改协议）：静默回退逐卡路径，不打断工具卡片
         }
@@ -1861,7 +1861,7 @@ export class ChatController {
   // -------------------------------------------------------------------------
 
   /** 进入问卷模式：重入时对旧卷缓冲帧补 cancelled（pi 对多余回复静默忽略）。 */
-  private enterQuestionnaire(questions: QuestionnaireQuestion[]): void {
+  private enterQuestionnaire(id: string, questions: QuestionnaireQuestion[]): void {
     if (this.questionnaire) {
       const stale = this.questionnaire.buffered.splice(0);
       for (const req of stale) {
@@ -1869,6 +1869,7 @@ export class ChatController {
       }
     }
     this.questionnaire = {
+      id,
       questions,
       answers: questions.map(() => null),
       phase: "answering",
@@ -2058,6 +2059,7 @@ export class ChatController {
       return null;
     }
     return {
+      id: q.id,
       questions: q.questions,
       answers: q.answers.map((a) => (a ? { ...a } : null)),
       phase: q.phase,

@@ -15,7 +15,8 @@
  *   先发 tool_execution_start（ask_user_question 完整题目参数），再逐题串行发
  *   select/input 并逐一等待回复（单选哨兵后跟进 input、多选发 input），
  *   每题回复记录到日志（dir: "ui-response"）供集成测试断言；任一点收到
- *   cancelled 即放弃后续题目（与插件 walker 一致）
+ *   cancelled 即放弃后续题目（与插件 walker 一致）；含 "QUESTIONNAIRE-TWICE"
+ *   时首卷 settle 后再发第二份同题问卷（toolCallId qna_2，帧前缀 qna2）
  * - get_commands 返回固定命令集（扩展/模板/技能三类，含 skill: 前缀名）；
  *   prompt 含 "CMDADD" 时向命令集追加一条命令（settle 后刷新可观察）
  * - cycle_model：在 MODELS 间循环，响应 {model, thinkingLevel, isScoped}；
@@ -952,7 +953,14 @@ async function handleCommand(record) {
         cmdAdded = true;
       }
       if (text.includes("QUESTIONNAIRE")) {
-        await questionnaireSequence(text.includes("QUESTIONNAIRE-GENERIC"));
+        const twice = text.includes("QUESTIONNAIRE-TWICE");
+        await questionnaireSequence(text.includes("QUESTIONNAIRE-GENERIC"), twice ? { streamAfter: false } : undefined);
+        if (twice) {
+          // 等第一份问卷的流 settle（settle 会清卷）再发第二份：验证重入重置
+          // （同题新 toolCallId qna_2，walker 帧前缀 qna2）
+          await streamSequence(`questionnaire-settle-${Date.now()}`, false);
+          await questionnaireSequence(false, { toolCallId: "qna_2", framePrefix: "qna2" });
+        }
         break;
       }
       if (text.includes("ASKUI-TIMEOUT")) {
@@ -1051,12 +1059,16 @@ function waitForUiResponse(id) {
  * withGeneric（QUESTIONNAIRE-GENERIC 标记）：问卷开始前穿插一个标题不匹配
  * 任何题目的通用 select（ui-generic-1），验证 pinel 的标题门控——通用
  * 对话框走逐卡路径、问卷帧才被缓冲。
+ * opts：toolCallId/framePrefix 定制帧与工具 id（QUESTIONNAIRE-TWICE 第二卷用）；
+ * streamAfter:false 抑制尾部流（TWICE 首卷由调用方 await 流后再发第二卷）。
  */
-async function questionnaireSequence(withGeneric) {
+async function questionnaireSequence(withGeneric, opts = {}) {
+  const toolCallId = opts.toolCallId ?? "qna_1";
+  const fid = (n) => (opts.framePrefix ? `${opts.framePrefix}-${n}` : `qna-${n}`);
   let aborted = false;
   out({
     type: "tool_execution_start",
-    toolCallId: "qna_1",
+    toolCallId,
     toolName: "ask_user_question",
     args: {
       questions: [
@@ -1106,26 +1118,26 @@ async function questionnaireSequence(withGeneric) {
   // Q1 单选：select + 哨兵行
   out({
     type: "extension_ui_request",
-    id: "qna-1",
+    id: fid(1),
     method: "select",
     title: "[q1] 问题一？",
     options: ["1. A — 选项 A", "2. B — 选项 B", "3. Type something."],
   });
-  const r1 = await waitForUiResponse("qna-1");
-  log({ dir: "ui-response", id: "qna-1", response: r1 });
+  const r1 = await waitForUiResponse(fid(1));
+  log({ dir: "ui-response", id: fid(1), response: r1 });
   if (r1.cancelled) {
     aborted = true;
   } else if (r1.value === "3. Type something.") {
     // 哨兵：跟进 input（自定义答案）
     out({
       type: "extension_ui_request",
-      id: "qna-1i",
+      id: `${fid(1)}i`,
       method: "input",
       title: "问题一？\n\nType your answer:",
       placeholder: "",
     });
-    const r1i = await waitForUiResponse("qna-1i");
-    log({ dir: "ui-response", id: "qna-1i", response: r1i });
+    const r1i = await waitForUiResponse(`${fid(1)}i`);
+    log({ dir: "ui-response", id: `${fid(1)}i`, response: r1i });
     if (r1i.cancelled) {
       aborted = true;
     }
@@ -1135,13 +1147,13 @@ async function questionnaireSequence(withGeneric) {
   if (!aborted) {
     out({
       type: "extension_ui_request",
-      id: "qna-2",
+      id: fid(2),
       method: "input",
       title: "问题二？\n\nEnter the numbers of all that apply, comma-separated (e.g. \"1,3\"), or type a custom answer as plain text.",
       placeholder: "1,3",
     });
-    const r2 = await waitForUiResponse("qna-2");
-    log({ dir: "ui-response", id: "qna-2", response: r2 });
+    const r2 = await waitForUiResponse(fid(2));
+    log({ dir: "ui-response", id: fid(2), response: r2 });
     if (r2.cancelled) {
       aborted = true;
     }
@@ -1151,34 +1163,36 @@ async function questionnaireSequence(withGeneric) {
   if (!aborted) {
     out({
       type: "extension_ui_request",
-      id: "qna-3",
+      id: fid(3),
       method: "select",
       title: "[q3] 问题三？",
       options: ["1. M — 选项 M", "2. N — 选项 N", "3. Type something."],
     });
-    const r3 = await waitForUiResponse("qna-3");
-    log({ dir: "ui-response", id: "qna-3", response: r3 });
+    const r3 = await waitForUiResponse(fid(3));
+    log({ dir: "ui-response", id: fid(3), response: r3 });
     if (!r3.cancelled && r3.value === "3. Type something.") {
       out({
         type: "extension_ui_request",
-        id: "qna-3i",
+        id: `${fid(3)}i`,
         method: "input",
         title: "问题三？\n\nType your answer:",
         placeholder: "",
       });
-      const r3i = await waitForUiResponse("qna-3i");
-      log({ dir: "ui-response", id: "qna-3i", response: r3i });
+      const r3i = await waitForUiResponse(`${fid(3)}i`);
+      log({ dir: "ui-response", id: `${fid(3)}i`, response: r3i });
     }
   }
 
   out({
     type: "tool_execution_end",
-    toolCallId: "qna_1",
+    toolCallId,
     toolName: "ask_user_question",
     result: { content: [{ type: "text", text: aborted ? "questionnaire abandoned" : "questionnaire answered" }], details: {} },
     isError: false,
   });
-  void streamSequence(`questionnaire-${Date.now()}`, false);
+  if (opts.streamAfter !== false) {
+    void streamSequence(`questionnaire-${Date.now()}`, false);
+  }
 }
 
 /** 构造 todo 工具的 tool_execution_end result（details.tasks 全量快照）。 */
