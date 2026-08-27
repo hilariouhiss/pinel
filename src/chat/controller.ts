@@ -1051,6 +1051,7 @@ export class ChatController {
     this.partialAssembly = createAssembly();
     this.partialBlocks = [];
     this.tools.clear();
+    this.todos = []; // 新会话待办从零开始（restart 同语义，fireSnapshot 携带空列表）
     try {
       const data = await client.send<GetMessagesData>({ type: "get_messages" });
       if (this.client !== client) {

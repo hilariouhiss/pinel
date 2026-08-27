@@ -1214,6 +1214,17 @@ suite("Pinel 集成测试（假 pi）", () => {
       assert.ok(switches.length >= 1, "switch_session 必须携带 sessionPath");
     });
 
+    test("切换会话后旧待办清零", async function () {
+      this.timeout(60000);
+      // 制造当前会话待办（切换后必须清零而非残留显示）
+      await api.sendPrompt(`TODOME-${Date.now()}`);
+      await waitFor(() => api.getTodos().length === 2, 15000, "切换前待办填充");
+
+      await api.switchSession(sessionA);
+      await waitFor(() => api.getCurrentSessionFile() === sessionA, 10000, "切换后 sessionFile 回显");
+      assert.deepStrictEqual(api.getTodos(), [], "切换后待办必须清零");
+    });
+
     test("新建会话：new_session 送达 + 消息清空 + 新会话文件", async function () {
       this.timeout(60000);
       // 当前可能是前序测试切换后的 B 会话：直接制造新消息再新建
