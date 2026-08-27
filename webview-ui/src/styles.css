@@ -1092,18 +1092,17 @@ body {
 
 /* 模型/思考 chip：常显当前值，点击弹锚定下拉切换（唯一切换入口）；
    无边框，hover/展开仅背景轻微强调（与设置/扩展按钮同语义）；
-   超长省略号截断，tooltip 显示完整 provider/id */
+   模型名完整显示不截断，紧凑内边距 */
 .composer-chip {
   display: inline-flex;
   align-items: center;
-  max-width: 140px;
-  padding: 0 12px;
+  padding: 0 8px;
   height: calc(var(--vscode-font-size) * 1.5 + 12px);
   background: transparent;
   border: none;
   border-radius: 5px;
   color: var(--vscode-descriptionForeground);
-  font-size: calc(var(--vscode-font-size) + 1px);
+  font-size: var(--vscode-font-size);
   font-family: var(--pinel-font-family);
   cursor: pointer;
 }
@@ -1117,12 +1116,6 @@ body {
 .composer-chip:disabled {
   cursor: default;
   opacity: 0.5;
-}
-
-.composer-chip-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .status-settings-btn {

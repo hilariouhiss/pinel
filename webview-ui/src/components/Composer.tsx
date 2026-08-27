@@ -509,7 +509,7 @@ export function Composer({
             流式中不禁用（变更自下一回合生效） */}
         {status.model === null ? (
           <button className="composer-chip" disabled title="No model">
-            <span className="composer-chip-label">No model</span>
+            No model
           </button>
         ) : (
           <button
@@ -521,7 +521,7 @@ export function Composer({
             onClick={onOpenModel}
             disabled={!onOpenModel}
           >
-            <span className="composer-chip-label">{status.model.name ?? status.model.id ?? "Model"}</span>
+            {status.model.name ?? status.model.id ?? "Model"}
           </button>
         )}
         {status.model !== null && (
@@ -534,7 +534,7 @@ export function Composer({
             onClick={onOpenThinking}
             disabled={!onOpenThinking}
           >
-            <span className="composer-chip-label">{status.thinkingLevel}</span>
+            {status.thinkingLevel}
           </button>
         )}
         <span className="footer-actions-spacer" />
