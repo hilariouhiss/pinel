@@ -3,19 +3,19 @@ import { vscode } from "./index";
 import type { HostMessage, SessionListItem } from "./types";
 import { formatRelativeTime } from "./utils";
 import { SearchBox } from "./components/SearchBox";
-// SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
-import addIcon from "../../media/add.svg";
-import editIcon from "../../media/edit.svg";
-import deleteIcon from "../../media/delete.svg";
+// SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
+import addIcon from "lucide-static/icons/plus.svg";
+import editIcon from "lucide-static/icons/pencil.svg";
+import deleteIcon from "lucide-static/icons/trash-2.svg";
 
 /**
  * 会话历史视图（主侧边栏）。
- * 顶部新会话按钮（add.svg 图标，透明描边样式）+ 搜索框 + 会话列表
+ * 顶部新会话按钮（lucide plus 图标）+ 搜索框 + 会话列表
  * （名称/首条消息摘要/相对时间/当前高亮）。
  * 点击会话 → switchSession；点击新会话 → newSession（宿主切换成功后
  * 自动打开次侧边栏聊天视图）。
- * 行右侧操作：edit.svg 行内编辑重命名（Enter 提交/Esc/blur 取消，提交后
- * 乐观退出编辑态——失败经宿主 notice 反馈）；delete.svg 删除（当前会话行
+ * 行右侧操作：lucide pencil 行内编辑重命名（Enter 提交/Esc/blur 取消，提交后
+ * 乐观退出编辑态——失败经宿主 notice 反馈）；lucide trash-2 删除（当前会话行
  * 禁用，title 提示）。
  */
 export default function HistoryApp() {

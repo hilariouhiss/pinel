@@ -16,7 +16,8 @@ async function main() {
     sourcesContent: false,
     outfile: "media/webview.js",
     logLevel: "silent",
-    // SVG 图标以 text 内联进 bundle（webview 内 DOM 渲染，CSS 可覆盖 fill 实现主题自适应）
+    // SVG 以 text 内联进 bundle（lucide-static 图标直接导入，webview 内 DOM 渲染；
+    // stroke=currentColor 随容器 color 实现主题自适应）
     loader: {
       ".svg": "text",
     },

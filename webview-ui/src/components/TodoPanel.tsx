@@ -1,9 +1,9 @@
 import { useState } from "react";
 import type { TodoTask } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题/状态色）
-import todoIcon from "../../../media/todo.svg";
-import inProgressIcon from "../../../media/in-progressing.svg";
-import doneIcon from "../../../media/done.svg";
+import todoIcon from "lucide-static/icons/circle.svg";
+import inProgressIcon from "lucide-static/icons/circle-dot.svg";
+import doneIcon from "lucide-static/icons/circle-check-big.svg";
 
 interface Props {
   todos: TodoTask[];

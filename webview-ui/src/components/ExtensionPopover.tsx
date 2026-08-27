@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { vscode } from "../index";
 import type { ExtensionItem } from "../types";
-// SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
-import deleteIcon from "../../../media/delete.svg";
+// SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
+import deleteIcon from "lucide-static/icons/trash-2.svg";
 
 interface Props {
   /** 触发按钮元素（null 时不渲染）。定位/焦点管理都依赖它。 */

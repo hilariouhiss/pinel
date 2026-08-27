@@ -12,10 +12,10 @@ import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
 import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
-import sendIcon from "../../../media/send.svg";
-import stopIcon from "../../../media/stop.svg";
-import settingsIcon from "../../../media/settings.svg";
-import extensionIcon from "../../../media/extension.svg";
+import sendIcon from "lucide-static/icons/send.svg";
+import stopIcon from "lucide-static/icons/square.svg";
+import settingsIcon from "lucide-static/icons/settings.svg";
+import extensionIcon from "lucide-static/icons/puzzle.svg";
 
 interface Props {
   status: ChatStatus;

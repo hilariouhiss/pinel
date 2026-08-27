@@ -8,6 +8,6 @@ declare function acquireVsCodeApi(): {
 };
 
 // 允许 esbuild 打包 CSS side-effect 导入
-// 允许 import SVG 原始文本（esbuild text loader，图标内联进 DOM 渲染）
+// 允许 import SVG 原始文本（esbuild text loader；lucide-static 图标直接导入内联进 DOM）
 declare module "*.css";
 declare module "*.svg";

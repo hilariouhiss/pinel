@@ -1,4 +1,4 @@
-import searchIcon from "../../../media/search.svg";
+import searchIcon from "lucide-static/icons/search.svg";
 
 interface Props {
   value: string;
@@ -8,7 +8,7 @@ interface Props {
 
 /**
  * 会话列表搜索框（弹层与主侧边栏共用）：
- * search.svg 左侧内联（path 级 currentColor 跟随输入框前景色）+ 受控 input。
+ * lucide search 左侧内联（stroke=currentColor 跟随输入框前景色）+ 受控 input。
  * 过滤逻辑由调用方实现（本地过滤，items 已全量在 webview）。
  */
 export function SearchBox({ value, onChange, placeholder = "Search sessions" }: Props) {

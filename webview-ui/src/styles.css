@@ -674,6 +674,7 @@ body {
 
 .todopanel-task-icon {
   flex-shrink: 0;
+  color: var(--vscode-focusBorder, #007acc);
 }
 
 .todopanel-task-text {
@@ -703,23 +704,17 @@ body {
 
 .todotask-icon {
   flex-shrink: 0;
+  color: var(--vscode-foreground);
 }
 
-/* todo 状态图标：SVG 内联，尺寸覆写（文件内硬编码 200px）+ 状态色（fill 在
-   <path> 上，必须 path 级选择器才能覆盖 presentation attribute） */
-.todopanel-task-icon .icon,
-.todotask-icon .icon {
+/* todo 状态图标：lucide 内联，尺寸覆写（文件内 width=24）+ stroke=currentColor
+   随容器 color 继承；小尺寸 stroke 偏细，覆写 stroke-width 补偿 */
+.todopanel-task-icon .lucide,
+.todotask-icon .lucide {
   width: 12px;
   height: 12px;
   display: block;
-}
-
-.todopanel-task-icon .icon path {
-  fill: var(--vscode-focusBorder, #007acc);
-}
-
-.todotask-icon .icon path {
-  fill: var(--vscode-foreground);
+  stroke-width: 2.5;
 }
 
 .todotask.status-completed {
@@ -727,12 +722,14 @@ body {
   text-decoration: line-through;
 }
 
-.todotask.status-in_progress .todotask-icon .icon path {
-  fill: var(--vscode-focusBorder, #007acc);
+/* 状态色挂在 .todotask-icon 上（不与行文本色共用——completed 行文本是删除线灰，
+   图标需保持 testing-iconPassed 绿） */
+.todotask.status-in_progress .todotask-icon {
+  color: var(--vscode-focusBorder, #007acc);
 }
 
-.todotask.status-completed .todotask-icon .icon path {
-  fill: var(--vscode-testing-iconPassed, #73c991);
+.todotask.status-completed .todotask-icon {
+  color: var(--vscode-testing-iconPassed, #73c991);
 }
 
 .todotask-subject {
@@ -1042,23 +1039,18 @@ body {
   cursor: default;
 }
 
-/* SVG 图标：尺寸覆写（文件内硬编码 200px）+ 主题色（fill 在 <path> 上，必须 path 级
-   选择器才能覆盖 presentation attribute；文件内 #707070 保留作兜底） */
-.composer-send .icon,
-.composer-stop .icon,
-.status-settings-btn .icon,
-.status-extensions-btn .icon {
+/* lucide 图标：尺寸覆写（文件内 width=24）+ stroke=currentColor 随容器 color 继承 */
+.composer-send .lucide,
+.composer-stop .lucide,
+.status-settings-btn .lucide,
+.status-extensions-btn .lucide {
   width: 14px;
   height: 14px;
   display: block;
 }
 
-.composer-send .icon path {
-  fill: var(--vscode-button-foreground);
-}
-
-.composer-stop .icon path {
-  fill: var(--vscode-errorForeground);
+.composer-send {
+  color: var(--vscode-button-foreground);
 }
 
 .composer-stop {
@@ -1177,13 +1169,10 @@ body {
 }
 
 /* ------------------------------------------------------------------ 配置面板 */
-/* 设置按钮图标：随描述文字色（fill 在 <path> 上，path 级选择器覆盖） */
-.status-settings-btn .icon path {
-  fill: var(--vscode-descriptionForeground);
-}
-
-.status-extensions-btn .icon path {
-  fill: var(--vscode-descriptionForeground);
+/* 设置/扩展按钮图标：随描述文字色（lucide stroke=currentColor 随容器 color） */
+.status-settings-btn,
+.status-extensions-btn {
+  color: var(--vscode-descriptionForeground);
 }
 
 /* 遮罩层：点击外部关闭（fixed 覆盖整个 webview） */
@@ -1472,20 +1461,19 @@ body {
   opacity: 0.5;
 }
 
-/* SVG 图标：尺寸覆写（文件内硬编码 200px）+ path 级主题色
-   （fill 在 <path> 上，必须 path 级选择器覆盖 presentation attribute） */
-.chat-history-btn .icon,
-.chat-new-session-btn .icon,
-.chat-fork-btn .icon {
+/* lucide 图标：尺寸覆写（文件内 width=24）+ stroke=currentColor 随容器 color */
+.chat-history-btn .lucide,
+.chat-new-session-btn .lucide,
+.chat-fork-btn .lucide {
   width: 16px;
   height: 16px;
   display: block;
 }
 
-.chat-history-btn .icon path,
-.chat-new-session-btn .icon path,
-.chat-fork-btn .icon path {
-  fill: var(--vscode-descriptionForeground);
+.chat-history-btn,
+.chat-new-session-btn,
+.chat-fork-btn {
+  color: var(--vscode-descriptionForeground);
 }
 
 /* 会话历史弹层（右上角下拉；top/bottom/left/right 由组件内联计算） */
@@ -1545,16 +1533,13 @@ body {
   display: flex;
   align-items: center;
   flex: none;
+  color: var(--vscode-descriptionForeground);
 }
 
-.search-box-icon .icon {
+.search-box-icon .lucide {
   width: 14px;
   height: 14px;
   display: block;
-}
-
-.search-box-icon .icon path {
-  fill: var(--vscode-descriptionForeground);
 }
 
 .search-box-input {
@@ -1793,18 +1778,18 @@ body {
   background: var(--vscode-toolbar-hoverBackground);
 }
 
-.extension-item-delete .icon {
+.extension-item-delete .lucide {
   width: 14px;
   height: 14px;
   display: block;
 }
 
-.extension-item-delete .icon path {
-  fill: var(--vscode-descriptionForeground);
+.extension-item-delete {
+  color: var(--vscode-descriptionForeground);
 }
 
-.extension-item-delete:hover .icon path {
-  fill: var(--vscode-errorForeground);
+.extension-item-delete:hover {
+  color: var(--vscode-errorForeground);
 }
 
 .extension-popover-empty {
@@ -1856,15 +1841,11 @@ body {
   color: inherit;
 }
 
-/* add.svg 图标：尺寸覆写 + currentColor 跟随文字色（path 级选择器） */
-.history-new-button .icon {
+/* lucide plus 图标：尺寸覆写 + currentColor 跟随文字色（按钮已设 color: inherit） */
+.history-new-button .lucide {
   width: 16px;
   height: 16px;
   display: block;
-}
-
-.history-new-button .icon path {
-  fill: currentColor;
 }
 
 .history-new-label {
@@ -2009,27 +1990,27 @@ body {
   background: none;
 }
 
-/* SVG 链路：fill 是 path 上的 presentation attribute，必须 path 级选择器覆写 */
-.history-item-edit .icon,
-.history-item-delete .icon {
+/* lucide 链路：stroke=currentColor 随容器 color 继承 */
+.history-item-edit .lucide,
+.history-item-delete .lucide {
   width: 14px;
   height: 14px;
   display: block;
 }
 
-.history-item-edit .icon path,
-.history-item-delete .icon path {
-  fill: var(--vscode-descriptionForeground);
+.history-item-edit,
+.history-item-delete {
+  color: var(--vscode-descriptionForeground);
 }
 
-.history-item-delete:hover:not(:disabled) .icon path {
-  fill: var(--vscode-errorForeground);
+.history-item-delete:hover:not(:disabled) {
+  color: var(--vscode-errorForeground);
 }
 
 /* active 行图标改用选中前景色（深色选中背景下 descriptionForeground 对比不足） */
-.history-item.active .history-item-edit .icon path,
-.history-item.active .history-item-delete .icon path {
-  fill: var(--vscode-list-activeSelectionForeground);
+.history-item.active .history-item-edit,
+.history-item.active .history-item-delete {
+  color: var(--vscode-list-activeSelectionForeground);
 }
 
 /* 行内编辑输入框（替换名称 span） */
@@ -2133,6 +2114,14 @@ body {
 
 .session-stats-branch-icon {
   color: var(--vscode-descriptionForeground);
+  display: inline-block;
+  vertical-align: -1px;
+}
+
+.session-stats-branch-icon .lucide {
+  width: 11px;
+  height: 11px;
+  display: block;
 }
 
 /* 指标段：上下文 / 缓存读 / 缓存写 / 缓存命中率 / 成本，紧凑 gap 右对齐 */
@@ -2155,20 +2144,17 @@ body {
   opacity: 0.7;
 }
 
-/* 会话信息条内联图标（缓存命中率 / ↑缓存读 / ↓缓存写 / $成本）：尺寸覆写（SVG 硬编码 200px）
-   + path 级 currentColor（fill 在 <path> 上，必须 path 级选择器覆盖
-   presentation attribute；继承 .session-stats-item 的 descriptionForeground） */
+/* 会话信息条内联图标（缓存命中率 / ↑缓存读 / ↓缓存写 / $成本）：lucide 内联，尺寸覆写
+   （文件内 width=24）+ stroke=currentColor 继承 .session-stats-item 颜色；小尺寸
+   stroke 偏细，覆写 stroke-width 补偿 */
 .session-stats-icon {
   display: inline-block;
   vertical-align: -1px;
 }
 
-.session-stats-icon .icon {
+.session-stats-icon .lucide {
   width: 11px;
   height: 11px;
   display: block;
-}
-
-.session-stats-icon .icon path {
-  fill: currentColor;
+  stroke-width: 2.5;
 }

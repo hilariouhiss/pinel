@@ -1,9 +1,10 @@
 import type { SessionEnv, SessionStats } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
-import upArrowIcon from "../../../media/up-arrow.svg";
-import downArrowIcon from "../../../media/down-arrow.svg";
-import dollarIcon from "../../../media/dollar.svg";
-import cacheIcon from "../../../media/cache.svg";
+import upArrowIcon from "lucide-static/icons/arrow-up.svg";
+import downArrowIcon from "lucide-static/icons/arrow-down.svg";
+import dollarIcon from "lucide-static/icons/dollar-sign.svg";
+import cacheIcon from "lucide-static/icons/database.svg";
+import branchIcon from "lucide-static/icons/git-branch.svg";
 
 interface Props {
   /** 会话统计（宿主 parseSessionStats 结果）；null = 尚未拉取（占位）。 */
@@ -95,7 +96,10 @@ export function SessionStatsBar({ stats, env }: Props) {
           {git && (
             <>
               {" on "}
-              <span className="session-stats-branch-icon">{"\uF418"}</span>
+              <span
+                className="session-stats-branch-icon"
+                dangerouslySetInnerHTML={{ __html: branchIcon }}
+              />
               {" "}
               {git.branch}
               {markers && <> {markers}</>}
