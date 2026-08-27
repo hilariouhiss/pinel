@@ -1053,11 +1053,17 @@ body {
 
 /* lucide 图标：尺寸覆写（文件内 width=24）+ stroke=currentColor 随容器 color 继承 */
 .composer-send .lucide,
-.composer-stop .lucide,
-.status-settings-btn .lucide,
-.status-extensions-btn .lucide {
+.composer-stop .lucide {
   width: 14px;
   height: 14px;
+  display: block;
+}
+
+/* 设置/扩展按钮加大档：图标 16px */
+.status-settings-btn .lucide,
+.status-extensions-btn .lucide {
+  width: 16px;
+  height: 16px;
   display: block;
 }
 
@@ -1085,26 +1091,26 @@ body {
 }
 
 /* 模型/思考 chip：常显当前值，点击弹锚定下拉切换（唯一切换入口）；
-   高度/字号与同排图标按钮统一（高度同发送/停止的 calc 式，字号随 VS Code）；
+   无边框，hover/展开仅背景轻微强调（与设置/扩展按钮同语义）；
    超长省略号截断，tooltip 显示完整 provider/id */
 .composer-chip {
   display: inline-flex;
   align-items: center;
   max-width: 140px;
-  padding: 0 10px;
-  height: calc(var(--vscode-font-size) * 1.5 + 8px);
+  padding: 0 12px;
+  height: calc(var(--vscode-font-size) * 1.5 + 12px);
   background: transparent;
-  border: 1px solid var(--vscode-input-border);
+  border: none;
   border-radius: 5px;
   color: var(--vscode-descriptionForeground);
-  font-size: var(--vscode-font-size);
+  font-size: calc(var(--vscode-font-size) + 1px);
   font-family: var(--pinel-font-family);
   cursor: pointer;
 }
 
 .composer-chip:hover:not(:disabled),
 .composer-chip.open {
-  border-color: var(--vscode-focusBorder);
+  background: var(--vscode-list-hoverBackground);
   color: var(--vscode-foreground);
 }
 
@@ -1122,8 +1128,12 @@ body {
 .status-settings-btn {
   display: flex;
   align-items: center;
-  background: none;
+  justify-content: center;
+  width: calc(var(--vscode-font-size) * 1.5 + 12px);
+  height: calc(var(--vscode-font-size) * 1.5 + 12px);
+  background: transparent;
   border: none;
+  border-radius: 5px;
   padding: 0;
   cursor: pointer;
 }
@@ -1138,11 +1148,22 @@ body {
 .status-extensions-btn {
   display: flex;
   align-items: center;
-  background: none;
+  justify-content: center;
+  width: calc(var(--vscode-font-size) * 1.5 + 12px);
+  height: calc(var(--vscode-font-size) * 1.5 + 12px);
+  background: transparent;
   border: none;
+  border-radius: 5px;
   padding: 0;
   cursor: pointer;
   margin-left: 10px;
+}
+
+/* hover 仅背景轻微强调（与 chip 同语义，无边框） */
+.status-settings-btn:hover:not(:disabled),
+.status-extensions-btn:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
 }
 
 .status-extensions-btn:disabled {
