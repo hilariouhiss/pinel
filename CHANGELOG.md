@@ -6,15 +6,19 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- 问卷多选自动跳题：webview 用 questions 引用比较判断问卷重入，而 postMessage 每条广播都是结构化克隆的新对象（引用恒变）——每次答题广播都被误判重入并重置到首个未答题（多选勾选即跳下一题；单选乱序作答回跳；输入草稿每次广播被清空）。修复：`QuestionnaireView` 增加稳定 `id`（tool_execution_start 的 toolCallId），webview 重入判定与草稿清理均按 id 比较
+- 模型/思考 chip：输入框按钮行左端常显当前模型（友好名，tooltip 完整 provider/id）与思考深度，点击弹锚定下拉列表切换（打开即拉取、选中即切换，状态回读刷新由既有宿主链路负责）；流式中可切换；无模型时模型 chip 禁用、思考 chip 隐藏
 
 ### Changed
 
+- 模型/思考切换入口收敛：设置面板（ConfigPopover）移除模型/思考内嵌展开区，按钮行 chip 为唯一切换入口；面板只留队列模式/自动压缩/会话信息开关
+
 - 问卷多选选择框改用 lucide 图标（check-square/square，未选灰选中蓝，与全扩展 lucide 图标体系一致）
 
-### Added
+### Fixed
+
+- 问卷多选自动跳题：webview 用 questions 引用比较判断问卷重入，而 postMessage 每条广播都是结构化克隆的新对象（引用恒变）——每次答题广播都被误判重入并重置到首个未答题（多选勾选即跳下一题；单选乱序作答回跳；输入草稿每次广播被清空）。修复：`QuestionnaireView` 增加稳定 `id`（tool_execution_start 的 toolCallId），webview 重入判定与草稿清理均按 id 比较
 
 - `/new` 新建会话：输入框发送 `/new` 直接新建会话（pi 的 slash 命令 RPC 模式不展开，pinel 本地拦截——精确匹配且无附件时改走 `new_session`，带参数/附件原样发送；流式中自动中断并新建；旧会话保留在历史列表可随时切回）
 

@@ -3,6 +3,7 @@ import { vscode } from "./index";
 import type { ChatMessage, ChatStatus, ExtensionItem, FileItem, ForkMessageItem, HostMessage, ModelInfo, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
+import { ModelPopover } from "./components/ModelPopover";
 import { ExtensionPopover } from "./components/ExtensionPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
 import { ForkPopover } from "./components/ForkPopover";
@@ -34,7 +35,7 @@ const initialStatus: ChatStatus = {
 let noticeSeq = 0;
 
 /** 弹窗互斥：任一时刻只开一个（⚙ 设置面板 / 扩展管理 / 会话历史 / 分支选择器）。 */
-type PopoverKind = "config" | "session" | "fork" | "ext" | null;
+type PopoverKind = "config" | "session" | "fork" | "ext" | "model" | "thinking" | null;
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -45,7 +46,7 @@ export default function App() {
   const [todos, setTodos] = useState<TodoTask[]>([]);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [questionnaire, setQuestionnaire] = useState<QuestionnaireView | null>(null);
-  /** 弹窗互斥状态（模型列表 / 思考强度列表 / ⚙ 设置面板）。 */
+  /** 弹窗互斥状态（模型/思考 chip 下拉 / ⚙ 设置面板 / 会话历史等）。 */
   const [popover, setPopover] = useState<PopoverKind>(null);
   /** 模型列表数据与加载态（宿主 models 消息填充；空数组 = 失败信号，关闭弹窗）。 */
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -53,8 +54,6 @@ export default function App() {
   /** 思考强度列表数据与加载态。 */
   const [thinkingLevels, setThinkingLevels] = useState<string[]>([]);
   const [thinkingLoading, setThinkingLoading] = useState(false);
-  /** 设置面板内嵌展开区（模型/思考；null=收起）。 */
-  const [expandedSection, setExpandedSection] = useState<"model" | "thinking" | null>(null);
   /** 会话历史按钮元素引用（SessionListPopover 锚定）。 */
   const historyBtnRef = useRef<HTMLButtonElement>(null);
   /** 新会话按钮元素引用（锚定不需要，与 historyBtnRef 同组）。 */
@@ -63,6 +62,9 @@ export default function App() {
   const forkBtnRef = useRef<HTMLButtonElement>(null);
   /** 扩展按钮元素引用（ExtensionPopover 锚定；按钮在 Composer footer 内渲染）。 */
   const extensionBtnRef = useRef<HTMLButtonElement>(null);
+  /** 模型/思考 chip 元素引用（ModelPopover 锚定）。 */
+  const modelChipRef = useRef<HTMLButtonElement>(null);
+  const thinkingChipRef = useRef<HTMLButtonElement>(null);
   /** 可 fork 的历史用户消息（getForkMessages 响应填充；打开时拉取）。 */
   const [forkMessages, setForkMessages] = useState<ForkMessageItem[]>([]);
   /** 扩展列表（getExtensionList 响应填充；打开时拉取，启停/卸载后宿主重发）。 */
@@ -151,10 +153,10 @@ export default function App() {
         setCommands(msg.commands);
         break;
       case "models":
-        // 空数组 = 拉取失败信号（宿主已 notice）：收起内嵌展开区（面板保持打开）
+        // 空数组 = 拉取失败信号（宿主已 notice）：关闭模型 chip 下拉
         if (msg.models.length === 0) {
           setModelLoading(false);
-          setExpandedSection((prev) => (prev === "model" ? null : prev));
+          setPopover((prev) => (prev === "model" ? null : prev));
         } else {
           setModels(msg.models);
           setModelLoading(false);
@@ -163,7 +165,7 @@ export default function App() {
       case "thinkingLevels":
         if (msg.levels.length === 0) {
           setThinkingLoading(false);
-          setExpandedSection((prev) => (prev === "thinking" ? null : prev));
+          setPopover((prev) => (prev === "thinking" ? null : prev));
         } else {
           setThinkingLevels(msg.levels);
           setThinkingLoading(false);
@@ -306,31 +308,38 @@ export default function App() {
   const showBootAnimation =
     !hasConversation && (status.processState === "starting" || status.processState === "stopped");
 
-  // 设置面板内嵌列表展开：模型/思考（toggle；展开时拉取数据）
-  const toggleExpandedSection = (section: "model" | "thinking" | null) => {
-    setExpandedSection((prev) => {
-      const next = section === prev ? null : section;
-      if (next === "model") {
-        setModelLoading(true);
-        setModels([]);
-        vscode.postMessage({ type: "getModels" });
-      } else if (next === "thinking") {
-        setThinkingLoading(true);
-        setThinkingLevels([]);
-        vscode.postMessage({ type: "getThinkingLevels" });
-      }
-      return next;
-    });
+  // 模型/思考 chip 锚定下拉：toggle 打开并拉取列表（打开即清列表 + loading；
+  // 关闭不重拉），选中后的状态回读刷新由宿主 set_model → get_state 链路负责
+  const openModel = () => {
+    if (popover === "model") {
+      setPopover(null);
+      return;
+    }
+    setPopover("model");
+    setModelLoading(true);
+    setModels([]);
+    vscode.postMessage({ type: "getModels" });
   };
 
-  // 选中模型/思考：发 set 消息，面板保持打开、仅收起展开区
+  const openThinking = () => {
+    if (popover === "thinking") {
+      setPopover(null);
+      return;
+    }
+    setPopover("thinking");
+    setThinkingLoading(true);
+    setThinkingLevels([]);
+    vscode.postMessage({ type: "getThinkingLevels" });
+  };
+
+  // 选中模型/思考：发 set 消息并关闭下拉（状态回读刷新由宿主链路广播）
   const selectModel = (provider: string, modelId: string) => {
-    setExpandedSection(null);
+    setPopover(null);
     vscode.postMessage({ type: "setModel", provider, modelId });
   };
 
   const selectThinkingLevel = (level: string) => {
-    setExpandedSection(null);
+    setPopover(null);
     vscode.postMessage({ type: "setThinkingLevel", level });
   };
 
@@ -521,22 +530,42 @@ export default function App() {
           extensionOpen={popover === "ext"}
           onOpenExtensions={openExtensions}
           extensionBtnRef={extensionBtnRef}
+          modelOpen={popover === "model"}
+          onOpenModel={openModel}
+          modelChipRef={modelChipRef}
+          thinkingOpen={popover === "thinking"}
+          onOpenThinking={openThinking}
+          thinkingChipRef={thinkingChipRef}
           fileList={fileList}
         />
         {status.showSessionStats && <SessionStatsBar stats={sessionStats} env={sessionEnv} />}
       </div>
-      <ConfigPopover
-        status={status}
-        open={popover === "config"}
-        onClose={() => setPopover(null)}
+      <ConfigPopover status={status} open={popover === "config"} onClose={() => setPopover(null)} />
+      <ModelPopover
+        anchor={popover === "model" ? modelChipRef.current : null}
+        kind="model"
         models={models}
         modelLoading={modelLoading}
         thinkingLevels={thinkingLevels}
         thinkingLoading={thinkingLoading}
-        expandedSection={expandedSection}
-        onToggleSection={toggleExpandedSection}
+        currentModelKey={status.model ? `${status.model.provider ?? ""}:${status.model.id ?? ""}` : null}
+        currentThinkingLevel={status.thinkingLevel}
         onSelectModel={selectModel}
         onSelectThinkingLevel={selectThinkingLevel}
+        onClose={() => setPopover(null)}
+      />
+      <ModelPopover
+        anchor={popover === "thinking" ? thinkingChipRef.current : null}
+        kind="thinking"
+        models={models}
+        modelLoading={modelLoading}
+        thinkingLevels={thinkingLevels}
+        thinkingLoading={thinkingLoading}
+        currentModelKey={null}
+        currentThinkingLevel={status.thinkingLevel}
+        onSelectModel={selectModel}
+        onSelectThinkingLevel={selectThinkingLevel}
+        onClose={() => setPopover(null)}
       />
       <SessionListPopover
         anchor={popover === "session" ? historyBtnRef.current : null}

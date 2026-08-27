@@ -1084,6 +1084,40 @@ body {
   flex: 1;
 }
 
+/* 模型/思考 chip：常显当前值，点击弹锚定下拉切换（唯一切换入口）；
+   文本型按钮（区别于图标按钮），超长省略号截断，tooltip 显示完整 provider/id */
+.composer-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 140px;
+  padding: 0 8px;
+  height: 20px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-family: var(--pinel-font-family);
+  cursor: pointer;
+}
+
+.composer-chip:hover:not(:disabled),
+.composer-chip.open {
+  border-color: var(--vscode-focusBorder);
+  color: var(--vscode-foreground);
+}
+
+.composer-chip:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.composer-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-settings-btn {
   display: flex;
   align-items: center;
@@ -1489,10 +1523,32 @@ body {
 }
 
 /* 会话历史弹层（右上角下拉；top/bottom/left/right 由组件内联计算） */
-.session-popover-overlay {
+.session-popover-overlay,
+.model-popover-overlay {
   position: fixed;
   inset: 0;
   z-index: 90;
+}
+
+/* 模型/思考 chip 锚定下拉：chip 上方弹出（bottom 锚定，定位由 ModelPopover 内联计算） */
+.model-popover {
+  position: fixed;
+  z-index: 100;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--vscode-menu-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-input-border));
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  font-family: var(--pinel-font-family);
+}
+
+.model-popover:focus {
+  outline: none;
 }
 
 .session-popover {

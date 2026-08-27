@@ -36,6 +36,18 @@ interface Props {
   onOpenExtensions?: () => void;
   /** 扩展按钮元素引用（App 持有，ExtensionPopover 锚定用）。 */
   extensionBtnRef?: RefObject<HTMLButtonElement | null>;
+  /** 模型 chip 开合态（锚定 ModelPopover）。 */
+  modelOpen?: boolean;
+  /** 模型 chip 点击（toggle 打开锚定下拉）。 */
+  onOpenModel?: () => void;
+  /** 模型 chip 元素引用（App 持有，ModelPopover 锚定用）。 */
+  modelChipRef?: RefObject<HTMLButtonElement | null>;
+  /** 思考 chip 开合态。 */
+  thinkingOpen?: boolean;
+  /** 思考 chip 点击（toggle 打开锚定下拉）。 */
+  onOpenThinking?: () => void;
+  /** 思考 chip 元素引用（App 持有，ModelPopover 锚定用）。 */
+  thinkingChipRef?: RefObject<HTMLButtonElement | null>;
   /** 工作区文件列表（@ 添加文件数据；App 持有，getFileList 响应填充）。 */
   fileList?: FileItem[];
 }
@@ -91,6 +103,12 @@ export function Composer({
   extensionOpen = false,
   onOpenExtensions,
   extensionBtnRef,
+  modelOpen = false,
+  onOpenModel,
+  modelChipRef,
+  thinkingOpen = false,
+  onOpenThinking,
+  thinkingChipRef,
   fileList = [],
 }: Props) {
   const [text, setText] = useState("");
@@ -465,6 +483,39 @@ export function Composer({
         onBlur={() => vscode.postMessage({ type: "inputFocus", focused: false })}
       />
       <div className="footer-actions">
+        {/* 模型/思考 chip：常显当前值，点击弹锚定下拉切换（唯一切换入口）；
+            无模型时模型 chip 禁用、思考 chip 隐藏（对齐 ConfigPopover 思考行先例）；
+            流式中不禁用（变更自下一回合生效） */}
+        {status.model === null ? (
+          <button className="composer-chip" disabled title="No model">
+            <span className="composer-chip-label">No model</span>
+          </button>
+        ) : (
+          <button
+            ref={modelChipRef}
+            className={`composer-chip${modelOpen ? " open" : ""}`}
+            title={status.model.provider && status.model.id ? `${status.model.provider}/${status.model.id}` : "Model"}
+            aria-haspopup="listbox"
+            aria-expanded={modelOpen}
+            onClick={onOpenModel}
+            disabled={!onOpenModel}
+          >
+            <span className="composer-chip-label">{status.model.name ?? status.model.id ?? "Model"}</span>
+          </button>
+        )}
+        {status.model !== null && (
+          <button
+            ref={thinkingChipRef}
+            className={`composer-chip${thinkingOpen ? " open" : ""}`}
+            title="Thinking effort"
+            aria-haspopup="listbox"
+            aria-expanded={thinkingOpen}
+            onClick={onOpenThinking}
+            disabled={!onOpenThinking}
+          >
+            <span className="composer-chip-label">{status.thinkingLevel}</span>
+          </button>
+        )}
         <button
           className="status-settings-btn"
           title="Settings"
