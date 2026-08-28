@@ -954,7 +954,10 @@ async function handleCommand(record) {
       }
       if (text.includes("QUESTIONNAIRE")) {
         const twice = text.includes("QUESTIONNAIRE-TWICE");
-        await questionnaireSequence(text.includes("QUESTIONNAIRE-GENERIC"), twice ? { streamAfter: false } : undefined);
+        await questionnaireSequence(text.includes("QUESTIONNAIRE-GENERIC"), {
+          ...(twice ? { streamAfter: false } : {}),
+          ...(text.includes("QNA-SLOWFIRST") ? { delayFirstFrame: 500 } : {}),
+        });
         if (twice) {
           // 等第一份问卷的流 settle（settle 会清卷）再发第二份：验证重入重置
           // （同题新 toolCallId qna_2，walker 帧前缀 qna2）
@@ -1085,9 +1088,21 @@ async function handleCommand(record) {
   }
 }
 
-function waitForUiResponse(id) {
+function waitForUiResponse(id, timeoutMs = 10000) {
   return new Promise((resolve) => {
-    pendingUiWaiters.push({ id, resolve });
+    const waiter = { id, resolve };
+    pendingUiWaiters.push(waiter);
+    // 超时防御：挂起 walker 不得永久阻塞/级联污染后续测试——超时按引用移除
+    // waiter（防 findIndex 命中死 waiter 抢走同 id 新响应）并 resolve null，
+    // 调用方按 aborted 语义收尾（发 tool_execution_end + settle）
+    const timer = setTimeout(() => {
+      const idx = pendingUiWaiters.indexOf(waiter);
+      if (idx !== -1) {
+        pendingUiWaiters.splice(idx, 1);
+      }
+      resolve(null);
+    }, timeoutMs);
+    timer.unref(); // 不阻碍 stdin EOF 退出
   });
 }
 
@@ -1100,12 +1115,18 @@ function waitForUiResponse(id) {
  * 任何题目的通用 select（ui-generic-1），验证 pinel 的标题门控——通用
  * 对话框走逐卡路径、问卷帧才被缓冲。
  * opts：toolCallId/framePrefix 定制帧与工具 id（QUESTIONNAIRE-TWICE 第二卷用）；
- * streamAfter:false 抑制尾部流（TWICE 首卷由调用方 await 流后再发第二卷）。
+ * streamAfter:false 抑制尾部流（TWICE 首卷由调用方 await 流后再发第二卷）；
+ * delayFirstFrame：首帧延迟（QNA-SLOWFIRST 标记，确定性制造「取消时首帧未缓冲」
+ * 竞态窗口，供取消竞态补偿回归测试）。
  */
 async function questionnaireSequence(withGeneric, opts = {}) {
   const toolCallId = opts.toolCallId ?? "qna_1";
   const fid = (n) => (opts.framePrefix ? `${opts.framePrefix}-${n}` : `qna-${n}`);
   let aborted = false;
+  // 超时/取消统一收尾：发 tool_execution_end + 流 settle，防 walker 永久挂起
+  const abortOrTimeout = () => {
+    aborted = true;
+  };
   out({
     type: "tool_execution_start",
     toolCallId,
@@ -1153,6 +1174,14 @@ async function questionnaireSequence(withGeneric, opts = {}) {
     });
     const rg = await waitForUiResponse("ui-generic-1");
     log({ dir: "ui-response", id: "ui-generic-1", response: rg });
+    if (!rg) {
+      abortOrTimeout();
+    }
+  }
+
+  // 首帧延迟：确定性制造空缓冲取消窗口（QNA-SLOWFIRST 回归测试）
+  if (opts.delayFirstFrame) {
+    await delay(opts.delayFirstFrame);
   }
 
   // Q1 单选：select + 哨兵行
@@ -1165,7 +1194,9 @@ async function questionnaireSequence(withGeneric, opts = {}) {
   });
   const r1 = await waitForUiResponse(fid(1));
   log({ dir: "ui-response", id: fid(1), response: r1 });
-  if (r1.cancelled) {
+  if (!r1) {
+    abortOrTimeout();
+  } else if (r1.cancelled) {
     aborted = true;
   } else if (r1.value === "3. Type something.") {
     // 哨兵：跟进 input（自定义答案）
@@ -1178,7 +1209,7 @@ async function questionnaireSequence(withGeneric, opts = {}) {
     });
     const r1i = await waitForUiResponse(`${fid(1)}i`);
     log({ dir: "ui-response", id: `${fid(1)}i`, response: r1i });
-    if (r1i.cancelled) {
+    if (!r1i || r1i.cancelled) {
       aborted = true;
     }
   }
@@ -1194,7 +1225,7 @@ async function questionnaireSequence(withGeneric, opts = {}) {
     });
     const r2 = await waitForUiResponse(fid(2));
     log({ dir: "ui-response", id: fid(2), response: r2 });
-    if (r2.cancelled) {
+    if (!r2 || r2.cancelled) {
       aborted = true;
     }
   }
@@ -1210,7 +1241,9 @@ async function questionnaireSequence(withGeneric, opts = {}) {
     });
     const r3 = await waitForUiResponse(fid(3));
     log({ dir: "ui-response", id: fid(3), response: r3 });
-    if (!r3.cancelled && r3.value === "3. Type something.") {
+    if (!r3) {
+      abortOrTimeout();
+    } else if (!r3.cancelled && r3.value === "3. Type something.") {
       out({
         type: "extension_ui_request",
         id: `${fid(3)}i`,
@@ -1220,6 +1253,9 @@ async function questionnaireSequence(withGeneric, opts = {}) {
       });
       const r3i = await waitForUiResponse(`${fid(3)}i`);
       log({ dir: "ui-response", id: `${fid(3)}i`, response: r3i });
+      if (!r3i || r3i.cancelled) {
+        aborted = true;
+      }
     }
   }
 

@@ -39,7 +39,7 @@ npm run package      # 生产构建（minify）
 ```
 
 - 首次 `npm test` 下载 VS Code 到 `.vscode-test/`（约 100MB）
-- 质量门：`npm run compile` + `npm test` 全绿（当前 228/228：主套件 225 + 空窗口 3）
+- 质量门：`npm run compile` + `npm test` 全绿（当前 229/229：主套件 226 + 空窗口 3）
 
 ## Coding Guidelines
 
@@ -78,7 +78,7 @@ npm run package      # 生产构建（minify）
 
 ## Testing Guidelines
 
-- 228 个测试必须全绿：`src/test/` 单测 14 文件（framing/stream-assembly/spawn-spec/stop/todos/commands/models/fork-messages/extensions/questionnaire/session-stats/git-status/session-history/subagents）+ `extension.test.ts` 集成（真实 VS Code + 假 pi）+ no-workspace 3 个
+- 229 个测试必须全绿：`src/test/` 单测 14 文件（framing/stream-assembly/spawn-spec/stop/todos/commands/models/fork-messages/extensions/questionnaire/session-stats/git-status/session-history/subagents）+ `extension.test.ts` 集成（真实 VS Code + 假 pi）+ no-workspace 3 个
 - 新增覆盖：纯逻辑 → mocha 单测；聊天/RPC 行为 → `fixtures/fake-pi.js` 加 prompt 标记场景 + `PinelTestApi` 断言；改 RPC 必须同步 protocol.ts 与假 pi
 - 作用于首次 get_state/get_commands/get_session_stats 的场景用 `PINEL_FAKE_PI_SCENARIO` env 激活（不能 prompt 标记）
 - 集成测试踩坑（waitForSettled baseline 前置、isStreaming 等待、日志切片、env 场景清单等）见 memory `pinel-testing-pitfalls`

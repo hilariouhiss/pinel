@@ -187,6 +187,11 @@ function safeArgsText(args: unknown): string {
   return "";
 }
 
+/** 对话框标题是否匹配任一题目（取消竞态补偿与 requestMatchesQuestionnaire 共用）。 */
+function matchesQuestionnaireTitles(title: string | undefined, questions: QuestionnaireQuestion[]): boolean {
+  return questions.some((question) => titleMatchesQuestion(title, question));
+}
+
 /**
  * 聊天会话控制器：持有 pi RPC 子进程的生命周期、消息缓冲、流式装配状态，
  * 并把一切变化广播为 OutMessage（由面板转发给 webview）。
@@ -234,6 +239,9 @@ export class ChatController {
   private commands: SlashCommand[] = [];
   /** 活动问卷（ask_user_question；null=无问卷，对话框走逐卡路径）。 */
   private questionnaire: ActiveQuestionnaire | null = null;
+  /** 取消竞态补偿（zombie）：取消时首帧尚未缓冲（在途）→ 存题目快照供标题匹配，
+   *  匹配帧到达即回 cancelled；仅用户取消路径置位，存活期毫秒级（首帧在途）。 */
+  private questionnaireCancelPending: { questions: QuestionnaireQuestion[] } | null = null;
   /** 会话切换/新建 in-flight（防连点重入）。 */
   private sessionSwitching = false;
   /** 提示词编辑器管理（Ctrl+G：VS Code 原生编辑器编辑提示词并回填）。 */
@@ -494,6 +502,7 @@ export class ChatController {
       this.commands = [];
       const staleQuestionnaire = this.questionnaire;
       this.questionnaire = null;
+      this.questionnaireCancelPending = null; // 僵尸问卷随重启清空（新进程新回合）
       // 立即广播重置后的状态 + 清除对话框/待办/命令列表，让 UI 有即时反馈
       //（防止旧卡片在重启窗口内被应答，新进程可能复用同 id）
       this.fire({ type: "status", status: this.status });
@@ -1762,6 +1771,16 @@ export class ChatController {
               // 答题/确认阶段：缓冲不展示（整卷已在本地渲染）
               q.buffered.push(req);
             }
+          } else if (
+            this.questionnaireCancelPending &&
+            matchesQuestionnaireTitles(req.title, this.questionnaireCancelPending.questions)
+          ) {
+            // 取消竞态补偿：取消时首帧尚未缓冲（在途），匹配帧到达即回 cancelled——
+            // 否则插件 walker 永久等待响应，agent 永久阻塞（协议硬约束）
+            if (this.client?.isRunning) {
+              this.client.writeRaw({ type: "extension_ui_response", id: req.id, cancelled: true });
+            }
+            this.questionnaireCancelPending = null;
           } else {
             // 非问卷对话框：现有逐卡路径
             this.pendingUi.set(req.id, req);
@@ -1820,6 +1839,7 @@ export class ChatController {
       this.questionnaire = null;
       this.fire({ type: "questionnaireCleared" });
     }
+    this.questionnaireCancelPending = null; // 僵尸问卷随进程死亡清空
     // 命令列表是"进程能力描述"：崩溃后旧列表会误导补全（接受后发送报进程不可用），
     // 清空并广播，重启后由新启动流程重新拉取
     this.commands = [];
@@ -1891,6 +1911,7 @@ export class ChatController {
         this.client?.writeRaw({ type: "extension_ui_response", id: req.id, cancelled: true });
       }
     }
+    this.questionnaireCancelPending = null; // 新卷替换：旧取消补偿作废
     this.questionnaire = {
       id,
       questions,
@@ -1924,7 +1945,7 @@ export class ChatController {
     if (!q) {
       return false;
     }
-    return q.questions.some((question) => titleMatchesQuestion(req.title, question));
+    return matchesQuestionnaireTitles(req.title, q.questions);
   }
 
   /** 用户答题：校验后写入 journal；全部答完自动转 reviewing。 */
@@ -1962,7 +1983,9 @@ export class ChatController {
     }
   }
 
-  /** 放弃整卷：对缓冲帧补 cancelled 并清卷（插件 walker 收到 cancelled 即中止，不再发新帧）。 */
+  /** 放弃整卷：对缓冲帧补 cancelled 并清卷（插件 walker 收到 cancelled 即中止，不再发新帧）。
+   *  竞态补偿：取消时首帧尚未缓冲（在途）→ 存题目快照，匹配帧到达时由
+   *  extension_ui_request 分支立即回 cancelled（否则插件 walker 永久阻塞）。 */
   handleQuestionnaireCancel(): void {
     const q = this.questionnaire;
     if (!q) {
@@ -1975,6 +1998,8 @@ export class ChatController {
         client.writeRaw({ type: "extension_ui_response", id: req.id, cancelled: true });
       }
     }
+    // 仅用户取消路径置位（settled/重启路径帧不可能再到达，不留死僵尸）
+    this.questionnaireCancelPending = buffered.length === 0 ? { questions: q.questions } : null;
     this.questionnaire = null;
     this.fire({ type: "questionnaireCleared" });
   }
@@ -1993,6 +2018,7 @@ export class ChatController {
       }
     }
     this.questionnaire = null;
+    this.questionnaireCancelPending = null; // settled：无在途帧，清僵尸
     this.fire({ type: "questionnaireCleared" });
   }
 

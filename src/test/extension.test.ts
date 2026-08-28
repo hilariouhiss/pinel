@@ -555,6 +555,35 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.strictEqual(qna2.length, 0, "取消后插件不得再发后续题目");
   });
 
+  test("问卷取消竞态：首帧未到即取消 → 匹配帧回 cancelled 不阻塞 agent（QNA-SLOWFIRST）", async function () {
+    this.timeout(60000);
+    // fake-pi 首帧延迟 500ms：确定性制造「问卷已进入但 qna-1 帧尚未缓冲」窗口——
+    // 修复前取消对空缓冲发零个 cancelled → walker 永久挂起 → settle 超时（flake 根因）
+    const marker = `QUESTIONNAIRE-QNA-SLOWFIRST-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+    await waitFor(() => (api.getQuestionnaire()?.questions.length ?? 0) === 3, 10000, "问卷进入");
+
+    api.questionnaireCancel();
+    await waitFor(() => api.getQuestionnaire() === null, 5000, "取消后清卷");
+    await api.waitForSettled(30000, baseline);
+
+    const records = recordsAfterPrompt(readFakePiLog(logPath), marker);
+    const qna1 = records.filter((r) => {
+      const rec = r.record as { dir?: string; id?: string; response?: { cancelled?: boolean } };
+      return rec?.dir === "ui-response" && rec?.id === "qna-1";
+    });
+    assert.strictEqual(qna1.length, 1, "qna-1 必须收到恰好一次 cancelled（延迟帧到达即回）");
+    assert.strictEqual(
+      (qna1[0].record as { response?: { cancelled?: boolean } }).response?.cancelled,
+      true,
+    );
+    const qna2 = records.filter(
+      (r) => ((r.record as { id?: string })?.id ?? "") === "qna-2",
+    );
+    assert.strictEqual(qna2.length, 0, "取消后插件不得再发后续题目");
+  });
+
   test("问卷期间通用对话框走逐卡路径（标题门控不误缓冲）", async function () {
     this.timeout(60000);
     const marker = `QUESTIONNAIRE-GENERIC-${Date.now()}`;

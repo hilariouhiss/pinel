@@ -25,6 +25,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Fixed
 
+- 问卷取消竞态：用户在问卷首帧到达前取消（或测试竞态窗口）时，缓冲为空无帧可回 cancelled，插件 walker 永久等待响应、agent 永不 settle——现置取消补偿标记，匹配帧到达即回 cancelled；修复集成测试偶发失败（问卷取消 waitForSettled 超时 + 级联污染下一测试的 qna-1 响应断言）
+- fake-pi 加固：waitForUiResponse 加 10s 超时（按引用移除 waiter + 放弃当前 walker + 补发 settle），挂起不再永久阻塞/污染后续测试
+
 - 问卷多选自动跳题：webview 用 questions 引用比较判断问卷重入，而 postMessage 每条广播都是结构化克隆的新对象（引用恒变）——每次答题广播都被误判重入并重置到首个未答题（多选勾选即跳下一题；单选乱序作答回跳；输入草稿每次广播被清空）。修复：`QuestionnaireView` 增加稳定 `id`（tool_execution_start 的 toolCallId），webview 重入判定与草稿清理均按 id 比较
 
 - `/new` 新建会话：输入框发送 `/new` 直接新建会话（pi 的 slash 命令 RPC 模式不展开，pinel 本地拦截——精确匹配且无附件时改走 `new_session`，带参数/附件原样发送；流式中自动中断并新建；旧会话保留在历史列表可随时切回）
