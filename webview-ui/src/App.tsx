@@ -113,30 +113,6 @@ export default function App() {
   }, [messages]);
   // 悬浮条输入文案：仅图片用户消息兑底 "📎 图片"（评审 N4）
   const lastUserText = lastUser ? lastUser.text || "📎 图片" : "";
-  // 流式尾部推导（评审 M1）：尾向前扫——最近非空 text 块尾 60 字符；
-  // 否则最近 toolCall 工具名；否则 thinking 显 "Thinking…"；全空仅 spinner
-  const streamTail = useMemo(() => {
-    if (!status.isStreaming) {
-      return "";
-    }
-    for (let i = streamBlocks.length - 1; i >= 0; i--) {
-      const b = streamBlocks[i];
-      if (b.kind === "text" && b.text.trim()) {
-        const t = b.text.trim();
-        return t.length > 60 ? t.slice(-60) : t;
-      }
-    }
-    for (let i = streamBlocks.length - 1; i >= 0; i--) {
-      const b = streamBlocks[i];
-      if (b.kind === "toolCall") {
-        return b.toolCall?.name ?? "";
-      }
-    }
-    if (streamBlocks.some((b) => b.kind === "thinking")) {
-      return "Thinking…";
-    }
-    return "";
-  }, [streamBlocks, status.isStreaming]);
 
   // 点击悬浮条滚回原用户消息（scroll-margin-top 防遮挡；stickToBottom 由 onScroll 自然更新）
   const locateLastUser = () => {
@@ -553,12 +529,7 @@ export default function App() {
         {/* 通知横幅：悬浮于 header 正下方（absolute 定位上下文 = chat-header，
             top:calc(100%+3px)，不挤压布局；见 styles.css .notices） */}
         <Notices notices={notices} onDismiss={dismissNotice} />
-        <RecentRoundBar
-          lastUserText={lastUserText}
-          streaming={status.isStreaming}
-          streamTail={streamTail}
-          onLocate={locateLastUser}
-        />
+        <RecentRoundBar lastUserText={lastUserText} onLocate={locateLastUser} />
       </div>
       {showBootAnimation && (
         <div className="session-boot-overlay">

@@ -116,7 +116,7 @@ body {
    复用 .notices 模式），absolute 若放滚动区内会随内容滚走（absolute 非 sticky） */
 .recent-round-bar {
   position: absolute;
-  top: calc(100% + 1px);
+  top: calc(100% + 3px);
   left: 8px;
   right: 8px;
   z-index: 20; /* 盖消息（无 z-index）、低于 notices 30——通知横幅短暂压条可接受 */
@@ -132,31 +132,16 @@ body {
   cursor: pointer;
 }
 
-.recent-round-bar-status {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--vscode-descriptionForeground);
-  white-space: nowrap;
-}
-
 .recent-round-bar-text {
   flex: 1;
   min-width: 0;
+  /* 纯消息文本：最多 3 行、超出 ellipsis 截断（Chromium webview 原生特性） */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--vscode-foreground);
-}
-
-.recent-round-bar-tail {
-  flex: none;
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--vscode-descriptionForeground);
+  word-break: break-word;
 }
 
 /* 点击悬浮条滚回后原消息不被悬浮条遮挡（scrollIntoView 尊重 scroll-margin） */
