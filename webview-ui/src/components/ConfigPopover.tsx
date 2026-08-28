@@ -95,6 +95,15 @@ export function ConfigPopover({ status, open, onClose }: Props) {
     </button>
   );
 
+  /** 阈值提交：1–99 校验后发宿主（宿主二次校验）；非法值不提交。 */
+  const commitThreshold = (raw: string) => {
+    const pct = Math.round(Number(raw));
+    if (!Number.isFinite(pct) || pct < 1 || pct > 99) {
+      return;
+    }
+    vscode.postMessage({ type: "setCompactionThreshold", percent: pct });
+  };
+
   return (
     <>
       <div className="config-popover-overlay" onClick={onClose} />
@@ -147,6 +156,40 @@ export function ConfigPopover({ status, open, onClose }: Props) {
                 )
               }
             />
+          </div>
+          <div className="config-popover-row">
+            <span className="config-popover-label">Threshold</span>
+            <input
+              className="config-popover-input"
+              type="number"
+              min={1}
+              max={99}
+              step={1}
+              defaultValue={status.autoCompactPercent ?? ""}
+              placeholder={status.autoCompactPercent === null ? "—" : undefined}
+              aria-label="Auto compaction threshold (percent of context window)"
+              title="Compress when context usage reaches this percent (Enter or blur to save)"
+              disabled={!running || busyKeys.has("threshold")}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  commitThreshold(e.currentTarget.value);
+                  e.currentTarget.blur(); // 提交后失焦，防重复 Enter
+                }
+              }}
+              onBlur={(e) => commitThreshold(e.currentTarget.value)}
+            />
+            <span className="config-popover-unit">%</span>
+          </div>
+          <div className="config-popover-row">
+            <button
+              className="config-popover-compact"
+              disabled={!running || status.isCompacting || busyKeys.has("compactNow")}
+              onClick={() =>
+                withCooldown("compactNow", () => vscode.postMessage({ type: "compact" }))
+              }
+            >
+              {status.isCompacting ? "Compacting…" : "Compact now"}
+            </button>
           </div>
         </div>
         <div className="config-popover-section">

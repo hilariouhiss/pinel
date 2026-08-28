@@ -42,7 +42,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 ```
 
 - 首次 `npm test` 下载 VS Code 到 `.vscode-test/`（约 100MB）
-- 质量门：`npm run compile` + `npm test` 全绿（当前 245/245：主套件 242 + 空窗口 3）
+- 质量门：`npm run compile` + `npm test` 全绿（当前 260/260：主套件 256 + 空窗口 4）
 
 ## Coding Guidelines
 
@@ -70,7 +70,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 | Ctrl+G 编辑提示词 | prompt-editor.ts；真实临时文件 + 保存回填 + 发送清理 |
 | @ 添加文件 | at-refs.ts 发送时文本解析 @引用（引号路径/标点剥离/大小写不敏感）+ file-scanner；panel.ts 透传 fileRefs；controller 自读自拼 file 标记注入 + 图片 base64 |
 | 问卷 | questionnaire.ts；tool_execution_start 整卷本地渲染 + 游标回填；分段进度条 |
-| 配置面板/模型思考 chip | ConfigPopover（队列/压缩/会话信息）+ ModelPopover chip 下拉（models.ts） |
+| 配置面板/模型思考 chip | ConfigPopover（队列/压缩阈值/Compact now/会话信息）+ ModelPopover chip 下拉（models.ts） |
 | lucide 图标 | lucide-static SVG esbuild text loader 内联；stroke=currentColor 主题自适应 |
 | 会话重命名/删除 | set_session_name（当前）/ appendSessionName（非当前）；seam confirmSessionDelete |
 | 会话统计/信息条 | session-stats.ts + git-status.ts + session-env；Maple Mono NF 全扩展字体 |
@@ -80,7 +80,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 | 输入框自适应 | Composer scrollHeight 自适应（软换行计入，上限面板高 60%） |
 | 扩展管理 | extensions.ts；本地重命名启停 + packages settings 编辑（字符串↔对象空数组，无同 identity 条目 upsert 覆盖）+ pi remove 卸载；弹层 All/Global/Project 三态切换（project 视图含继承全局包 inherited 行，开关写项目覆盖条目；all 包按 identity 去重 project 优先；panel 记忆最近视图刷新沿用） |
 | Pinel 插件（npm 包） | pinel-plugin/（@hilariouhiss/pinel，PINEL_PLUGIN=1 + rpc 守卫）；pinel-install.ts 安装态检测（settings.json packages + 曾安装标记不复活）；pinel-payload.ts 白名单过滤 pinel.* + 防御解析；controller 缓存 + snapshot 重放；panel 一键 pi install（runPiCommand） |
-| 会话树导航/手动压缩 | 插件 /pinel-tree 扩展命令（RPC 派发，control 消息不渲染不写条目）+ TreePopover；compact 原生 RPC（protocol CompactCommand + controller.compact + SessionStatsBar 按钮） |
+| 会话树导航/压缩 | 插件 /pinel-tree 扩展命令（RPC 派发，control 消息不渲染不写条目）+ PinelTreePopover（双击 Esc 打开，锚定 header 分支按钮，焦点门控）；compact 原生 RPC（protocol CompactCommand + controller.compact + 设置面板 Compact now）；阈值 setCompactionThreshold（百分比↔reserveTokens 写全局 settings.json + status.autoCompactPercent 回显） |
 | 模型自愈 | get_state 重试 4 次 → 自动重启一次（不走 restart 守卫） |
 
 ## Testing Guidelines

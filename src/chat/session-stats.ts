@@ -1,5 +1,21 @@
 import type { SessionContextUsage, SessionStatsData, SessionTokens } from "../rpc/protocol";
 
+/** pi 自动压缩默认 reserveTokens（settings.json compaction.reserveTokens 缺省值）。 */
+export const DEFAULT_RESERVE_TOKENS = 16384;
+
+/**
+ * 百分比阈值 → reserveTokens：pi 触发条件 contextTokens > contextWindow − reserveTokens，
+ * 故「占用达 pct% 时压缩」⇔ reserveTokens = round(contextWindow × (100 − pct) / 100)。
+ */
+export function percentToReserveTokens(percent: number, contextWindow: number): number {
+  return Math.round((contextWindow * (100 - percent)) / 100);
+}
+
+/** reserveTokens → 百分比回显（四舍五入取整）。 */
+export function reserveTokensToPercent(reserveTokens: number, contextWindow: number): number {
+  return Math.round(((contextWindow - reserveTokens) / contextWindow) * 100);
+}
+
 /**
  * 防御解析 get_session_stats 响应数据（参照 models.ts 的防御思路）。
  *

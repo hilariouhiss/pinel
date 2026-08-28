@@ -180,6 +180,12 @@ interface WebviewCompactMessage {
   customInstructions?: string;
 }
 
+/** 设置自动压缩阈值（百分比 1–99；宿主换算写全局 settings.json compaction.reserveTokens）。 */
+interface WebviewSetCompactionThresholdMessage {
+  type: "setCompactionThreshold";
+  percent: number;
+}
+
 type WebviewInMessage =
   | WebviewPromptMessage
   | WebviewAbortMessage
@@ -213,6 +219,7 @@ type WebviewInMessage =
   | WebviewInstallPinelPluginMessage
   | WebviewPinelTreeNavigateMessage
   | WebviewCompactMessage
+  | WebviewSetCompactionThresholdMessage
   | WebviewSetExtensionEnabledMessage
   | WebviewUninstallExtensionMessage
   | WebviewReadyMessage;
@@ -385,6 +392,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "compact":
         void this.controller.compact(msg.customInstructions);
+        break;
+      case "setCompactionThreshold":
+        void this.controller.setCompactionThreshold(msg.percent);
         break;
       case "setExtensionEnabled":
         void (async () => {

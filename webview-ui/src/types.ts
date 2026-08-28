@@ -21,6 +21,8 @@ export interface ChatStatus {
   followUpMode: string;
   /** 自动压缩（set_auto_compaction），默认 true。 */
   autoCompactionEnabled: boolean;
+  /** 自动压缩阈值回显（百分比；null = 尚未换算/读取失败，输入框占位）。 */
+  autoCompactPercent: number | null;
   /** 当前会话文件路径（get_state.sessionFile；会话历史高亮用）。 */
   sessionFile?: string;
   /** 会话信息条开关（pinel.showSessionStats 配置镜像；UI 偏好不依赖 pi 运行）。 */

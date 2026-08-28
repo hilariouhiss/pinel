@@ -431,7 +431,8 @@ export async function removePackageFromSettings(
 
 type SettingsObject = Record<string, unknown>;
 
-async function readSettings(settingsPath: string): Promise<SettingsObject> {
+/** 读 settings.json：不存在 → 空对象；损坏 JSON → 抛错（绝不覆盖，调用方 notice）。 */
+export async function readSettings(settingsPath: string): Promise<SettingsObject> {
   let raw: string;
   try {
     raw = await fs.readFile(settingsPath, "utf8");
@@ -454,7 +455,8 @@ async function readSettings(settingsPath: string): Promise<SettingsObject> {
   return parsed as SettingsObject;
 }
 
-async function writeSettings(settingsPath: string, settings: SettingsObject): Promise<void> {
+/** 写 settings.json：临时文件 + rename 原子替换；目录不存在时 mkdir recursive。 */
+export async function writeSettings(settingsPath: string, settings: SettingsObject): Promise<void> {
   const tmp = `${settingsPath}.pinel-tmp`;
   const body = `${JSON.stringify(settings, null, 2)}\n`;
   await fs.mkdir(path.dirname(settingsPath), { recursive: true }); // 全新 workspace 无 .pi/ 时不 ENOENT

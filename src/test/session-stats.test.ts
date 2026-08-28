@@ -1,5 +1,5 @@
 import * as assert from "assert";
-import { parseSessionStats } from "../chat/session-stats";
+import { DEFAULT_RESERVE_TOKENS, parseSessionStats, percentToReserveTokens, reserveTokensToPercent } from "../chat/session-stats";
 
 suite("parseSessionStats 防御解析", () => {
   function fullStats(): Record<string, unknown> {
@@ -94,5 +94,29 @@ suite("parseSessionStats 防御解析", () => {
     assert.ok(stats);
     assert.strictEqual(stats!.userMessages, undefined);
     assert.strictEqual(stats!.assistantMessages, 4);
+  });
+});
+
+suite("自动压缩阈值百分比 ↔ reserveTokens 换算", () => {
+  test("percentToReserveTokens：占用 pct% 时压缩 ⇔ 预留 (100−pct)%", () => {
+    assert.strictEqual(percentToReserveTokens(80, 200000), 40000);
+    assert.strictEqual(percentToReserveTokens(1, 200000), 198000);
+    assert.strictEqual(percentToReserveTokens(99, 200000), 2000);
+    assert.strictEqual(percentToReserveTokens(0, 200000), 200000);
+  });
+
+  test("percentToReserveTokens：四舍五入取整", () => {
+    assert.strictEqual(percentToReserveTokens(80, 200001), 40000); // 40000.2 → 40000
+    assert.strictEqual(percentToReserveTokens(80, 200004), 40001); // 40000.8 → 40001
+  });
+
+  test("reserveTokensToPercent：回显四舍五入取整", () => {
+    assert.strictEqual(reserveTokensToPercent(40000, 200000), 80);
+    assert.strictEqual(reserveTokensToPercent(16384, 200000), 92); // pi 默认回显
+    assert.strictEqual(reserveTokensToPercent(0, 200000), 100);
+  });
+
+  test("DEFAULT_RESERVE_TOKENS 对齐 pi 默认 16384", () => {
+    assert.strictEqual(DEFAULT_RESERVE_TOKENS, 16384);
   });
 });

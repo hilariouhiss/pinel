@@ -37,7 +37,7 @@ import {
   type ToolExecutionUpdateEvent,
 } from "../rpc/protocol";
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
-import { parseSessionStats } from "./session-stats";
+import { DEFAULT_RESERVE_TOKENS, parseSessionStats, percentToReserveTokens, reserveTokensToPercent } from "./session-stats";
 import { parsePinelState, parsePinelTree, type PinelStatePayload, type PinelTreePayload } from "./pinel-payload";
 import {
   PINEL_PACKAGE_SOURCE,
@@ -56,6 +56,7 @@ import type { SessionListItem } from "./session-history";
 import {
   defaultAgentDir,
   projectConfigDir,
+  readSettings,
   removePackageFromSettings,
   scanLocalExtensions,
   scanPackages,
@@ -67,6 +68,7 @@ import {
   type ExtensionKind,
   type ExtensionScope,
   type ExtensionView,
+  writeSettings,
 } from "./extensions";
 import {
   inputResponseFor,
@@ -93,6 +95,8 @@ export interface ChatStatus {
   followUpMode: string;
   /** 自动压缩（set_auto_compaction），默认 true。 */
   autoCompactionEnabled: boolean;
+  /** 自动压缩阈值回显（百分比；null = 尚未换算/读取失败，webview 占位）。 */
+  autoCompactPercent: number | null;
   /** 会话信息条开关（pinel.showSessionStats 配置镜像；UI 偏好不依赖 pi 运行）。 */
   showSessionStats?: boolean;
   /** 当前会话文件路径（get_state.sessionFile；会话历史列表高亮用）。 */
@@ -182,6 +186,7 @@ const initialStatus: ChatStatus = {
   steeringMode: "all",
   followUpMode: "one-at-a-time",
   autoCompactionEnabled: true,
+  autoCompactPercent: null,
   showSessionStats: false,
   steering: [],
   followUp: [],
@@ -1136,6 +1141,9 @@ export class ChatController {
     if (this.status.showSessionStats) {
       this.sessionStats = null;
       this.fire({ type: "sessionStats", stats: null });
+      // 阈值回显依赖 contextWindow：统计清空 → 回显回占位（新会话窗口可能不同）
+      this.status = { ...this.status, autoCompactPercent: null };
+      this.fire({ type: "status", status: this.status });
       void this.refreshSessionStats();
       void this.refreshSessionEnv();
     }
@@ -1286,6 +1294,86 @@ export class ChatController {
   }
 
   /**
+   * 设置自动压缩阈值（设置面板百分比输入）：换算为 pi settings.json 的
+   * compaction.reserveTokens 写全局设置（触发条件 contextTokens > contextWindow − reserveTokens）。
+   * - 换算基准 contextWindow：优先缓存统计；缺省时（信息条开关关闭 stats 未拉取）
+   *   绕过 refreshSessionStats 的开关早退直发一次 get_session_stats。
+   * - 写失败（损坏 JSON/权限）→ error notice；成功 → 广播回显 + notice。
+   */
+  async setCompactionThreshold(percent: number): Promise<void> {
+    const pct = Math.round(percent);
+    if (!Number.isFinite(pct) || pct < 1 || pct > 99) {
+      this.notice("error", `Invalid compaction threshold: ${percent}% (use 1–99)`);
+      return;
+    }
+    let contextWindow: number | null = this.sessionStats?.contextUsage?.contextWindow ?? null;
+    if (contextWindow === null) {
+      const client = this.client;
+      if (client?.isRunning) {
+        try {
+          const parsed = parseSessionStats(await client.send<SessionStatsData>({ type: "get_session_stats" }));
+          contextWindow = parsed?.contextUsage?.contextWindow ?? null;
+        } catch {
+          // 拉取失败：下方统一按窗口缺失报错
+        }
+      }
+    }
+    if (contextWindow === null) {
+      this.notice("error", "Cannot set threshold: context window unavailable (pi not running or stats missing)");
+      return;
+    }
+    const reserveTokens = percentToReserveTokens(pct, contextWindow);
+    try {
+      const settings = await readSettings(agentSettingsPath(os.homedir()));
+      const raw = settings.compaction;
+      const compaction =
+        typeof raw === "object" && raw !== null && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
+      compaction.reserveTokens = reserveTokens;
+      settings.compaction = compaction;
+      await writeSettings(agentSettingsPath(os.homedir()), settings);
+    } catch (err) {
+      this.notice("error", `Failed to save compaction threshold: ${(err as Error).message}`);
+      return;
+    }
+    this.status = { ...this.status, autoCompactPercent: pct };
+    this.fire({ type: "status", status: this.status });
+    this.notice(
+      "info",
+      `Auto-compaction threshold set to ${pct}% (reserve ${reserveTokens} tokens). Restart pi to apply.`,
+    );
+  }
+
+  /**
+   * 读全局 settings.json 的 compaction.reserveTokens 换算百分比回显（无显式值用 pi 默认）。
+   * 依赖缓存统计的 contextWindow；失败静默保持占位（非用户显式操作，不弹 notice）。
+   */
+  private async refreshAutoCompactPercent(): Promise<void> {
+    const contextWindow = this.sessionStats?.contextUsage?.contextWindow;
+    if (typeof contextWindow !== "number") {
+      return;
+    }
+    let reserveTokens = DEFAULT_RESERVE_TOKENS;
+    try {
+      const settings = await readSettings(agentSettingsPath(os.homedir()));
+      const raw = settings.compaction;
+      const value =
+        typeof raw === "object" && raw !== null && !Array.isArray(raw)
+          ? (raw as Record<string, unknown>).reserveTokens
+          : undefined;
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+        reserveTokens = value;
+      }
+    } catch {
+      return; // 读失败：保持占位
+    }
+    const pct = reserveTokensToPercent(reserveTokens, contextWindow);
+    if (this.status.autoCompactPercent !== pct) {
+      this.status = { ...this.status, autoCompactPercent: pct };
+      this.fire({ type: "status", status: this.status });
+    }
+  }
+
+  /**
    * 会话信息开关（设置面板「显示会话信息」）。
    * pinel 自身 UI 偏好：写 vscode 配置持久化（Global），不依赖 pi 进程状态。
    * 开启后立即首拉统计；配置写入失败静默 + Output 记录（不弹 notice——开关
@@ -1365,6 +1453,7 @@ export class ChatController {
     }
     this.sessionStats = parsed;
     this.fire({ type: "sessionStats", stats: parsed });
+    void this.refreshAutoCompactPercent(); // 阈值回显随新统计刷新（读全局 settings 换算）
   }
 
   /**

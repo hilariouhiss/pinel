@@ -14,12 +14,6 @@ interface Props {
   env: SessionEnv | null;
   /** pinel.state 插件实时快照（消息计数/模型；null = 插件未装/未推送）。 */
   pinelState: PinelState | null;
-  /** 压缩进行中（compact 按钮禁用态）。 */
-  isCompacting: boolean;
-  /** 打开会话树选择器（PinelTreePopover）。 */
-  onOpenTree: () => void;
-  /** 发起手动压缩（宿主 compact 原生 RPC）。 */
-  onCompact: () => void;
 }
 
 /**
@@ -76,8 +70,9 @@ function gitMarkers(git: NonNullable<SessionEnv["git"]>): string {
  * 左侧环境段（Maple Mono NF）：`folderName on  branch [!?↑↓]`（p10k 风格）；
  * 右侧指标段：上下文占用/窗口、缓存读↑、缓存写↓、缓存命中率、成本$。
  * 纯展示组件；各元素经 title 提供悬浮语义。
+ * （Tree 导航改双击 Esc 入口、手动压缩改设置面板 Compact now，2026-08-28 移除按钮。）
  */
-export function SessionStatsBar({ stats, env, pinelState, isCompacting, onOpenTree, onCompact }: Props) {
+export function SessionStatsBar({ stats, env, pinelState }: Props) {
   if (!stats) {
     return (
       <div className="session-stats-bar">
@@ -148,21 +143,6 @@ export function SessionStatsBar({ stats, env, pinelState, isCompacting, onOpenTr
               <span className="session-stats-value">{stats.cost.toFixed(3)}</span>
             </span>
           )}
-          <button
-            className="session-stats-action"
-            title="Navigate session tree"
-            onClick={onOpenTree}
-          >
-            Tree
-          </button>
-          <button
-            className="session-stats-action"
-            title="Compact conversation context"
-            disabled={isCompacting}
-            onClick={onCompact}
-          >
-            Compact
-          </button>
         </span>
       </div>
     </div>

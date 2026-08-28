@@ -59,6 +59,8 @@ export interface PinelTestApi {
   setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void>;
   /** 设置自动压缩（set_auto_compaction）。 */
   setAutoCompaction(enabled: boolean): Promise<void>;
+  /** 设置自动压缩阈值（百分比；写全局 settings.json compaction.reserveTokens）。 */
+  setCompactionThreshold(percent: number): Promise<void>;
   /** 重启 pi 进程（触发 ChatController.restart）。 */
   restart(): Promise<void>;
   /** Ctrl+G 提示词编辑：以 text 为初始内容打开 VS Code 编辑器（await 编辑器就绪）。 */
@@ -246,6 +248,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     setSteeringMode: (mode) => ctrl.setSteeringMode(mode),
     setFollowUpMode: (mode) => ctrl.setFollowUpMode(mode),
     setAutoCompaction: (enabled) => ctrl.setAutoCompaction(enabled),
+    setCompactionThreshold: (percent: number) => ctrl.setCompactionThreshold(percent),
     restart: () => ctrl.restart(),
     editPrompt: (text: string) => ctrl.editPrompt(text),
     getPendingPromptUriPath: () => ctrl.getPendingPromptUri()?.fsPath,

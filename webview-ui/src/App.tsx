@@ -29,6 +29,7 @@ const initialStatus: ChatStatus = {
   steeringMode: "all",
   followUpMode: "one-at-a-time",
   autoCompactionEnabled: true,
+  autoCompactPercent: null,
   showSessionStats: false,
   steering: [],
   followUp: [],
@@ -60,12 +61,10 @@ export default function App() {
   const historyBtnRef = useRef<HTMLButtonElement>(null);
   /** 新会话按钮元素引用（锚定不需要，与 historyBtnRef 同组）。 */
   const newSessionBtnRef = useRef<HTMLButtonElement>(null);
-  /** 分支按钮元素引用（ForkPopover 锚定）。 */
+  /** 分支按钮元素引用（ForkPopover 锚定；双击 Esc 打开的会话树弹层同用此锚）。 */
   const forkBtnRef = useRef<HTMLButtonElement>(null);
   /** 扩展按钮元素引用（ExtensionPopover 锚定；按钮在 Composer footer 内渲染）。 */
   const extensionBtnRef = useRef<HTMLButtonElement>(null);
-  /** 会话树按钮元素引用（PinelTreePopover 锚定；按钮在 SessionStatsBar 内渲染）。 */
-  const treeBtnRef = useRef<HTMLButtonElement>(null);
   /** 模型/思考 chip 元素引用（ModelPopover 锚定）。 */
   const modelChipRef = useRef<HTMLButtonElement>(null);
   const thinkingChipRef = useRef<HTMLButtonElement>(null);
@@ -377,6 +376,38 @@ export default function App() {
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   }, []);
 
+  // 双击 Esc 打开会话树弹层（Tree 按钮移除后的入口）。弹层打开时 Esc 被其
+  // capture 监听 stopPropagation，本监听收不到 → 不会在关弹层瞬间又开树。
+  // 门控：焦点在输入框（保护草稿/流式中断语义）或问卷活跃（容器级 Esc=放弃整卷）不触发。
+  useEffect(() => {
+    let lastEscAt = 0;
+    let lastKey = "";
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") {
+        lastKey = e.key; // 非 Esc 打断双击序列
+        return;
+      }
+      const now = Date.now();
+      const isDouble = lastKey === "Escape" && now - lastEscAt <= 350;
+      lastEscAt = now;
+      lastKey = "Escape";
+      if (!isDouble) {
+        return;
+      }
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (questionnaire !== null) {
+        return;
+      }
+      lastEscAt = 0; // 重置，防三连 Esc 误触
+      setPopover((prev) => (prev === "tree" ? null : "tree"));
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [questionnaire]);
+
   const hasConversation = messages.length > 0 || streamBlocks.length > 0;
 
   // 问卷提交后收起为一行状态条：插入消息流原位（最后一条已完成消息之后、
@@ -529,10 +560,10 @@ export default function App() {
           <button
             ref={forkBtnRef}
             className="chat-fork-btn"
-            title="Fork from a previous message"
+            title="Fork from a previous message — double-press Esc for session tree"
             aria-label="Fork from a previous message"
             aria-haspopup="dialog"
-            aria-expanded={popover === "fork"}
+            aria-expanded={popover === "fork" || popover === "tree"}
             onClick={openFork}
             disabled={switching}
             dangerouslySetInnerHTML={{ __html: forkIcon }}
@@ -632,17 +663,16 @@ export default function App() {
           fileList={fileList}
         />
         {status.showSessionStats && (
-          <SessionStatsBar
-            stats={sessionStats}
-            env={sessionEnv}
-            pinelState={pinelState}
-            isCompacting={status.isCompacting}
-            onOpenTree={() => setPopover((prev) => (prev === "tree" ? null : "tree"))}
-            onCompact={() => vscode.postMessage({ type: "compact" })}
-          />
+          <SessionStatsBar stats={sessionStats} env={sessionEnv} pinelState={pinelState} />
         )}
       </div>
-      <ConfigPopover status={status} open={popover === "config"} onClose={() => setPopover(null)} />
+      {/* key 随开合切换：每次打开重挂载，阈值输入 defaultValue 取最新回显（非受控免草稿态） */}
+      <ConfigPopover
+        key={popover === "config" ? "cfg-open" : "cfg-closed"}
+        status={status}
+        open={popover === "config"}
+        onClose={() => setPopover(null)}
+      />
       <ModelPopover
         anchor={popover === "model" ? modelChipRef.current : null}
         kind="model"
@@ -684,7 +714,7 @@ export default function App() {
         onClose={() => setPopover(null)}
       />
       <PinelTreePopover
-        anchor={popover === "tree" ? treeBtnRef.current : null}
+        anchor={popover === "tree" ? forkBtnRef.current : null}
         tree={pinelTree}
         onClose={() => setPopover(null)}
       />

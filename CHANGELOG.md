@@ -6,6 +6,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### Changed
+
+- 会话信息条 Tree / Compact 按钮移除：会话树导航改**双击 Esc**弹出（锚定顶部栏分支按钮；焦点在输入框或问卷活跃时不响应）；手动压缩改设置面板 **Compact now** 按钮；设置面板 Auto compaction 区块新增**压缩阈值百分比输入**（1–99，换算写全局 settings.json `compaction.reserveTokens`，默认值按 pi 原样 16384 回显，保存成功 notice 提示重启 pi 生效）
+
 ### Added
 
 - 扩展管理弹层作用域切换：All/Global/Project 三态视图（切换即重拉列表，启停/卸载后刷新沿用当前视图）；project 视图展示继承的全局包（inherited 徽标 + dimmed，隐藏卸载按钮），开关操作写入项目覆盖条目（`.pi/settings.json` 对象空数组/字符串，upsert 无则新增，按包身份查重防同 repo 不同拼写重复）；all 视图包按身份去重（项目条目优先，对齐 pi dedupe）；全新 workspace 首次覆盖写入自动补建 .pi 目录；无 workspace 时 project 视图提示不可用

@@ -2672,4 +2672,69 @@ suite("Pinel 集成测试（假 pi）", () => {
       assert.strictEqual(card.output, "partial output");
     });
   });
+
+  // -------------------------------------------------------------------------
+  // 自动压缩阈值（百分比 → 全局 settings.json compaction.reserveTokens）
+  // -------------------------------------------------------------------------
+
+  suite("自动压缩阈值", () => {
+    let agentDir: string;
+
+    suiteSetup(async () => {
+      // 隔离：防写真实 ~/.pi/agent/settings.json（对齐扩展管理套件模式）
+      agentDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pinel-threshold-"));
+      process.env.PI_CODING_AGENT_DIR = agentDir;
+    });
+
+    suiteTeardown(async () => {
+      delete process.env.PI_CODING_AGENT_DIR;
+      await fs.promises.rm(agentDir, { recursive: true, force: true });
+    });
+
+    test("setCompactionThreshold：换算写 settings.json + 回显 + notice", async function () {
+      this.timeout(30000);
+      await api.setCompactionThreshold(80);
+
+      // fake-pi get_session_stats contextWindow=200000 → 80% → 预留 40000
+      const settings = JSON.parse(await fs.promises.readFile(path.join(agentDir, "settings.json"), "utf8"));
+      assert.strictEqual(settings.compaction.reserveTokens, 40000, "80% × 200000 窗口 → 预留 40000");
+      assert.strictEqual(api.getStatus().autoCompactPercent, 80, "status 回显百分比");
+      await waitFor(
+        () => api.getTestEventLog().notices.some((n) => n.text.includes("threshold set to 80%")),
+        10000,
+        "阈值保存 notice",
+      );
+    });
+
+    test("非法百分比：error notice 且不写 settings.json", async function () {
+      this.timeout(30000);
+      // 自包含：先写哨兵内容，断言非法调用后内容不变（不依赖套件内测试顺序）
+      const p = path.join(agentDir, "settings.json");
+      await fs.promises.writeFile(p, JSON.stringify({ sentinel: true }));
+      await api.setCompactionThreshold(150);
+      await waitFor(
+        () =>
+          api.getTestEventLog().notices.some(
+            (n) => n.level === "error" && n.text.includes("Invalid compaction threshold"),
+          ),
+        10000,
+        "非法阈值 error notice",
+      );
+      const content = JSON.parse(await fs.promises.readFile(p, "utf8"));
+      assert.deepStrictEqual(content, { sentinel: true }, "非法值不得写 settings");
+    });
+
+    test("已有 settings 合并写：compaction 其他键与 packages 保留", async function () {
+      this.timeout(30000);
+      await fs.promises.writeFile(
+        path.join(agentDir, "settings.json"),
+        JSON.stringify({ packages: ["npm:a"], compaction: { enabled: true, reserveTokens: 16384 } }),
+      );
+      await api.setCompactionThreshold(90);
+      const settings = JSON.parse(await fs.promises.readFile(path.join(agentDir, "settings.json"), "utf8"));
+      assert.strictEqual(settings.compaction.reserveTokens, 20000, "90% × 200000 → 预留 20000");
+      assert.strictEqual(settings.compaction.enabled, true, "compaction 其他键保留");
+      assert.deepStrictEqual(settings.packages, ["npm:a"], "packages 键保留");
+    });
+  });
 });
