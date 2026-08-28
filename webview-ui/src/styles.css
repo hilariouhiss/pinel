@@ -585,18 +585,24 @@ body {
 
 /* 答题进度条（fill 宽度由内联 style 按已答比例控制） */
 .qna-progress {
+  display: flex;
+  gap: 2px;
   height: 3px;
   margin-top: 5px;
   border-radius: 2px;
   overflow: hidden;
+}
+
+/* 分段进度条：每题一段，已答段高亮 */
+.qna-progress-seg {
+  flex: 1;
+  min-width: 0;
+  border-radius: 2px;
   background: var(--vscode-input-border);
 }
 
-.qna-progress-fill {
-  height: 100%;
-  border-radius: 2px;
+.qna-progress-seg.filled {
   background: var(--vscode-focusBorder, var(--vscode-button-background));
-  transition: width 0.2s ease;
 }
 
 /* 横向标签栏：窄面板溢出时横向滚动 */
@@ -660,12 +666,6 @@ body {
 
 .qna-question-title {
   margin-bottom: 6px;
-}
-
-.qna-question-header {
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-  margin-right: 6px;
 }
 
 .qna-options {

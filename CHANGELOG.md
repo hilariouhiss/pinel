@@ -8,6 +8,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 问卷 UI 调整：头部去除 (n/m answered) 计数（保留 Questionnaire 标题与提交中提示），进度条改按题数分段（每题一段、已答段高亮、乱序作答按实际位置），题卡去除 [header] 前缀（标题仅在顶部 tab 标签显示、题目正文保留），提交后收起态去除计数
+
 - 最近回合悬浮条简化为纯消息文本：去除 ✓ 已完成状态与流式状态（工具名/流式尾部/Thinking），仅显示最近用户消息，最多 3 行超出 ellipsis 截断，与 header 间距 1px→3px（点击滚回保留）
 
 - @ 添加文件改为文本内联：选中文件后 `@路径` 引用直接插入输入文本（含空格路径自动引号包裹），不再显示输入框上方附件卡片；发送时从文本解析 @引用注入（手打/粘贴/Ctrl+G 回填的 @引用 同等生效，文件列表挂载预热）；修复 panel 层从未透传 fileRefs 导致 UI 链路 @ 引用未端到端生效的隐藏 bug

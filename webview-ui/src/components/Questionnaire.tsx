@@ -177,7 +177,7 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
     return (
       <div className="qna qna-collapsed">
         <span className="qna-collapsed-check">✓</span>
-        Questionnaire answered ({answeredCount}/{q.questions.length})
+        Questionnaire answered
       </div>
     );
   }
@@ -195,7 +195,7 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
     >
       <div className="qna-head">
         <div>
-          Questionnaire ({answeredCount}/{q.questions.length} answered)
+          Questionnaire
           {locked ? " · Submitted, waiting for Pi…" : ""}
         </div>
         <div
@@ -205,10 +205,13 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
           aria-valuemax={q.questions.length}
           aria-valuenow={answeredCount}
         >
-          <div
-            className="qna-progress-fill"
-            style={{ width: `${q.questions.length > 0 ? (answeredCount / q.questions.length) * 100 : 0}%` }}
-          />
+          {/* 分段进度条：每题一段，已答段高亮（乱序作答按实际位置逐段判断） */}
+          {q.questions.map((_, i) => (
+            <span
+              key={i}
+              className={`qna-progress-seg${q.answers[i] !== null ? " filled" : ""}`}
+            />
+          ))}
         </div>
       </div>
       <div className="qna-tabs" role="tablist">
@@ -322,7 +325,6 @@ function QuestionCard({
   return (
     <div className="qna-question" ref={refCallback}>
       <div className="qna-question-title">
-        {question.header && <span className="qna-question-header">[{question.header}]</span>}
         <Markdown content={question.question} />
       </div>
       <div className="qna-options">

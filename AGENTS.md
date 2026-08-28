@@ -66,7 +66,7 @@ npm run package      # 生产构建（minify）
 | /new 拦截 | controller.sendPrompt 精确匹配本地拦截 → newSession；RPC 不展开 slash |
 | Ctrl+G 编辑提示词 | prompt-editor.ts；真实临时文件 + 保存回填 + 发送清理 |
 | @ 添加文件 | at-refs.ts 发送时文本解析 @引用（引号路径/标点剥离/大小写不敏感）+ file-scanner；panel.ts 透传 fileRefs；controller 自读自拼 file 标记注入 + 图片 base64 |
-| 问卷 | questionnaire.ts；tool_execution_start 整卷本地渲染 + 游标回填 |
+| 问卷 | questionnaire.ts；tool_execution_start 整卷本地渲染 + 游标回填；分段进度条 |
 | 配置面板/模型思考 chip | ConfigPopover（队列/压缩/会话信息）+ ModelPopover chip 下拉（models.ts） |
 | lucide 图标 | lucide-static SVG esbuild text loader 内联；stroke=currentColor 主题自适应 |
 | 会话重命名/删除 | set_session_name（当前）/ appendSessionName（非当前）；seam confirmSessionDelete |
