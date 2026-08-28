@@ -158,11 +158,12 @@ export function Composer({
   const fileActiveIndex = Math.min(fileHighlight, Math.max(0, fileCandidates.length - 1));
   const fileSuggestRef = useRef<HTMLDivElement>(null);
 
-  // 高亮项滚动同步（文件弹窗）
+  // 高亮项滚动同步（文件弹窗）：仅跟随高亮变化（键盘导航/悬停）；
+  // 输入过滤/弹窗打开的滚回顶部由下方复位 effect 的 scrollTop 直置处理
   useEffect(() => {
     const items = fileSuggestRef.current?.querySelectorAll(".composer-file-suggest-item");
     items?.[fileActiveIndex]?.scrollIntoView({ block: "nearest" });
-  }, [fileActiveIndex, fileCandidates]);
+  }, [fileActiveIndex]);
 
   // @ 触发时拉取文件列表（每次触发重新扫描，保证新鲜）
   useEffect(() => {
@@ -171,26 +172,37 @@ export function Composer({
     }
   }, [atTrigger]);
 
-  // 查询变化时高亮重置（弹窗关闭标记由 onChange 复位——直接 @ 选择后
-  // atQuery 可能不变（"" → ""），effect 依赖会漏复位）
+  // 文件弹窗打开/过滤变化：高亮复位 + 确定性滚回顶部。
+  // 依赖 filePopupVisible 覆盖 "" ↔ "@" 重开缺口（atQuery 恒为 ""、fileCandidates
+  // 引用不变，仅 atQuery 依赖会漏复位）；scrollTop 直置与复位同 effect 原子生效。
   useEffect(() => {
     setFileHighlight(0);
-  }, [atQuery]);
+    const el = fileSuggestRef.current;
+    if (el) {
+      el.scrollTop = 0;
+    }
+  }, [fileCandidates, filePopupVisible]);
 
-  // 列表变化（过滤输入/命令刷新）时高亮重置为第一项
-  useEffect(() => {
-    setHighlight(0);
-  }, [candidates]);
-
-  // 高亮项滚动同步：activeIndex 或列表变化时把选中项滚入弹窗可视区。
-  // block:'nearest' 只滚最近的滚动容器（弹窗自身），不牵动消息列表；
-  // 依赖含 candidates：覆盖“滚轮滚到底 + 高亮已在 0 + 过滤变化”的路径
-  //（activeIndex 值不变时列表变化也需要回滚到首项）。
-  // 已知有意行为：鼠标 hover 改 highlight 也会触发本 effect（nearest 无跳跃，良性）。
+  // 高亮项滚动同步：仅跟随高亮变化（键盘导航/悬停）。
+  // 列表变化路径（过滤输入/命令刷新）的滚回顶部由下方复位 effect 确定性处理
+  //（scrollTop 直置），此处不再依赖 candidates——旧实现于同一 flush 内用陈旧
+  // activeIndex 先滚到底、复位后置，产生“滑到底再回顶”的一帧闪烁。
   useEffect(() => {
     const items = suggestRef.current?.querySelectorAll(".composer-suggest-item");
     items?.[activeIndex]?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex, candidates]);
+  }, [activeIndex]);
+
+  // 弹窗打开/候选变化（过滤输入/命令刷新）：高亮复位为首项 + 确定性滚回顶部。
+  // 依赖 popupVisible 覆盖 "" ↔ "/" 重开缺口（query 恒为 ""、candidates 引用不变，
+  // 仅 candidates 依赖会漏复位）；scrollTop 直置与复位同 effect 原子生效，
+  // 声明序在滚动同步之后：同 flush 内覆盖陈旧 scrollIntoView 的滚动。
+  useEffect(() => {
+    setHighlight(0);
+    const el = suggestRef.current;
+    if (el) {
+      el.scrollTop = 0;
+    }
+  }, [candidates, popupVisible]);
 
   // 接受补全后：聚焦输入框并把光标移到末尾
   useEffect(() => {

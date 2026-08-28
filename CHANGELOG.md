@@ -29,6 +29,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Fixed
 
+- 命令补全弹窗滑到底：方向键/悬停浏览后 Esc 或退格关闭弹窗，重新输入 `/` 时高亮仍停留在旧的大索引（高亮复位只挂 candidates 数组引用，而空输入 ↔ `/` 的 query 恒为 `""`、引用不变，复位被漏过）——弹窗带着陈旧高亮重开，下一次击键先以陈旧高亮滚到底再复位，首命令不被选中、顶部的高排名匹配项不可见（列表停在底部时只露出尾部低分项，观感为"不逐字匹配"，实测 `fi` 时 /fix 已排第 1）。修复：滚动同步 effect 只跟随高亮变化，高亮复位与 scrollTop=0 合并为同一 effect（依赖弹窗可见性，覆盖重开缺口，同 flush 原子生效）；@ 文件弹窗同构修复（`"" ↔ "@"` 重开同缺口）
+
 - 问卷取消竞态：用户在问卷首帧到达前取消（或测试竞态窗口）时，缓冲为空无帧可回 cancelled，插件 walker 永久等待响应、agent 永不 settle——现置取消补偿标记，匹配帧到达即回 cancelled；修复集成测试偶发失败（问卷取消 waitForSettled 超时 + 级联污染下一测试的 qna-1 响应断言）
 - fake-pi 加固：waitForUiResponse 加 10s 超时（按引用移除 waiter + 放弃当前 walker + 补发 settle），挂起不再永久阻塞/污染后续测试
 
