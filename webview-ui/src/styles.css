@@ -112,6 +112,58 @@ body {
   margin-bottom: 14px;
 }
 
+/* 最近回合悬浮状态条：锚 .chat-header（position:relative 既有定位上下文，
+   复用 .notices 模式），absolute 若放滚动区内会随内容滚走（absolute 非 sticky） */
+.recent-round-bar {
+  position: absolute;
+  top: calc(100% + 1px);
+  left: 8px;
+  right: 8px;
+  z-index: 20; /* 盖消息（无 z-index）、低于 notices 30——通知横幅短暂压条可接受 */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  background: var(--vscode-menu-background, var(--vscode-editor-background));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.recent-round-bar-status {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+
+.recent-round-bar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-foreground);
+}
+
+.recent-round-bar-tail {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* 点击悬浮条滚回后原消息不被悬浮条遮挡（scrollIntoView 尊重 scroll-margin） */
+.msg-user {
+  scroll-margin-top: 36px;
+}
+
 /* 悬浮复制按钮：卡片右下角；默认隐藏，hover 卡片或键盘聚焦（focus-visible，
    仓库首例，显式 outline 保证可见）时显示；图标 16px 主题自适应 */
 .msg-copy-btn {

@@ -27,10 +27,12 @@ interface Props {
   toolResults: ToolResults;
   /** 流式部分消息（仅当 message 是占位 assistant 时提供）。 */
   streamBlocks?: StreamBlock[];
+  /** 消息在 App messages 数组中的全局索引（悬浮状态条点击滚回定位锚）。 */
+  msgIndex?: number;
 }
 
-/** 提取用户消息的纯文本。 */
-function userText(content: ChatMessage["content"]): string {
+/** 提取用户消息的纯文本（导出：App 悬浮状态条复用提取最近输入）。 */
+export function userText(content: ChatMessage["content"]): string {
   let text: string;
   if (typeof content === "string") {
     text = content;
@@ -103,7 +105,7 @@ function assistantBlocks(content: ChatMessage["content"]): ContentBlock[] {
   return Array.isArray(content) ? (content as ContentBlock[]) : [];
 }
 
-export function MessageView({ message, tools, toolResults, streamBlocks }: Props) {
+export function MessageView({ message, tools, toolResults, streamBlocks, msgIndex }: Props) {
   const userRef = useRef<HTMLDivElement>(null);
   const assistantRef = useRef<HTMLDivElement>(null);
   const toolResultRef = useRef<HTMLDivElement>(null);
@@ -111,7 +113,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks }: Props
     const text = userText(message.content);
     const images = userImages(message.content);
     return (
-      <div className="msg msg-user" ref={userRef}>
+      <div className="msg msg-user" ref={userRef} data-msg-index={msgIndex}>
         <div className="msg-role">You</div>
         {images.map((img, i) => (
           <img

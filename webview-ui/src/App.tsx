@@ -8,7 +8,8 @@ import { ExtensionPopover } from "./components/ExtensionPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
 import { ForkPopover } from "./components/ForkPopover";
 import { SessionStatsBar } from "./components/SessionStatsBar";
-import { MessageView, type ToolResultInfo } from "./components/MessageView";
+import { MessageView, userText, type ToolResultInfo } from "./components/MessageView";
+import { RecentRoundBar } from "./components/RecentRoundBar";
 import { Notices } from "./components/Notices";
 import { TodoPanel } from "./components/TodoPanel";
 import { UiDialogs } from "./components/UiDialogs";
@@ -100,6 +101,52 @@ export default function App() {
   /** toolResult 结果映射（toolCallId → 权威输出/isError/toolName；快照重放可重建）
    *  + 命中集合（assistant 消息或流式块中出现的 toolCall id）。命中集合含流式块：
    *  toolResult 消息先于 assistant message_end 到达时仍能跳过独立卡片（防闪现）。 */
+  // 最近用户消息（悬浮状态条数据源）：从 messages 尾部向前扫描；
+  // 索引在点击滚回时现算（快照替换后索引不陈旧——评审 M2）
+  const lastUser = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        return { index: i, text: userText(messages[i].content) };
+      }
+    }
+    return null;
+  }, [messages]);
+  // 悬浮条输入文案：仅图片用户消息兑底 "📎 图片"（评审 N4）
+  const lastUserText = lastUser ? lastUser.text || "📎 图片" : "";
+  // 流式尾部推导（评审 M1）：尾向前扫——最近非空 text 块尾 60 字符；
+  // 否则最近 toolCall 工具名；否则 thinking 显 "Thinking…"；全空仅 spinner
+  const streamTail = useMemo(() => {
+    if (!status.isStreaming) {
+      return "";
+    }
+    for (let i = streamBlocks.length - 1; i >= 0; i--) {
+      const b = streamBlocks[i];
+      if (b.kind === "text" && b.text.trim()) {
+        const t = b.text.trim();
+        return t.length > 60 ? t.slice(-60) : t;
+      }
+    }
+    for (let i = streamBlocks.length - 1; i >= 0; i--) {
+      const b = streamBlocks[i];
+      if (b.kind === "toolCall") {
+        return b.toolCall?.name ?? "";
+      }
+    }
+    if (streamBlocks.some((b) => b.kind === "thinking")) {
+      return "Thinking…";
+    }
+    return "";
+  }, [streamBlocks, status.isStreaming]);
+
+  // 点击悬浮条滚回原用户消息（scroll-margin-top 防遮挡；stickToBottom 由 onScroll 自然更新）
+  const locateLastUser = () => {
+    if (!lastUser) {
+      return;
+    }
+    const el = scrollRef.current?.querySelector(`[data-msg-index="${lastUser.index}"]`);
+    el?.scrollIntoView({ block: "start" });
+  };
+
   const toolResults = useMemo(() => {
     const results: Record<string, ToolResultInfo> = {};
     const matched = new Set<string>();
@@ -503,6 +550,12 @@ export default function App() {
         {/* 通知横幅：悬浮于 header 正下方（absolute 定位上下文 = chat-header，
             top:calc(100%+3px)，不挤压布局；见 styles.css .notices） */}
         <Notices notices={notices} onDismiss={dismissNotice} />
+        <RecentRoundBar
+          lastUserText={lastUserText}
+          streaming={status.isStreaming}
+          streamTail={streamTail}
+          onLocate={locateLastUser}
+        />
       </div>
       {showBootAnimation && (
         <div className="session-boot-overlay">
@@ -528,13 +581,13 @@ export default function App() {
           </div>
         )}
         {messages.slice(0, qnaMid).map((m, i) => (
-          <MessageView key={`m-${i}`} message={m} tools={tools} toolResults={toolResults} />
+          <MessageView key={`m-${i}`} message={m} tools={tools} toolResults={toolResults} msgIndex={i} />
         ))}
         {qnaCollapsed && questionnaire && (
           <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />
         )}
         {messages.slice(qnaMid).map((m, i) => (
-          <MessageView key={`m-${qnaMid + i}`} message={m} tools={tools} toolResults={toolResults} />
+          <MessageView key={`m-${qnaMid + i}`} message={m} tools={tools} toolResults={toolResults} msgIndex={qnaMid + i} />
         ))}
         {streamBlocks.length > 0 && (
           <MessageView
