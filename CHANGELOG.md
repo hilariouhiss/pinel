@@ -12,6 +12,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 - 会话信息条 Tree / Compact 按钮：会话树选择器（当前分支链消息节点、当前叶高亮、close-on-select 导航）与手动压缩（pi 原生 compact 命令接入，protocol 补 CompactCommand；压缩中按钮禁用）
 
+- markdown 表格渲染：react-markdown 接入 remark-gfm（GFM 表格/删除线/任务列表），表格以紧凑边框表展示（窄面板横向滚动）
+
 ### Changed
 
 - 扩展管理弹窗：未安装 Pinel 插件时顶部显示安装区（一键 Install）

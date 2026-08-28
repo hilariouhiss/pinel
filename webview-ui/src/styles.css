@@ -940,6 +940,29 @@ body {
   text-decoration: underline;
 }
 
+/* GFM 表格（remark-gfm）：紧凑边框表，横向溢出滚动（窄面板防撑破） */
+.msg-text table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 12px;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.msg-text th,
+.msg-text td {
+  border: 1px solid var(--vscode-panel-border);
+  padding: 3px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.msg-text th {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  font-weight: 600;
+}
+
 /* ------------------------------------------------------------------ 输入区 */
 /* footer 大卡片（输入框 + 会话信息条 + 按钮行融合为一张卡）：承接外层边距，
    自身携带边框/背景/圆角与聚焦高亮；内部子元素（footer-card / session-stats-bar）全部透明化。
