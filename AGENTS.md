@@ -71,6 +71,7 @@ npm run package      # 生产构建（minify）
 | 会话统计/信息条 | session-stats.ts + git-status.ts + session-env；Maple Mono NF 全扩展字体 |
 | fork/clone | fork-messages.ts + runSessionChange 骨架；fork 后 pi 自动 rebind |
 | subagent 卡片 | subagents.ts；tool_execution details 防御解析 + 专属卡片 + Markdown 输出 |
+| 输入框自适应 | Composer scrollHeight 自适应（软换行计入，上限面板高 60%） |
 | 扩展管理 | extensions.ts；本地重命名启停 + packages settings 编辑 + pi remove 卸载 |
 | 模型自愈 | get_state 重试 4 次 → 自动重启一次（不走 restart 守卫） |
 

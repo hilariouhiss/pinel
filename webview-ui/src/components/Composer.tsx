@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -121,6 +122,8 @@ export function Composer({
   /** @ 文件弹窗 Esc 关闭标记（文本变化时复位，继续输入重新触发）。 */
   const [fileDismissed, setFileDismissed] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  // 窗口 resize 触发输入框高度自适应重算（默认上限随面板高变化）
+  const [viewportTick, setViewportTick] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   /** 当前输入文本引用（Ctrl+G 触发 effect 需最新值，避免绑定 text 依赖重复触发）。 */
   const textRef = useRef("");
@@ -206,6 +209,25 @@ export function Composer({
   useEffect(() => {
     textRef.current = text;
   }, [text]);
+
+  // 输入框高度自适应：scrollHeight 按渲染行计（软换行计入），上限 = 拖拽值 ?? 面板高 60%，
+  // 超上限内部滚动。修复 Ctrl+G 回填/粘贴大文本不适应（旧 rows 机制不计软换行）。
+  // resize 后高度重算：默认 cap 随面板高变化（评审 #2）。
+  const defaultMaxH = Math.round(window.innerHeight * 0.6);
+  useLayoutEffect(() => {
+    const ta = inputRef.current;
+    if (!ta) {
+      return;
+    }
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, defaultMaxH)}px`;
+    ta.style.overflowY = ta.scrollHeight > defaultMaxH ? "auto" : "hidden";
+  }, [text, viewportTick]);
+  useEffect(() => {
+    const onResize = () => setViewportTick((v) => v + 1);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // Ctrl+G 命令触发（keybinding when: pinel.inputFocused 已限定输入框聚焦）：
   // 取当前输入内容发起编辑（宿主不维护输入状态，内容必须往返）
@@ -384,8 +406,8 @@ export function Composer({
     e.preventDefault();
   };
 
-  // 起始 1 行（单行高度），随换行增长，上限 8 行封顶后内部滚动
-  const rows = Math.min(8, Math.max(1, text.split("\n").length));
+  // 起始 1 行；高度由自适应 effect 以 style 驱动（scrollHeight 按渲染行计，软换行计入）
+  const rows = 1;
 
   return (
     <div className="footer-card">
