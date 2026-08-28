@@ -18,6 +18,47 @@ export interface SpawnSpec {
   options: SpawnOptions;
 }
 
+/**
+ * 一次性 spawn pi 子命令（`pi install`/`pi remove`），复用 resolveSpawnSpec 的
+ * Windows shim 解析（where.exe → .cmd 优先 + cmd.exe /d /s /c + verbatim 参数）。
+ * 非零退出/超时抛错（stderr 兑底信息）。无 vscode 依赖，可单测。
+ */
+export function runPiCommand(
+  command: string,
+  args: string[],
+  cwd: string,
+  timeoutMs = 30000,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const spec = resolveSpawnSpec(command, args, cwd);
+    const child = spawn(spec.cmd, spec.args, spec.options);
+    let stderr = "";
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        // 已退出
+      }
+      reject(new Error("pi command timed out"));
+    }, timeoutMs);
+    child.stderr?.on("data", (d: Buffer | string) => {
+      stderr += String(d);
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(stderr.trim() || `pi exited with code ${code}`));
+      }
+    });
+  });
+}
+
 /** 拼接进 shell 命令串的参数转义：含空白时加引号（cmd.exe / shell 模式）。 */
 function quoteIfNeeded(arg: string): string {
   return /\s/.test(arg) ? `"${arg}"` : arg;

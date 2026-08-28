@@ -212,8 +212,35 @@ export interface SessionEnv {
   git: GitStatus | null;
 }
 
+export interface PinelTreeNode {
+  entryId: string;
+  role: "user" | "assistant";
+  text: string;
+  timestamp?: number;
+}
+
+/** pinel.tree 载荷（插件推送 → 宿主 pinel-payload 解析 → 广播）。 */
+export interface PinelTree {
+  v: 1;
+  nodes: PinelTreeNode[];
+  leafId?: string;
+}
+
+/** Pinel 插件（npm 包）安装态。 */
+export type PinelPluginState = "installed" | "offer" | "removed";
+
+/** pinel.state 快照（插件推送 → 宿主防御解析 → 广播）。 */
+export interface PinelState {
+  v: 1;
+  messages: { user: number; assistant: number; toolResult: number; total: number };
+  model?: string;
+  thinkingLevel?: string;
+  leafId?: string;
+  sessionFile?: string;
+}
+
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelPluginState: PinelPluginState | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "tool"; tool: ToolCard }
@@ -239,6 +266,9 @@ export type HostMessage =
   | { type: "fileList"; items: FileItem[]; truncated: boolean }
   | { type: "forkMessages"; messages: ForkMessageItem[] }
   | { type: "extensionList"; items: ExtensionItem[] }
+  | { type: "pinelState"; state: PinelState }
+  | { type: "pinelTree"; tree: PinelTree }
+  | { type: "pinelPluginState"; state: PinelPluginState }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {

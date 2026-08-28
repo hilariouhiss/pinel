@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 import { promises as fs } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
-import { spawn } from "node:child_process";
-import { RpcClient, resolveSpawnSpec } from "../rpc/client";
+import { RpcClient, resolveSpawnSpec, runPiCommand } from "../rpc/client";
 import { PromptEditorManager } from "./prompt-editor";
 import { parseSessionMeta, scanSessions, toItem, resolveSessionsRoot, appendSessionName } from "./session-history";
 import { scanWorkspaceFiles, imageMimeType, isImageFile, type FileItem, type ScanResult } from "./file-scanner";
@@ -38,6 +38,14 @@ import {
 } from "../rpc/protocol";
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
 import { parseSessionStats } from "./session-stats";
+import { parsePinelState, parsePinelTree, type PinelStatePayload, type PinelTreePayload } from "./pinel-payload";
+import {
+  PINEL_PACKAGE_SOURCE,
+  agentSettingsPath,
+  decidePinelPluginState,
+  readAgentPackages,
+  type PinelPluginState,
+} from "./pinel-install";
 import { readGitStatus, type GitStatus } from "./git-status";
 import { parseTodoTasks, type TodoTask } from "./todos";
 import { buildSubagentCard, applySubagentDetails, type SubagentCardInfo } from "./subagents";
@@ -111,7 +119,7 @@ export interface SessionEnv {
 }
 
 export type OutMessage =
-  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null; sessionEnv: SessionEnv }
+  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null; sessionEnv: SessionEnv; pinelState: PinelStatePayload | null; pinelTree: PinelTreePayload | null; pinelPluginState: PinelPluginState | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; tool: ToolCard }
@@ -137,6 +145,9 @@ export type OutMessage =
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "forkMessages"; messages: ForkMessage[] }
   | { type: "extensionList"; items: ExtensionItem[] }
+  | { type: "pinelState"; state: PinelStatePayload }
+  | { type: "pinelTree"; tree: PinelTreePayload }
+  | { type: "pinelPluginState"; state: PinelPluginState }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
@@ -144,6 +155,8 @@ interface PromptInput {
   images?: Array<{ data: string; mimeType: string }>;
   /** @ 文件引用（相对 workspace 根路径；发送时 pinel 自读自拼——RPC 模式 pi 不支持 @file）。 */
   fileRefs?: string[];
+  /** 控制消息（/pinel-* 扩展命令）：不乐观渲染用户消息（实测不写会话条目）。 */
+  control?: boolean;
 }
 
 /**
@@ -250,9 +263,24 @@ export class ChatController {
   private sessionTitleCache: string | undefined = undefined;
   /** 标题解析去重键（sessionFile 变化才触发解析；重放不重复）。 */
   private lastTitleSessionFile: string | undefined = undefined;
+  /** Pinel 插件推送缓存（webview 重建后经 snapshot 重放）。 */
+  private pinelStateCache: PinelStatePayload | null = null;
+  private pinelTreeCache: PinelTreePayload | null = null;
+  /** Pinel 插件（npm 包）安装态缓存；null = 未检测。 */
+  private pinelPluginStateCache: PinelPluginState | null = null;
+  /** 曾安装标记存储：vscode globalState 或内存兑底（无 globalState 时，测试）。 */
+  private readonly pluginStateStore: { get(key: string): unknown; update(key: string, value: unknown): Thenable<void> };
 
-  constructor(output: vscode.OutputChannel) {
+  constructor(output: vscode.OutputChannel, globalState?: vscode.Memento) {
     this.output = output;
+    // 曾安装标记：优先 vscode globalState；缺省（测试直构）时内存兑底
+    const memory = new Map<string, unknown>();
+    this.pluginStateStore = globalState ?? {
+      get: (key) => memory.get(key),
+      update: async (key, value) => {
+        memory.set(key, value);
+      },
+    };
     // 保存回填：临时文件保存 → 内容广播回输入框（fillPrompt）
     this.promptEditor = new PromptEditorManager((text) => this.fire({ type: "fillPrompt", text }));
     // 未打开文件夹时提示用户；打开文件夹后自动连接
@@ -303,6 +331,8 @@ export class ChatController {
       return; // 进程在同步期间已退出（handleExit 已置 error 态）：不覆盖
     }
     this.setProcessState("running");
+    // Pinel 插件安装态检测（settings.json packages + 曾安装标记）：start 完成后首次广播
+    void this.refreshPinelPluginState();
     // 会话信息开关：每次启动回读配置（restart 重置 status 后恢复，防静默复位）；
     // 开关开启时启动首拉一次（firstFetch=false 由 start 统一触发，避免双拉）
     const showStats = this.readShowSessionStats();
@@ -413,7 +443,7 @@ export class ChatController {
       // 会话历史视图用同一路径扫描（布局为 custom，无 cwd 子目录）
       const configured = vscode.workspace.getConfiguration("pinel").get<string>("sessionDir")?.trim();
       const extraArgs = configured ? ["--session-dir", configured] : undefined;
-      await client.start(command, this.workspaceRoot, process.env, extraArgs);
+      await client.start(command, this.workspaceRoot, { ...process.env, PINEL_PLUGIN: "1" }, extraArgs);
     } catch (err) {
       if (this.client === client) {
         this.handleSpawnError(err as Error);
@@ -583,10 +613,12 @@ export class ChatController {
     // 图片 → base64 附件 + 空 <file name> 引用（对齐 pi CLI，模型拿得到路径）
     const text = input.fileRefs?.length ? await this.attachFileRefs(input.text, images, input.fileRefs) : input.text;
 
-    // 乐观渲染用户消息
-    // 乐观渲染用户消息（仅原文，不含 <file> 注入 markup——权威列表显示层剥离）
-    const userMessage: AgentMessage = { role: "user", content: input.text };
-    this.fire({ type: "message", message: userMessage });
+    // 乐观渲染用户消息（控制消息跳过：/pinel-* 扩展命令实测不写会话条目、
+    // 也不应作为对话内容展示；仅原文，不含 <file> 注入 markup——权威列表显示层剥离）
+    if (!input.control) {
+      const userMessage: AgentMessage = { role: "user", content: input.text };
+      this.fire({ type: "message", message: userMessage });
+    }
 
     try {
       if (this.status.isStreaming) {
@@ -1333,6 +1365,89 @@ export class ChatController {
   }
 
   /**
+   * pinel.* setStatus 帧：防御解析 → 缓存 → 广播。
+   * 非 pinel.statusKey 忽略（生态插件 mcp/ponytail/colgrep 等也发 setStatus，
+   * 不白名单过滤会涌入 webview）。
+   */
+  private handlePinelStatus(req: ExtensionUiRequest): void {
+    if (req.statusKey !== "pinel.state") {
+      return;
+    }
+    const parsed = parsePinelState(req.statusText);
+    if (!parsed) {
+      return; // 解析失败：静默丢弃（插件版本漂移容缺）
+    }
+    this.pinelStateCache = parsed;
+    this.fire({ type: "pinelState", state: parsed });
+  }
+
+  /** pinel.* setWidget 帧：同 setStatus 处理路径。 */
+  private handlePinelWidget(req: ExtensionUiRequest): void {
+    if (req.widgetKey !== "pinel.tree") {
+      return;
+    }
+    const parsed = parsePinelTree(req.widgetLines);
+    if (!parsed) {
+      return;
+    }
+    this.pinelTreeCache = parsed;
+    this.fire({ type: "pinelTree", tree: parsed });
+  }
+
+  // -------------------------------------------------------------------------
+  // Pinel 插件（pi install npm 包）安装管理
+  // -------------------------------------------------------------------------
+
+  /** 曾安装标记键（globalState）。 */
+  private static readonly PINEL_INSTALLED_FLAG_KEY = "pinelPluginPreviouslyInstalled";
+
+  /**
+   * 手动压缩会话上下文（原生 RPC compact；可选 customInstructions 传给总结 LLM）。
+   * 结果 notice 回报；compaction_start/end 事件走既有 handleRecord 链路。
+   */
+  async compact(customInstructions?: string): Promise<void> {
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("warning", "pi is not running");
+      return;
+    }
+    try {
+      await client.send({ type: "compact", customInstructions });
+      this.notice("info", "Compaction completed");
+      void this.refreshSessionStats(); // 压缩后统计变化，刷新信息条
+    } catch (err) {
+      this.notice("error", `Compaction failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * 计算 Pinel 插件安装态并广播（start 完成后 / 安装后调用）。
+   * settings.json 损坏/缺失时 readAgentPackages 回 []，按未安装处理。
+   */
+  async refreshPinelPluginState(): Promise<void> {
+    const packages = await readAgentPackages(agentSettingsPath(os.homedir()));
+    const previously = this.pluginStateStore.get(ChatController.PINEL_INSTALLED_FLAG_KEY) === true;
+    const state = decidePinelPluginState(packages, previously);
+    this.pinelPluginStateCache = state;
+    this.fire({ type: "pinelPluginState", state });
+  }
+
+  /**
+   * 一键安装 Pinel 插件（spawn `pi install npm:@hilariouhiss/pinel`，全局 settings）。
+   * 成功后置曾安装标记 + 刷新状态；失败 notice。
+   * 注：已运行的 pi 不会热加载新包，需 restart 才生效（UI 层提示）。
+   */
+  async installPinelPlugin(): Promise<void> {
+    try {
+      await runPiCommand(this.resolvePiCommand(), ["install", PINEL_PACKAGE_SOURCE], defaultAgentDir(), 120000);
+      await this.pluginStateStore.update(ChatController.PINEL_INSTALLED_FLAG_KEY, true);
+      await this.refreshPinelPluginState();
+      this.notice("info", "Pinel plugin installed. Restart pi to activate it.");
+    } catch (err) {
+      this.notice("error", `Failed to install Pinel plugin: ${(err as Error).message}`);
+    }
+  }
+  /**
    * 拉取工作区环境段（文件夹名 + 富化 git 状态）并广播。
    * - 开关关闭短路（环境段仅随会话信息条展示，不额外 spawn git）
    * - git 不可用/非仓库/超时 → readGitStatus 回 null，git=null（webview 隐藏 git 部分）
@@ -1789,9 +1904,12 @@ export class ChatController {
         } else if (req.method === "notify") {
           const level = req.notifyType === "error" ? "error" : req.notifyType === "warning" ? "warning" : "info";
           this.notice(level, String(req.message ?? req.title ?? ""));
+        } else if (req.method === "setStatus") {
+          this.handlePinelStatus(req);
+        } else if (req.method === "setWidget") {
+          this.handlePinelWidget(req);
         }
-        // setStatus/setWidget/setTitle/set_editor_text：fire-and-forget，当前 pi
-        // 只发无内容帧（待列表内容走 todo 工具结果解析），暂不渲染
+        // setTitle/set_editor_text：fire-and-forget，暂不渲染
         break;
       }
 
@@ -2135,6 +2253,9 @@ export class ChatController {
       sessionTitle: this.sessionTitleCache,
       sessionStats: this.sessionStats,
       sessionEnv: this.sessionEnv,
+      pinelState: this.pinelStateCache,
+      pinelTree: this.pinelTreeCache,
+      pinelPluginState: this.pinelPluginStateCache,
     });
     // 会话文件变化（首次/切换/新建/重启后恢复）→ 异步解析标题；重放去重不重复解析
     if (this.status.sessionFile !== this.lastTitleSessionFile) {
@@ -2201,6 +2322,21 @@ export class ChatController {
 
   getStatus(): ChatStatus {
     return { ...this.status };
+  }
+
+  /** 最近一次 pinel.state 推送缓存（集成测试断言）。 */
+  getPinelStateCache(): PinelStatePayload | null {
+    return this.pinelStateCache;
+  }
+
+  /** 最近一次 pinel.tree 推送缓存（集成测试断言）。 */
+  getPinelTreeCache(): PinelTreePayload | null {
+    return this.pinelTreeCache;
+  }
+
+  /** Pinel 插件安装态缓存（null=未检测）。 */
+  getPinelPluginState(): PinelPluginState | null {
+    return this.pinelPluginStateCache;
   }
 
   getMessages(): AgentMessage[] {
@@ -2312,39 +2448,7 @@ export async function confirmExtensionReload(): Promise<boolean> {
 }
 
 /**
- * 一次性 spawn pi 子命令（`pi remove`），复用 client.ts 的 Windows shim 解析
- *（where.exe → .cmd 优先 + cmd.exe /d /s /c + verbatim 参数）。
- * 非零退出/超时抛错（stderr 兜底信息）。
+ * 一次性 spawn pi 子命令（`pi remove`）已迁移至 src/rpc/client.ts（runPiCommand，
+ * 供 pinel 插件安装链路复用）。
  */
-function runPiCommand(command: string, args: string[], cwd: string, timeoutMs = 30000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const spec = resolveSpawnSpec(command, args, cwd);
-    const child = spawn(spec.cmd, spec.args, spec.options);
-    let stderr = "";
-    const timer = setTimeout(() => {
-      try {
-        child.kill();
-      } catch {
-        // 已退出
-      }
-      reject(new Error("pi command timed out"));
-    }, timeoutMs);
-    child.stderr?.on("data", (d: Buffer | string) => {
-      stderr += String(d);
-    });
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(stderr.trim() || `pi exited with code ${code}`));
-      }
-    });
-  });
-}
-
 export type { AgentMessage };

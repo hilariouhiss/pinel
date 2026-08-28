@@ -948,6 +948,53 @@ async function handleCommand(record) {
         setTimeout(() => process.exit(1), 1500);
         break;
       }
+      if (text.includes("PINELUI")) {
+        // 模拟 Pinel 插件推送：setStatus/setWidget 帧（含非 pinel 干扰帧与坏 JSON）
+        out({
+          type: "extension_ui_request",
+          id: "pinel-status-1",
+          method: "setStatus",
+          statusKey: "pinel.state",
+          statusText: JSON.stringify({
+            v: 1,
+            messages: { user: 2, assistant: 3, toolResult: 1, total: 6 },
+            model: "deepseek/deepseek-v4-pro",
+            thinkingLevel: "max",
+          }),
+        });
+        out({
+          type: "extension_ui_request",
+          id: "pinel-widget-1",
+          method: "setWidget",
+          widgetKey: "pinel.tree",
+          widgetLines: [
+            JSON.stringify({
+              v: 1,
+              nodes: [
+                { entryId: "e1", role: "user", text: "hello world" },
+                { entryId: "e2", role: "assistant", text: "hi there" },
+              ],
+              leafId: "e2",
+            }),
+          ],
+        });
+        out({
+          type: "extension_ui_request",
+          id: "other-status-1",
+          method: "setStatus",
+          statusKey: "ponytail",
+          statusText: "loaded",
+        });
+        out({
+          type: "extension_ui_request",
+          id: "bad-status-1",
+          method: "setStatus",
+          statusKey: "pinel.state",
+          statusText: "not-json",
+        });
+        void streamSequence(text, false);
+        break;
+      }
       if (text.includes("CMDADD")) {
         // 模拟运行中注册新命令：settle 后客户端刷新 get_commands 时可见
         cmdAdded = true;
@@ -1082,6 +1129,13 @@ async function handleCommand(record) {
       }
       break;
     }
+
+    case "compact":
+      // 手动压缩：事件 + 响应 summary（pinel compact() 链路）
+      out({ type: "compaction_start" });
+      out({ type: "compaction_end" });
+      respond(id, "compact", true, { summary: "Compacted summary", firstKeptEntryId: "keep-1", tokensBefore: 1000, estimatedTokensAfter: 400 });
+      break;
 
     default:
       respond(id, type, false, undefined, `fake-pi: 未知命令 ${type}`);

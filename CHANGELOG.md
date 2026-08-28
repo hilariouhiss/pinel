@@ -6,6 +6,18 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### Added
+
+- Pinel Pi 插件（npm 包 `@hilariouhiss/pinel`，源码 `pinel-plugin/`）：面板实时推送会话统计快照与会话树（extension_ui setStatus/setWidget 帧，宿主白名单过滤 pinel.* + 防御解析 + 快照重放）、`/pinel-state`、`/pinel-tree` 会话树导航命令（RPC 扩展命令派发，控制消息不渲染不写会话条目）；未安装时扩展管理弹窗顶部一键 Install（settings.json 安装态检测 + 曾安装标记不复活策略）；插件仅在被 Pinel spawn 的 pi（PINEL_PLUGIN=1）内激活，TUI 下惰性
+
+- 会话信息条 Tree / Compact 按钮：会话树选择器（当前分支链消息节点、当前叶高亮、close-on-select 导航）与手动压缩（pi 原生 compact 命令接入，protocol 补 CompactCommand；压缩中按钮禁用）
+
+### Changed
+
+- 扩展管理弹窗：未安装 Pinel 插件时顶部显示安装区（一键 Install）
+- 会话信息条：新增消息计数（💬 图标）与当前模型显示（pinel.state 实时推送）
+- 宿主构建：check-plugin 独立类型检查（pinel-plugin 不在主 tsc program，lint 不覆盖该目录）
+
 ### Changed
 
 - 问卷 UI 调整：头部去除 (n/m answered) 计数（保留 Questionnaire 标题与提交中提示），进度条改按题数分段（每题一段、已答段高亮、乱序作答按实际位置），题卡去除 [header] 前缀（标题仅在顶部 tab 标签显示、题目正文保留），提交后收起态去除计数

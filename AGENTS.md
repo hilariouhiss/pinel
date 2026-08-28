@@ -18,7 +18,8 @@ pinel/
 │  ├─ chat/                # controller.ts（会话控制器）+ 各功能纯函数模块（见 Feature Map）
 │  └─ test/                # *.test.ts 单测 + extension.test.ts 集成 + fixtures/（fake-pi.js、long-running.js）
 ├─ src/test-no-workspace/  # 空窗口实例集成测试（独立套件）
-├─ scripts/                # clean-test-userdata.mjs（npm test 前清理共享 user-data）
+├─ scripts/                # clean-test-userdata.mjs（npm test 前清理共享 user-data）+ pinel-plugin-smoke.mjs（真实 pi 冒烟，opt-in）
+├─ pinel-plugin/           # Pinel Pi 插件包（npm 包 @hilariouhiss/pinel，pi install 安装；独立 tsc 检查不随主 bundle；发布：cd pinel-plugin && npm publish）
 ├─ webview-ui/             # React webview（browser 平台，禁 import 宿主/vscode）；src/components/ + command-match.ts + types.ts（OutMessage 镜像，手工同步）+ esbuild.js
 ├─ media/                  # webview 图标用 lucide 内联进 bundle 不入库；pi-glyph.svg/pi-icon.png 品牌图标入库；webview 产物 gitignored
 ├─ .pi/plans/              # 计划文档（入库；v0.1/v0.2 边界与历史决策）
@@ -30,16 +31,18 @@ pinel/
 
 ```bash
 npm install          # npm 12 需批准 esbuild postinstall：npm install-scripts approve esbuild
-npm run compile      # 类型检查（宿主+webview）→ lint → 宿主 bundle → webview bundle
+npm run compile      # 类型检查（宿主+webview+插件）→ lint → 宿主 bundle → webview bundle
 npm run watch        # 监听模式；F5 调试前必跑
 npm test             # 全部测试（pretest 自动 compile + lint）
 npm run check-types  # 仅 tsc 双 tsconfig
+npm run check-plugin # 仅 pinel-plugin 独立 tsc 检查（不在主 program，lint 亦不覆盖）
 npm run lint         # eslint src
 npm run package      # 生产构建（minify）
+npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命令断言；需已装 pi）
 ```
 
 - 首次 `npm test` 下载 VS Code 到 `.vscode-test/`（约 100MB）
-- 质量门：`npm run compile` + `npm test` 全绿（当前 229/229：主套件 226 + 空窗口 3）
+- 质量门：`npm run compile` + `npm test` 全绿（当前 245/245：主套件 242 + 空窗口 3）
 
 ## Coding Guidelines
 
@@ -76,13 +79,16 @@ npm run package      # 生产构建（minify）
 | 工具结果内联 | 工具调用结果展示在原 assistant 消息卡片（ToolCallCard：lucide wrench/bot + spinner/check/x + 预览，展开 args+output）；toolResult 消息命中匹配则跳过独立卡片、孤儿兑底独立卡片；webview 内部映射（App.tsx useMemo），宿主/协议零改动 |
 | 输入框自适应 | Composer scrollHeight 自适应（软换行计入，上限面板高 60%） |
 | 扩展管理 | extensions.ts；本地重命名启停 + packages settings 编辑 + pi remove 卸载 |
+| Pinel 插件（npm 包） | pinel-plugin/（@hilariouhiss/pinel，PINEL_PLUGIN=1 + rpc 守卫）；pinel-install.ts 安装态检测（settings.json packages + 曾安装标记不复活）；pinel-payload.ts 白名单过滤 pinel.* + 防御解析；controller 缓存 + snapshot 重放；panel 一键 pi install（runPiCommand） |
+| 会话树导航/手动压缩 | 插件 /pinel-tree 扩展命令（RPC 派发，control 消息不渲染不写条目）+ TreePopover；compact 原生 RPC（protocol CompactCommand + controller.compact + SessionStatsBar 按钮） |
 | 模型自愈 | get_state 重试 4 次 → 自动重启一次（不走 restart 守卫） |
 
 ## Testing Guidelines
 
-- 229 个测试必须全绿：`src/test/` 单测 14 文件（framing/stream-assembly/spawn-spec/stop/todos/commands/models/fork-messages/extensions/questionnaire/session-stats/git-status/session-history/subagents）+ `extension.test.ts` 集成（真实 VS Code + 假 pi）+ no-workspace 3 个
+- 245 个测试必须全绿：`src/test/` 单测 16 文件（framing/stream-assembly/spawn-spec/stop/todos/commands/models/fork-messages/extensions/questionnaire/session-stats/git-status/session-history/subagents/pinel-payload/pinel-install）+ `extension.test.ts` 集成（真实 VS Code + 假 pi）+ no-workspace 3 个
 - 新增覆盖：纯逻辑 → mocha 单测；聊天/RPC 行为 → `fixtures/fake-pi.js` 加 prompt 标记场景 + `PinelTestApi` 断言；改 RPC 必须同步 protocol.ts 与假 pi
 - 作用于首次 get_state/get_commands/get_session_stats 的场景用 `PINEL_FAKE_PI_SCENARIO` env 激活（不能 prompt 标记）
+- 插件本体（pinel-plugin/，不在主 tsc program）由 `npm run check-plugin` + `npm run smoke:plugin` 真实 pi 冒烟覆盖（临时项目 pi install -l，不进 CI）
 - 集成测试踩坑（waitForSettled baseline 前置、isStreaming 等待、日志切片、env 场景清单等）见 memory `pinel-testing-pitfalls`
 
 ## Agent Instructions

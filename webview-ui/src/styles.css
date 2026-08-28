@@ -2393,8 +2393,152 @@ body {
   color: var(--vscode-descriptionForeground);
 }
 
-.session-stats-empty {
-  opacity: 0.7;
+.session-stats-model {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 会话信息条动作按钮（Tree / Compact）：次要按钮样式，紧凑内联 */
+.session-stats-action {
+  border: 1px solid var(--vscode-panel-border);
+  background: transparent;
+  color: var(--vscode-foreground);
+  border-radius: 3px;
+  padding: 0 6px;
+  height: 18px;
+  font-size: 10px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.session-stats-action:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.session-stats-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 会话树选择器弹层（锚定 Tree 按钮，样式对齐 fork-popover） */
+.pinel-tree-popover {
+  position: fixed;
+  z-index: 1001;
+  width: 260px;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  padding: 8px;
+}
+
+.pinel-tree-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.pinel-tree-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  margin-bottom: 6px;
+}
+
+.pinel-tree-list {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pinel-tree-empty {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  padding: 8px 4px;
+}
+
+.pinel-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 6px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.pinel-tree-item:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.pinel-tree-item.current {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.pinel-tree-index {
+  flex: none;
+  min-width: 18px;
+  color: var(--vscode-descriptionForeground);
+  text-align: right;
+}
+
+.pinel-tree-item.current .pinel-tree-index {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.pinel-tree-role {
+  flex: none;
+}
+
+.pinel-tree-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 扩展管理弹层顶部：Pinel 插件安装区 */
+.pinel-plugin-install {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  background: var(--vscode-editor-inactiveSelectionBackground);
+}
+
+.pinel-plugin-install-text {
+  flex: 1;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.pinel-plugin-install-btn {
+  flex: none;
+  border: none;
+  border-radius: 3px;
+  padding: 3px 10px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.pinel-plugin-install-btn:hover {
+  background: var(--vscode-button-hoverBackground);
 }
 
 /* 会话信息条内联图标（缓存命中率 / ↑缓存读 / ↓缓存写 / $成本）：lucide 内联，尺寸覆写

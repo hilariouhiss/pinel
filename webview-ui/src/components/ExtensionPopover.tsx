@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
-import { vscode } from "../index";
-import type { ExtensionItem } from "../types";
+import type { ExtensionItem, PinelPluginState } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
 import deleteIcon from "lucide-static/icons/trash-2.svg";
 
@@ -8,6 +7,9 @@ interface Props {
   /** 触发按钮元素引用（非 null 即打开，仅作开关信号；焦点管理自记录触发按钮）。 */
   anchor: HTMLElement | null;
   items: ExtensionItem[];
+  /** Pinel 插件安装态（null=未检测）；offer 显示安装区。 */
+  pinelPluginState: PinelPluginState | null;
+  onInstallPinelPlugin: () => void;
   onToggle: (item: ExtensionItem, enabled: boolean) => void;
   onUninstall: (item: ExtensionItem) => void;
   onClose: () => void;
@@ -22,7 +24,7 @@ interface Props {
  * - 交互：Esc / 点击外部 / 标题栏关闭按钮关闭（Esc 在 window capture 阶段拦截
  *   stopPropagation，让位于 Composer 的中断/清空分支）；焦点管理对齐 SessionListPopover
  */
-export function ExtensionPopover({ anchor, items, onToggle, onUninstall, onClose }: Props) {
+export function ExtensionPopover({ anchor, items, pinelPluginState, onInstallPinelPlugin, onToggle, onUninstall, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -116,6 +118,18 @@ export function ExtensionPopover({ anchor, items, onToggle, onUninstall, onClose
             ×
           </button>
         </div>
+        {pinelPluginState !== "installed" && (
+          <div className="pinel-plugin-install">
+            <span className="pinel-plugin-install-text">
+              {pinelPluginState === "removed"
+                ? "Pinel plugin was removed — reinstall to restore live session state &amp; tree navigation"
+                : "Install the Pinel plugin to unlock live session state &amp; session tree navigation"}
+            </span>
+            <button className="pinel-plugin-install-btn" onClick={onInstallPinelPlugin}>
+              Install
+            </button>
+          </div>
+        )}
         {items.length === 0 ? (
           <div className="extension-popover-empty">No extensions found</div>
         ) : (

@@ -296,6 +296,44 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.deepStrictEqual(api.getTodos(), todos, "settled 后待办快照必须保留");
   });
 
+  test("pinel 插件 setStatus/setWidget 帧：白名单过滤 + 防御解析 + 缓存", async () => {
+    // PINELUI：假 pi 依次发 pinel.state(好) → pinel.tree → 非 pinel 干扰 → pinel.state(坏 JSON)
+    const marker = `PINELUI-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+    await api.waitForSettled(30000, baseline);
+
+    const state = api.getPinelStateCache();
+    assert.ok(state, "pinel.state 必须被解析并缓存");
+    assert.deepStrictEqual(state.messages, { user: 2, assistant: 3, toolResult: 1, total: 6 });
+    assert.strictEqual(state.model, "deepseek/deepseek-v4-pro");
+    assert.strictEqual(state.thinkingLevel, "max");
+
+    const tree = api.getPinelTreeCache();
+    assert.ok(tree, "pinel.tree 必须被解析并缓存");
+    assert.strictEqual(tree.leafId, "e2");
+    assert.strictEqual(tree.nodes.length, 2);
+    assert.strictEqual(tree.nodes[0].entryId, "e1");
+
+    // 干扰帧（非 pinel statusKey）与坏 JSON 帧均不得污染缓存（好值保留）
+    assert.strictEqual(state.messages.total, 6, "坏 JSON 帧不得覆盖好缓存");
+  });
+
+  test("compact 原生命令：响应后 notice + 假 pi 收到命令", async () => {
+    await api.compact();
+
+    // 成功 notice（Compaction completed）
+    await waitFor(
+      () => api.getTestEventLog().notices.some((n) => n.text === "Compaction completed"),
+      10000,
+      "compact 完成 notice",
+    );
+    // 假 pi 收到 compact 命令
+    const records = readFakePiLog(logPath);
+    const compacts = logRecordsWith(records, "in", "compact");
+    assert.ok(compacts.length >= 1, `假 pi 日志中必须出现 compact 命令（实际 ${compacts.length} 条）`);
+  });
+
   test("agent_settled 清理未决对话框（pi 超时自动 resolve 路径）", async () => {
     // ASKUI-TIMEOUT：假 pi 发 select 帧后不等待回复，延时走完流并 settle
     const marker = `ASKUI-TIMEOUT-${Date.now()}`;

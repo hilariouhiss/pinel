@@ -237,6 +237,25 @@ export interface GetSessionStatsCommand {
   type: "get_session_stats";
 }
 
+/**
+ * 手动压缩会话上下文（docs/rpc.md 已收录；可选 customInstructions 传给总结 LLM）。
+ * 事件 compaction_start/compaction_end 伴随；会话过小时 success:false
+ * error "Nothing to compact (session too small)"（实测 pi 0.84.3）。
+ */
+export interface CompactCommand {
+  type: "compact";
+  customInstructions?: string;
+}
+
+/** compact 响应 data（容缺防御；usage 可能被自定义压缩处理器省略）。 */
+export interface CompactData {
+  summary?: string;
+  firstKeptEntryId?: string;
+  tokensBefore?: number;
+  estimatedTokensAfter?: number;
+  [key: string]: unknown;
+}
+
 /** get_session_stats 响应 tokens（total = input+output+cacheRead+cacheWrite）。 */
 export interface SessionTokens {
   input: number;
@@ -297,7 +316,8 @@ export type ClientCommand =
   | ForkCommand
   | CloneCommand
   | SetSessionNameCommand
-  | GetSessionStatsCommand;
+  | GetSessionStatsCommand
+  | CompactCommand;
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -480,6 +500,9 @@ export interface ExtensionUiRequest extends RpcRecord {
   notifyType?: "info" | "warning" | "error";
   statusKey?: string;
   statusText?: string;
+  widgetKey?: string;
+  widgetLines?: string[];
+  widgetPlacement?: string;
   [key: string]: unknown;
 }
 

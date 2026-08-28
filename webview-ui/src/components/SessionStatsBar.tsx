@@ -1,16 +1,25 @@
-import type { SessionEnv, SessionStats } from "../types";
+import type { PinelState, SessionEnv, SessionStats } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import upArrowIcon from "lucide-static/icons/arrow-up.svg";
 import downArrowIcon from "lucide-static/icons/arrow-down.svg";
 import dollarIcon from "lucide-static/icons/dollar-sign.svg";
 import cacheIcon from "lucide-static/icons/database.svg";
 import branchIcon from "lucide-static/icons/git-branch.svg";
+import messageIcon from "lucide-static/icons/message-square.svg";
 
 interface Props {
   /** 会话统计（宿主 parseSessionStats 结果）；null = 尚未拉取（占位）。 */
   stats: SessionStats | null;
   /** 会话信息条环境段（folderName + git 状态）；null = 尚未广播。 */
   env: SessionEnv | null;
+  /** pinel.state 插件实时快照（消息计数/模型；null = 插件未装/未推送）。 */
+  pinelState: PinelState | null;
+  /** 压缩进行中（compact 按钮禁用态）。 */
+  isCompacting: boolean;
+  /** 打开会话树选择器（PinelTreePopover）。 */
+  onOpenTree: () => void;
+  /** 发起手动压缩（宿主 compact 原生 RPC）。 */
+  onCompact: () => void;
 }
 
 /**
@@ -68,7 +77,7 @@ function gitMarkers(git: NonNullable<SessionEnv["git"]>): string {
  * 右侧指标段：上下文占用/窗口、缓存读↑、缓存写↓、缓存命中率、成本$。
  * 纯展示组件；各元素经 title 提供悬浮语义。
  */
-export function SessionStatsBar({ stats, env }: Props) {
+export function SessionStatsBar({ stats, env, pinelState, isCompacting, onOpenTree, onCompact }: Props) {
   if (!stats) {
     return (
       <div className="session-stats-bar">
@@ -107,6 +116,17 @@ export function SessionStatsBar({ stats, env }: Props) {
           )}
         </span>
         <span className="session-stats-metrics">
+          {pinelState && (
+            <span className="session-stats-item" title={`Messages: user ${pinelState.messages.user} / assistant ${pinelState.messages.assistant} / tool ${pinelState.messages.toolResult}`}>
+              <span className="session-stats-icon" dangerouslySetInnerHTML={{ __html: messageIcon }} />{" "}
+              {fmt(pinelState.messages.total)}
+            </span>
+          )}
+          {pinelState?.model && (
+            <span className="session-stats-item session-stats-model" title={`Model: ${pinelState.model}`}>
+              {pinelState.model}
+            </span>
+          )}
           <span className="session-stats-value" title="Context usage / window">
             {contextText}
           </span>
@@ -128,6 +148,21 @@ export function SessionStatsBar({ stats, env }: Props) {
               <span className="session-stats-value">{stats.cost.toFixed(3)}</span>
             </span>
           )}
+          <button
+            className="session-stats-action"
+            title="Navigate session tree"
+            onClick={onOpenTree}
+          >
+            Tree
+          </button>
+          <button
+            className="session-stats-action"
+            title="Compact conversation context"
+            disabled={isCompacting}
+            onClick={onCompact}
+          >
+            Compact
+          </button>
         </span>
       </div>
     </div>

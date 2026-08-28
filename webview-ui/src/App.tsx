@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, ContentBlock, ExtensionItem, FileItem, ForkMessageItem, HostMessage, ModelInfo, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { ChatMessage, ChatStatus, ContentBlock, ExtensionItem, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelPluginState, PinelState, PinelTree, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
 import { ExtensionPopover } from "./components/ExtensionPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
 import { ForkPopover } from "./components/ForkPopover";
+import { PinelTreePopover } from "./components/PinelTreePopover";
 import { SessionStatsBar } from "./components/SessionStatsBar";
 import { MessageView, userText, type ToolResultInfo } from "./components/MessageView";
 import { RecentRoundBar } from "./components/RecentRoundBar";
@@ -35,8 +36,8 @@ const initialStatus: ChatStatus = {
 
 let noticeSeq = 0;
 
-/** 弹窗互斥：任一时刻只开一个（⚙ 设置面板 / 扩展管理 / 会话历史 / 分支选择器）。 */
-type PopoverKind = "config" | "session" | "fork" | "ext" | "model" | "thinking" | null;
+/** 弹窗互斥：任一时刻只开一个（⚙ 设置面板 / 扩展管理 / 会话历史 / 分支选择器 / 会话树）。 */
+type PopoverKind = "config" | "session" | "fork" | "ext" | "model" | "thinking" | "tree" | null;
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -63,6 +64,8 @@ export default function App() {
   const forkBtnRef = useRef<HTMLButtonElement>(null);
   /** 扩展按钮元素引用（ExtensionPopover 锚定；按钮在 Composer footer 内渲染）。 */
   const extensionBtnRef = useRef<HTMLButtonElement>(null);
+  /** 会话树按钮元素引用（PinelTreePopover 锚定；按钮在 SessionStatsBar 内渲染）。 */
+  const treeBtnRef = useRef<HTMLButtonElement>(null);
   /** 模型/思考 chip 元素引用（ModelPopover 锚定）。 */
   const modelChipRef = useRef<HTMLButtonElement>(null);
   const thinkingChipRef = useRef<HTMLButtonElement>(null);
@@ -74,6 +77,12 @@ export default function App() {
   const [sessionItems, setSessionItems] = useState<SessionListItem[]>([]);
   /** 会话统计（get_session_stats 推送；null=尚未拉取）。 */
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
+  /** pinel.state 插件实时快照（消息计数/模型；null=插件未装或未推送）。 */
+  const [pinelState, setPinelState] = useState<PinelState | null>(null);
+  /** pinel.tree 会话树（分支链消息节点；树选择器数据源）。 */
+  const [pinelTree, setPinelTree] = useState<PinelTree | null>(null);
+  /** Pinel 插件安装态（扩展管理弹层安装区数据）。 */
+  const [pinelPluginState, setPinelPluginState] = useState<PinelPluginState | null>(null);
   /** 会话信息条环境段（宿主 sessionEnv 推送；含文件夹名 + git 状态）。 */
   const [sessionEnv, setSessionEnv] = useState<SessionEnv | null>(null);
   /** 工作区文件列表（@ 添加文件数据；getFileList 响应填充）。 */
@@ -174,6 +183,9 @@ export default function App() {
         setStatus(msg.status);
         setSessionStats(msg.sessionStats ?? null); // 快照恢复（重显/重启不留长期占位）
         setSessionEnv(msg.sessionEnv ?? null);
+        setPinelState(msg.pinelState); // 插件推送缓存重放（webview 重建恢复）
+        setPinelTree(msg.pinelTree);
+        setPinelPluginState(msg.pinelPluginState);
         setPendingUi(msg.pendingUi ?? []);
         setTodos(msg.todos ?? []);
         setCommands(msg.commands ?? []);
@@ -258,6 +270,15 @@ export default function App() {
         break;
       case "sessionStats":
         setSessionStats(msg.stats);
+        break;
+      case "pinelState":
+        setPinelState(msg.state);
+        break;
+      case "pinelTree":
+        setPinelTree(msg.tree);
+        break;
+      case "pinelPluginState":
+        setPinelPluginState(msg.state);
         break;
       case "sessionEnv":
         setSessionEnv(msg.env);
@@ -599,7 +620,16 @@ export default function App() {
           thinkingChipRef={thinkingChipRef}
           fileList={fileList}
         />
-        {status.showSessionStats && <SessionStatsBar stats={sessionStats} env={sessionEnv} />}
+        {status.showSessionStats && (
+          <SessionStatsBar
+            stats={sessionStats}
+            env={sessionEnv}
+            pinelState={pinelState}
+            isCompacting={status.isCompacting}
+            onOpenTree={() => setPopover((prev) => (prev === "tree" ? null : "tree"))}
+            onCompact={() => vscode.postMessage({ type: "compact" })}
+          />
+        )}
       </div>
       <ConfigPopover status={status} open={popover === "config"} onClose={() => setPopover(null)} />
       <ModelPopover
@@ -642,9 +672,16 @@ export default function App() {
         switching={switching}
         onClose={() => setPopover(null)}
       />
+      <PinelTreePopover
+        anchor={popover === "tree" ? treeBtnRef.current : null}
+        tree={pinelTree}
+        onClose={() => setPopover(null)}
+      />
       <ExtensionPopover
         anchor={popover === "ext" ? extensionBtnRef.current : null}
         items={extensions}
+        pinelPluginState={pinelPluginState}
+        onInstallPinelPlugin={() => vscode.postMessage({ type: "installPinelPlugin" })}
         onToggle={toggleExtension}
         onUninstall={uninstallExtension}
         onClose={() => setPopover(null)}

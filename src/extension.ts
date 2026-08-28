@@ -9,6 +9,8 @@ import type { ExtensionItem, ExtensionKind, ExtensionScope } from "./chat/extens
 import type { AgentMessage, ExtensionUiRequest, ForkMessage, Model, SlashCommand } from "./rpc/protocol";
 import type { TodoTask } from "./chat/todos";
 import type { QuestionnaireView } from "./chat/questionnaire";
+import type { PinelStatePayload, PinelTreePayload } from "./chat/pinel-payload";
+import type { PinelPluginState } from "./chat/pinel-install";
 
 /** 事件记录（测试断言用）：notice / models / thinkingLevels / sessionSwitching / fillPrompt / sessionTitle。 */
 export interface TestEventLog {
@@ -84,7 +86,19 @@ export interface PinelTestApi {
   /** 删除会话（当前会话拒绝；无确认弹窗——UI 层 confirmSessionDelete 负责）。 */
   deleteSession(sessionPath: string): Promise<void>;
   /** 会话信息开关（pinel.showSessionStats 配置 + status 广播）。 */
-  setShowSessionStats(enabled: boolean): Promise<void>;  /** 当前会话文件路径（get_state.sessionFile；切换/新建断言用）。 */
+  setShowSessionStats(enabled: boolean): Promise<void>;
+  /** 手动压缩会话（原生 RPC compact；customInstructions 可选）。 */
+  compact(customInstructions?: string): Promise<void>;
+  /** 一键安装 Pinel 插件（spawn pi install npm:@hilariouhiss/pinel）。 */
+  installPinelPlugin(): Promise<void>;
+  /** 刷新 Pinel 插件安装态（settings.json 检测；测试断言用）。 */
+  refreshPinelPluginState(): Promise<void>;
+  /** 最近一次 pinel.state 推送缓存（null=未收到）。 */
+  getPinelStateCache(): PinelStatePayload | null;
+  /** 最近一次 pinel.tree 推送缓存（null=未收到）。 */
+  getPinelTreeCache(): PinelTreePayload | null;
+  /** Pinel 插件安装态缓存（null=未检测）。 */
+  getPinelPluginState(): PinelPluginState | null;  /** 当前会话文件路径（get_state.sessionFile；切换/新建断言用）。 */
   getCurrentSessionFile(): string | undefined;
   /** 会话历史列表（最近一次扫描结果；测试断言，不依赖 DOM）。 */
   getSessionList(): SessionListItem[];
@@ -132,7 +146,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
   const output = vscode.window.createOutputChannel("Pinel");
   context.subscriptions.push(output);
 
-  controller = new ChatController(output);
+  controller = new ChatController(output, context.globalState);
   const ctrl = controller; // 局部常量供闭包使用（模块级可变引用无法收窄）
   // dispose 回调返回 Promise：VS Code 对 Thenable dispose 的等待行为无强保证，
   // deactivate() 中另有显式 await（dispose 幂等，双调用安全）
@@ -246,6 +260,12 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     renameSession: (sessionPath: string, name: string) => ctrl.renameSession(sessionPath, name),
     deleteSession: (sessionPath: string) => ctrl.deleteSession(sessionPath),
     setShowSessionStats: (enabled: boolean) => ctrl.setShowSessionStats(enabled),
+    compact: (customInstructions?: string) => ctrl.compact(customInstructions),
+    installPinelPlugin: () => ctrl.installPinelPlugin(),
+    refreshPinelPluginState: () => ctrl.refreshPinelPluginState(),
+    getPinelStateCache: () => ctrl.getPinelStateCache(),
+    getPinelTreeCache: () => ctrl.getPinelTreeCache(),
+    getPinelPluginState: () => ctrl.getPinelPluginState(),
     getCurrentSessionFile: () => ctrl.getStatus().sessionFile,
     getSessionList: () => historyProvider.getLastList(),
     getChatSessionList: () => ctrl.getSessionList(),
