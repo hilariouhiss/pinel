@@ -24,3 +24,5 @@ media/webview.css.map
 Thumbs.db
 *.log
 *.tsbuildinfo
+
+.mcp.json
