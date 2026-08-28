@@ -11,6 +11,7 @@ import { PinelTreePopover } from "./components/PinelTreePopover";
 import { SessionStatsBar } from "./components/SessionStatsBar";
 import { MessageView, userText, type ToolResultInfo } from "./components/MessageView";
 import { RecentRoundBar } from "./components/RecentRoundBar";
+import { resolveVisibleUser } from "./roundbar-rule";
 import { Notices } from "./components/Notices";
 import { TodoPanel } from "./components/TodoPanel";
 import { UiDialogs } from "./components/UiDialogs";
@@ -109,33 +110,72 @@ export default function App() {
   const [notices, setNotices] = useState<Array<{ id: number; level: string; text: string }>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
-  /** 悬浮条隐藏态：点击滚回后隐藏，上滚离开该消息/滚到底部时重现（见 onScroll）。 */
+  /** 悬浮条隐藏态：点击滚回后隐藏，上滚离开该消息/滚到底部时重现（computeVisible 内判定）。 */
   const [roundBarHidden, setRoundBarHidden] = useState(false);
 
   /** toolResult 结果映射（toolCallId → 权威输出/isError/toolName；快照重放可重建）
    *  + 命中集合（assistant 消息或流式块中出现的 toolCall id）。命中集合含流式块：
    *  toolResult 消息先于 assistant message_end 到达时仍能跳过独立卡片（防闪现）。 */
-  // 最近用户消息（悬浮状态条数据源）：从 messages 尾部向前扫描；
-  // 索引在点击滚回时现算（快照替换后索引不陈旧——评审 M2）
-  const lastUser = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") {
-        return { index: i, text: userText(messages[i].content) };
+  // 用户消息索引列表（悬浮条滚动联动数据源）：messages 中 role==="user" 的全局索引
+  //（控制消息 /pinel-* 不写条目天然排除；图片消息文案兕底见 roundBarText）
+  const userMsgIndexes = useMemo(() => {
+    const idx: number[] = [];
+    messages.forEach((m, i) => {
+      if (m.role === "user") {
+        idx.push(i);
+      }
+    });
+    return idx;
+  }, [messages]);
+  /** 悬浮条当前显示的用户消息索引（null = 隐藏；尚未计算时由 displayUserIndex 兕底最近一条）。 */
+  const [visibleUserIndex, setVisibleUserIndex] = useState<number | null>(null);
+  /** 实际显示索引：计算前兕底最近一条（无闪烁，初始语义 = 现状恒显最近）。 */
+  const displayUserIndex =
+    visibleUserIndex ?? (userMsgIndexes.length > 0 ? userMsgIndexes[userMsgIndexes.length - 1] : null);
+  /** 悬浮条文案：仅图片用户消息兕底 "📎 图片"（评审 N4）；无显示索引 → 空串（组件不渲染）。 */
+  const roundBarText =
+    displayUserIndex !== null ? userText(messages[displayUserIndex].content) || "📎 图片" : "";
+
+  // 按当前滚动位置重算悬浮条应显示的用户消息（规则见 roundbar-rule.ts 纯函数）。
+  // 同时维护隐藏态重现：点击滚回后 hidden，仅当应显示的消息离开视口才重现。
+  const computeVisible = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    if (userMsgIndexes.length === 0) {
+      setVisibleUserIndex(null);
+      return;
+    }
+    const y = el.getBoundingClientRect().top;
+    const relTops = userMsgIndexes.map((mi) => {
+      const msgEl = el.querySelector<HTMLElement>(`[data-msg-index="${mi}"]`);
+      return msgEl ? msgEl.getBoundingClientRect().top - y : null;
+    });
+    const vi = resolveVisibleUser(relTops, stickToBottom.current);
+    const visMsgIdx = vi < 0 ? null : userMsgIndexes[vi];
+    // 隐藏态重现判定：应显示的消息与视口相交（部分可见）→ 保持隐藏；离开 → 重现
+    let inView = false;
+    if (visMsgIdx !== null) {
+      const msgEl = el.querySelector<HTMLElement>(`[data-msg-index="${visMsgIdx}"]`);
+      if (msgEl) {
+        const r = msgEl.getBoundingClientRect();
+        const c = el.getBoundingClientRect();
+        inView = r.bottom > c.top && r.top < c.bottom;
       }
     }
-    return null;
-  }, [messages]);
-  // 悬浮条输入文案：仅图片用户消息兑底 "📎 图片"（评审 N4）
-  const lastUserText = lastUser ? lastUser.text || "📎 图片" : "";
+    setVisibleUserIndex(visMsgIdx);
+    setRoundBarHidden((hidden) => (hidden ? (inView ? hidden : false) : hidden));
+  }, [userMsgIndexes]);
 
-  // 点击悬浮条滚回原用户消息（scroll-margin-top 防遮挡；stickToBottom 由 onScroll 自然更新）
-  // 点击即隐藏悬浮条：滚回后消息已在视口，无需导航条遮挡内容（上滚离开后 onScroll 重现）
+  // 点击悬浮条滚回当前显示的用户消息（scroll-margin-top 防遮挡；stickToBottom 由 onScroll 自然更新）
+  // 点击即隐藏悬浮条：滚回后消息已在视口，无需导航条遮挡内容（上滚离开后 computeVisible 重现）
   const locateLastUser = () => {
-    if (!lastUser) {
+    if (displayUserIndex === null) {
       return;
     }
     setRoundBarHidden(true);
-    const el = scrollRef.current?.querySelector(`[data-msg-index="${lastUser.index}"]`);
+    const el = scrollRef.current?.querySelector(`[data-msg-index="${displayUserIndex}"]`);
     el?.scrollIntoView({ block: "start" });
     // 焦点移交滚动容器：悬浮条卸载后焦点不落 body，键盘 ↑↓ 仍可滚动
     scrollRef.current?.focus();
@@ -363,6 +403,12 @@ export default function App() {
     }
   }, [messages, streamBlocks, tools, pendingUi]);
 
+  // 消息列表变化（新回合/快照替换）后按当前滚动位置重算悬浮条显示目标。
+  // 声明在自动滚动 effect 之后：先完成 scrollTop 赋值再读 rect，防瞬态错值（评审 S4）
+  useEffect(() => {
+    computeVisible();
+  }, [computeVisible]);
+
   // 问卷提交后收起为一行状态条：捕获提交瞬间的消息数作为流内插入位置。
   // 答题/确认期间 agent 被对话框阻塞、无新 message 事件，消息数恒定；
   // 仅位置未知时捕获（同会话 agent_end 快照重放不移动已捕获位置）。
@@ -382,24 +428,10 @@ export default function App() {
       return;
     }
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    // 悬浮条隐藏态：最近用户消息离开滚动视口（上滚看历史 / 滚到底部）→ 重现。
-    // 函数式更新避开空依赖闭包读陈旧 roundBarHidden；updater 内读 DOM 幂等
-    //（严格模式双调用返回一致结果）。依赖 lastUser 保证索引非陈旧。
-    setRoundBarHidden((hidden) => {
-      if (!hidden || !lastUser) {
-        return hidden;
-      }
-      const msgEl = el.querySelector<HTMLElement>(`[data-msg-index="${lastUser.index}"]`);
-      if (!msgEl) {
-        return hidden; // 快照替换窗口期无元素：保持现状
-      }
-      const m = msgEl.getBoundingClientRect();
-      const c = el.getBoundingClientRect();
-      // 前提：CSS 无 scroll-behavior:smooth（scrollIntoView 瞬时），点击滚回后
-      // 消息已在视口内 → 判定不成立保持隐藏；将来引入 smooth 滚动需重审此判定
-      return m.top > c.bottom || m.bottom < c.top ? false : hidden;
-    });
-  }, [lastUser]);
+    // 悬浮条随视口切换显示上下文用户消息；隐藏态重现判定（应显示消息离开
+    // 视口 → 重现）已并入 computeVisible（函数式 setState，无陈旧闭包）
+    computeVisible();
+  }, [computeVisible]);
 
   // 双击 Esc 打开会话树弹层（Tree 按钮移除后的入口）。弹层打开时 Esc 被其
   // capture 监听 stopPropagation，本监听收不到 → 不会在关弹层瞬间又开树。
@@ -639,7 +671,7 @@ export default function App() {
             宽度 = 滚动内容区宽 → 与消息卡片结构级严格同宽（见 styles.css
             .recent-round-anchor） */}
         <div className="recent-round-anchor">
-          <RecentRoundBar lastUserText={!roundBarHidden ? lastUserText : ""} onLocate={locateLastUser} />
+          <RecentRoundBar lastUserText={!roundBarHidden ? roundBarText : ""} onLocate={locateLastUser} />
         </div>
         {!hasConversation && (
           <div className="pinel-empty">

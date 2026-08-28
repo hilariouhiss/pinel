@@ -8,6 +8,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 最近回合悬浮条随滚动切换显示上下文用户消息：底部钉住最近一条；上滚越过某条消息顶部即切换为显示上一条（部分可见即切换）；越过最早消息顶部则隐藏；点击滚回当前显示的消息；规则抽纯函数 roundbar-rule.ts
+
 - 输入区三行左缘对齐（输入行文本/按钮行/会话信息条统一 21px 基准）；最近回合悬浮条与用户消息卡片样式一致（同背景/同字号/同 padding，去阴影），并改入滚动容器 sticky 钉顶——与消息卡片结构级同宽（滚动条出现自动让位）
 
 - subagent 卡片思考等级直接显示裸值（去「thinking: 」前缀，如 `模型 · high`），全缺时保留 main level 占位
