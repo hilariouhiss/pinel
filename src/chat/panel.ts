@@ -5,6 +5,8 @@ interface WebviewPromptMessage {
   type: "sendPrompt";
   text: string;
   images?: Array<{ data: string; mimeType: string }>;
+  /** @ 文件引用（webview 发送时从文本解析；宿主 attachFileRefs 消费）。 */
+  fileRefs?: string[];
 }
 
 interface WebviewAbortMessage {
@@ -247,7 +249,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         this.controller.fireSnapshot();
         break;
       case "sendPrompt":
-        void this.controller.sendPrompt({ text: msg.text, images: msg.images });
+        // 注：fileRefs 透传路径无自动化覆盖（集成测试走 PinelTestApi 直调 controller
+        // 绕过 panel——2026-08-28 修复前此处曾静默丢弃 fileRefs，UI 链路未端到端生效）
+        void this.controller.sendPrompt({ text: msg.text, images: msg.images, fileRefs: msg.fileRefs });
         break;
       case "abort":
         void this.controller.abort();

@@ -1051,48 +1051,6 @@ body {
   text-align: center;
 }
 
-/* @ 文件引用附件卡片（与图片附件同区，位于输入框上方） */
-.composer-file-refs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
-.composer-file-ref {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 3px 8px;
-  border: 1px solid var(--vscode-input-border);
-  border-radius: 4px;
-  background: var(--vscode-editor-background);
-  font-size: 11px;
-}
-
-.composer-file-ref-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--vscode-foreground);
-}
-
-.composer-file-ref-remove {
-  flex: none;
-  border: none;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  color: var(--vscode-descriptionForeground);
-  font-size: 11px;
-}
-
-.composer-file-ref-remove:hover {
-  color: var(--vscode-errorForeground);
-}
-
 .composer-suggest-item {
   display: flex;
   align-items: baseline;

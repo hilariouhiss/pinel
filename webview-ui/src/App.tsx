@@ -315,6 +315,9 @@ export default function App() {
   useEffect(() => {
     window.addEventListener("message", handleMessage);
     vscode.postMessage({ type: "ready" });
+    // 挂载预热拉取文件列表：手打/粘贴 @引用 发送时解析依赖 fileList，
+    // 不预热的场景（无 atTrigger 击键）fileList 可能为空导致引用静默丢失
+    vscode.postMessage({ type: "getFileList" });
     return () => window.removeEventListener("message", handleMessage);
   }, [handleMessage]);
 

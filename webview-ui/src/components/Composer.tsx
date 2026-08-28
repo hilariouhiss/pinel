@@ -11,6 +11,7 @@ import {
 } from "react";
 import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
+import { parseAtRefs } from "../at-refs";
 import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import sendIcon from "lucide-static/icons/send.svg";
@@ -114,8 +115,7 @@ export function Composer({
 }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  /** @ 文件引用（发送时 pinel 自读内容附加；附件区卡片展示）。 */
-  const [fileRefs, setFileRefs] = useState<string[]>([]);
+  // @ 文件引用不再有独立 state：内联在输入文本中，发送时从文本解析 @token 注入
   const busy = status.isStreaming || status.isCompacting;
   // 弹窗 Esc 关闭标记：文本变化时复位（继续输入重新触发补全）
   const [suggestDismissed, setSuggestDismissed] = useState(false);
@@ -266,34 +266,32 @@ export function Composer({
     caretAtEnd.current = true;
   };
 
-  /** @ 文件选中：移除输入中 @token + 附件区新增引用卡片 + 关闭弹窗。 */
+  /** @ 文件选中：末 @token 替换为完整引用文本（含空格路径引号包裹）+ 尾空格收尾。
+   *  尾空格让 lastToken 不再以 @ 开头（防下次击键复位 fileDismissed 后弹窗重开），
+   *  fileDismissed 置位双保险；发送时统一从文本解析 @token（手打/粘贴/fill 同链路）。 */
   const acceptFile = (file: FileItem) => {
     const token = text.split(/\s+/).pop() ?? "";
     const prefix = text.slice(0, Math.max(0, text.length - token.length));
-    setText(prefix);
-    setFileRefs((prev) => (prev.includes(file.path) ? prev : [...prev, file.path]));
+    const ref = /\s/.test(file.path) ? `@"${file.path}"` : `@${file.path}`;
+    setText(`${prefix}${ref} `);
     setFileDismissed(true);
     caretAtEnd.current = true;
   };
 
-  const removeFileRef = (ref: string) => {
-    setFileRefs((prev) => prev.filter((r) => r !== ref));
-  };
-
   const send = () => {
     const trimmed = text.trim();
-    if (!trimmed && attachments.length === 0 && fileRefs.length === 0) {
+    if (!trimmed && attachments.length === 0) {
       return;
     }
     vscode.postMessage({
       type: "sendPrompt",
       text: trimmed,
       images: attachments.map((a) => ({ data: a.data, mimeType: a.mimeType })),
-      fileRefs,
+      // 发送时从文本解析 @引用（与列表选择同链路；未匹配 @token 保留普通文本）
+      fileRefs: parseAtRefs(trimmed, fileList),
     });
     setText("");
     setAttachments([]);
-    setFileRefs([]);
   };
 
   const addImageFile = (file: File) => {
@@ -382,12 +380,13 @@ export function Composer({
       }
       if (e.key === "Enter" && !e.shiftKey) {
         // 文件弹窗打开时 Enter 优先接受文件（而非发送）
-        e.preventDefault();
         const file = fileCandidates[fileActiveIndex];
         if (file) {
+          e.preventDefault();
           acceptFile(file);
+          return;
         }
-        return;
+        // 候选为空（手打路径无匹配）：不拦截，落入下方正常发送（发送解析尝试注入）
       }
       if (e.key === "Escape") {
         e.preventDefault();
@@ -482,22 +481,6 @@ export function Composer({
           ))}
         </div>
       )}
-      {fileRefs.length > 0 && (
-        <div className="composer-file-refs">
-          {fileRefs.map((ref) => (
-            <span key={ref} className="composer-file-ref" title={ref}>
-              <span className="composer-file-ref-name">📄 {ref}</span>
-              <button
-                className="composer-file-ref-remove"
-                title="Remove"
-                onClick={() => removeFileRef(ref)}
-              >
-                ✕
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
       <textarea
         ref={inputRef}
         className="composer-input"
@@ -584,7 +567,7 @@ export function Composer({
             className="composer-send"
             title="Send (Enter)"
             onClick={send}
-            disabled={!text.trim() && attachments.length === 0 && fileRefs.length === 0}
+            disabled={!text.trim() && attachments.length === 0}
             dangerouslySetInnerHTML={{ __html: sendIcon }}
           />
         )}
