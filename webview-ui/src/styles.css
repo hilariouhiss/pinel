@@ -851,8 +851,17 @@ body {
   overflow: hidden;
 }
 
-.todopanel-task-icon {
+/* todo 状态图标：lucide 内联，尺寸覆写（文件内 width=24）+ stroke=currentColor
+   随容器 color 继承；小尺寸 stroke 偏细，覆写 stroke-width 补偿 */
+.todopanel-icon,
+.todopanel-task-icon,
+.todotask-icon {
+  display: flex;
   flex-shrink: 0;
+  align-items: center;
+}
+
+.todopanel-task-icon {
   color: var(--vscode-focusBorder, #007acc);
 }
 
@@ -888,6 +897,7 @@ body {
 
 /* todo 状态图标：lucide 内联，尺寸覆写（文件内 width=24）+ stroke=currentColor
    随容器 color 继承；小尺寸 stroke 偏细，覆写 stroke-width 补偿 */
+.todopanel-icon .lucide,
 .todopanel-task-icon .lucide,
 .todotask-icon .lucide {
   width: 12px;

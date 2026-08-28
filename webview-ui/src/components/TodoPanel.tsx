@@ -4,6 +4,8 @@ import type { TodoTask } from "../types";
 import todoIcon from "lucide-static/icons/circle.svg";
 import inProgressIcon from "lucide-static/icons/circle-dot.svg";
 import doneIcon from "lucide-static/icons/circle-check-big.svg";
+import chevronDownIcon from "lucide-static/icons/chevron-down.svg";
+import chevronRightIcon from "lucide-static/icons/chevron-right.svg";
 
 interface Props {
   todos: TodoTask[];
@@ -31,7 +33,7 @@ export function TodoPanel({ todos }: Props) {
   return (
     <div className="todopanel">
       <button className="todopanel-head" onClick={() => setOpen(!open)}>
-        <span className="todopanel-icon">{open ? "▾" : "▸"}</span>
+        <span className="todopanel-icon" dangerouslySetInnerHTML={{ __html: open ? chevronDownIcon : chevronRightIcon }} />
         {!open && activeSummary ? (
           <span className="todopanel-task" title={activeSummary}>
             <span className="todopanel-task-icon" dangerouslySetInnerHTML={{ __html: inProgressIcon }} />
