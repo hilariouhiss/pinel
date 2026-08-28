@@ -346,13 +346,8 @@ function SubagentCard({
   const meta: string[] = [];
   // 继承主会话时兕底主会话实际模型短名/思考等级，而非 "main model"/"main level" 占位
   meta.push(card.model ?? mainModelName ?? "main model");
-  meta.push(
-    card.thinking
-      ? `thinking: ${card.thinking}`
-      : mainThinkingLevel
-        ? `thinking: ${mainThinkingLevel}`
-        : "main level",
-  );
+  // 思考等级直接显示裸值（去 "thinking: " 前缀）；全缺保留占位
+  meta.push(card.thinking ?? mainThinkingLevel ?? "main level");
   const stats: string[] = [];
   if (running && card.activity) {
     stats.push(card.activity);

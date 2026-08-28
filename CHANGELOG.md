@@ -8,6 +8,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- subagent 卡片思考等级直接显示裸值（去「thinking: 」前缀，如 `模型 · high`），全缺时保留 main level 占位
+
 - subagent 卡片：继承主会话时直接显示主会话实际模型名与思考等级（替代 main model/main level 占位）；工具卡片（含 subagent）运行中自动展开实时输出、完成后自动收起（挂后台保持展开），手动点击在状态不变时优先
 
 - 工具调用卡片标题直接显示工具本名（流式块 name → 实时事件 toolName → 结果消息 toolName 三层兕底，三源皆空才兑底 Tool call）；subagent 图标判定同步用兕底后工具名
