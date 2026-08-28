@@ -977,6 +977,46 @@ async function handleCommand(record) {
         void streamSequence(text, false);
         break;
       }
+      if (text.includes("SUBAGENTBAD")) {
+        // 模拟 subagent 卡片降级：args 仅 description；details 字段类型全错
+        //（扩展格式漂移）——卡片字段保持兜底值，输出仍可达
+        out({ type: "tool_execution_start", toolCallId: "sub_bad", toolName: "subagent", args: { description: "Degrade case" } });
+        out({ type: "tool_execution_update", toolCallId: "sub_bad", toolName: "subagent", partialResult: { content: [{ type: "text", text: "1 tool uses..." }], details: "garbage" } });
+        out({ type: "tool_execution_end", toolCallId: "sub_bad", toolName: "subagent", result: { content: [{ type: "text", text: "partial output" }], details: { modelName: 42, tags: "not-array", status: "unknown-status", turnCount: "5" } }, isError: false });
+        void streamSequence(text, false);
+        break;
+      }
+      if (text.includes("SUBAGENTME")) {
+        // 模拟 subagent 工具执行：start(args 请求值) → update(running details 实时活动)
+        // → end(completed details + markdown 报告)，对齐 @gotgenes/pi-subagents 事件形态
+        out({
+          type: "tool_execution_start",
+          toolCallId: "sub_1",
+          toolName: "subagent",
+          args: { description: "Exploring auth flow", prompt: "Find the auth flow", subagent_type: "Explore", model: "haiku", thinking: "high" },
+        });
+        out({
+          type: "tool_execution_update",
+          toolCallId: "sub_1",
+          toolName: "subagent",
+          partialResult: {
+            content: [{ type: "text", text: "2 tool uses..." }],
+            details: { displayName: "Explore", description: "Exploring auth flow", subagentType: "Explore", modelName: "haiku", tags: ["thinking: high"], status: "running", activity: "reading src/auth.ts", turnCount: 2, toolUses: 2, tokens: "8.1k", spinnerFrame: 3 },
+          },
+        });
+        out({
+          type: "tool_execution_end",
+          toolCallId: "sub_1",
+          toolName: "subagent",
+          result: {
+            content: [{ type: "text", text: "## Findings\n\n- Auth uses JWT tokens\n- Refresh via cookie" }],
+            details: { displayName: "Explore", description: "Exploring auth flow", subagentType: "Explore", modelName: "haiku", tags: ["thinking: high"], status: "completed", activity: "", turnCount: 5, toolUses: 3, tokens: "12.3k", durationMs: 4200 },
+          },
+          isError: false,
+        });
+        void streamSequence(text, false);
+        break;
+      }
       if (text.includes("TODOME")) {
         // 模拟 todo 工具执行：两轮 create + update，details.tasks 为全量快照
         out({ type: "tool_execution_start", toolCallId: "todo_1", toolName: "todo", args: { action: "create", subject: "任务一", description: "第一个任务" } });

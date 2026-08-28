@@ -8,6 +8,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- subagent 卡片：subagent 工具（pi-subagents 扩展）的调用渲染为专属卡片——标题行任务描述、模型/思考深度行（解析失败或继承主会话时显示 main model / main level）、统计行（运行中实时活动 + 轮次/token；完成后轮次/工具次数/token/耗时），完成/错误/后台态点击展开 Markdown 报告全文；数据全部来自既有工具事件（pi-subagents 未文档化的 details 格式，防御解析 + 字段级降级，解析失败时输出仍可达）
 - 模型/思考 chip：输入框按钮行左端常显当前模型（友好名，tooltip 完整 provider/id）与思考深度，点击弹锚定下拉列表切换（打开即拉取、选中即切换，状态回读刷新由既有宿主链路负责）；流式中可切换；无模型时模型 chip 禁用、思考 chip 隐藏
 
 ### Changed

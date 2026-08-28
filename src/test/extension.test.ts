@@ -2466,4 +2466,51 @@ suite("Pinel 集成测试（假 pi）", () => {
       }
     });
   });
+
+  suite("subagent 卡片（工具事件解析）", () => {
+    test("SUBAGENTME：start/update/end 三事件合并 → 专属字段与输出", async function () {
+      this.timeout(60000);
+      // 前序套件可能残留流式态：未 settle 时 sendPrompt 会变 steer，fake-pi 场景不分派
+      await waitFor(() => !api.getStatus().isStreaming, 30000, "前序流结束");
+      const marker = `SUBAGENTME-${Date.now()}`;
+      const baseline = api.getSettledCount();
+      await api.sendPrompt(marker);
+      await api.waitForSettled(30000, baseline);
+      await waitFor(() => api.getTools().get("sub_1")?.subagent !== undefined, 10000, "subagent 卡片字段送达");
+      const card = api.getTools().get("sub_1")!;
+      const sub = card.subagent!;
+      assert.strictEqual(sub.description, "Exploring auth flow");
+      assert.strictEqual(sub.subagentType, "Explore");
+      assert.strictEqual(sub.model, "haiku");
+      assert.strictEqual(sub.thinking, "high");
+      assert.strictEqual(sub.status, "completed");
+      assert.strictEqual(sub.turnCount, 5);
+      assert.strictEqual(sub.toolUses, 3);
+      assert.strictEqual(sub.tokens, "12.3k");
+      assert.strictEqual(sub.durationMs, 4200);
+      // end 的 activity "" 清空运行中活动行
+      assert.strictEqual(sub.activity, null);
+      assert.strictEqual(card.status, "done");
+      assert.ok(card.output.includes("## Findings"), "输出必须含 markdown 报告");
+    });
+
+    test("SUBAGENTBAD：details 字段全错 → 字段级降级，输出仍可达", async function () {
+      this.timeout(60000);
+      await waitFor(() => !api.getStatus().isStreaming, 30000, "前序流结束");
+      const marker = `SUBAGENTBAD-${Date.now()}`;
+      const baseline = api.getSettledCount();
+      await api.sendPrompt(marker);
+      await api.waitForSettled(30000, baseline);
+      await waitFor(() => api.getTools().get("sub_bad")?.subagent !== undefined, 10000, "降级卡片送达");
+      const card = api.getTools().get("sub_bad")!;
+      const sub = card.subagent!;
+      assert.strictEqual(sub.description, "Degrade case");
+      assert.strictEqual(sub.model, null);
+      assert.strictEqual(sub.thinking, null);
+      assert.strictEqual(sub.turnCount, null);
+      // details 状态不可解析 → end 兑底 completed（防 spinner 永转）
+      assert.strictEqual(sub.status, "completed");
+      assert.strictEqual(card.output, "partial output");
+    });
+  });
 });

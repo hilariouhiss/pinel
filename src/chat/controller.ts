@@ -40,6 +40,7 @@ import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly"
 import { parseSessionStats } from "./session-stats";
 import { readGitStatus, type GitStatus } from "./git-status";
 import { parseTodoTasks, type TodoTask } from "./todos";
+import { buildSubagentCard, applySubagentDetails, type SubagentCardInfo } from "./subagents";
 import { parseCommands } from "./commands";
 import { parseForkMessages } from "./fork-messages";
 import { parseModels, parseThinkingLevels } from "./models";
@@ -97,6 +98,8 @@ export interface ToolCard {
   argsText: string;
   status: "running" | "done" | "error";
   output: string;
+  /** subagent 工具专属信息（模型/思考/统计）；其他工具无此字段。 */
+  subagent?: SubagentCardInfo;
 }
 
 /** 会话信息条环境段（工作区文件夹名 + 富化 git 状态）；随 sessionEnv 消息广播。 */
@@ -1662,6 +1665,10 @@ export class ChatController {
           status: "running",
           output: "",
         };
+        // subagent：从 args 构建专属卡片信息（模型/思考请求值，终态由后续 details 确定）
+        if (e.toolName === "subagent") {
+          tool.subagent = buildSubagentCard(e.args);
+        }
         this.tools.set(e.toolCallId, tool);
         this.fire({ type: "tool", tool });
         break;
@@ -1673,6 +1680,10 @@ export class ChatController {
         if (tool) {
           tool.output = extractText(e.partialResult?.content) ?? tool.output;
           tool.status = "running";
+          // subagent：合并运行中实时状态（activity/统计；details 形状不符时静默跳过）
+          if (tool.subagent) {
+            applySubagentDetails(tool.subagent, e.partialResult?.details);
+          }
           this.fire({ type: "tool", tool: { ...tool } });
         }
         break;
@@ -1697,6 +1708,18 @@ export class ChatController {
         };
         tool.output = extractText(e.result?.content) ?? tool.output;
         tool.status = e.isError ? "error" : "done";
+        // subagent：合并终态 details（isError 优先 → 卡片强制 error）；
+        // start 未见（restart 边缘）时兜底建卡，避免专属信息丢失
+        if (e.toolName === "subagent") {
+          if (!tool.subagent) {
+            tool.subagent = buildSubagentCard(undefined);
+          }
+          applySubagentDetails(tool.subagent, e.result?.details, e.isError);
+          // end 即执行结束：details 缺失/状态不可解析时兜底 completed（防 spinner 永转）
+          if (tool.subagent.status === "running") {
+            tool.subagent.status = "completed";
+          }
+        }
         this.tools.set(e.toolCallId, tool);
         this.fire({ type: "tool", tool: { ...tool } });
         break;

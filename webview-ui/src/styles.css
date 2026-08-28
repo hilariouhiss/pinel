@@ -303,6 +303,30 @@ body {
   word-break: break-word;
 }
 
+/* subagent 专属卡片：统计行 + Markdown 输出区 */
+.subagent-stats {
+  padding: 3px 8px 5px 31px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--pinel-font-family);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.subagent-caret {
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+.subagent-body {
+  padding: 8px;
+  max-height: 300px;
+  overflow: auto;
+  border-top: 1px solid var(--vscode-input-border);
+  font-size: 12px;
+}
+
 .toolstatus.status-error {
   color: var(--vscode-errorForeground);
 }

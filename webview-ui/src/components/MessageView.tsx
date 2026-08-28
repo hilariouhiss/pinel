@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { ChatMessage, ContentBlock, StreamBlock, ToolCard } from "../types";
+import type { ChatMessage, ContentBlock, StreamBlock, SubagentCardInfo, ToolCard } from "../types";
 import { Markdown } from "./Markdown";
 
 interface Props {
@@ -174,9 +174,69 @@ function ToolChip({
   );
 }
 
+function SubagentCard({ card, output }: { card: SubagentCardInfo; output: string }) {
+  const [open, setOpen] = useState(false);
+  const running = card.status === "running";
+  // running 中 partial content 仅 "N tool uses..." 无展开价值；background/stopped
+  // 视为终态，有 output 即可展开，无则仅显示状态标签
+  const canExpand = !running && output.trim().length > 0;
+  const meta: string[] = [];
+  meta.push(card.model ?? "main model");
+  meta.push(card.thinking ? `thinking: ${card.thinking}` : "main level");
+  const stats: string[] = [];
+  if (running && card.activity) {
+    stats.push(card.activity);
+  }
+  if (card.turnCount != null) {
+    stats.push(`${card.turnCount} turn${card.turnCount === 1 ? "" : "s"}`);
+  }
+  if (card.toolUses != null && card.toolUses > 0) {
+    stats.push(`${card.toolUses} tool use${card.toolUses === 1 ? "" : "s"}`);
+  }
+  if (card.tokens) {
+    stats.push(card.tokens);
+  }
+  if (!running && card.durationMs != null && card.durationMs > 0) {
+    stats.push(card.durationMs >= 1000 ? `${(card.durationMs / 1000).toFixed(1)}s` : `${card.durationMs}ms`);
+  }
+  if (card.status === "background") {
+    stats.push("Running in background");
+  }
+  return (
+    <div className={`toolresult subagent-card status-${card.status === "error" ? "error" : "done"}`}>
+      <button
+        className="toolresult-head"
+        onClick={() => canExpand && setOpen(!open)}
+        style={{ cursor: canExpand ? "pointer" : "default" }}
+      >
+        <span
+          className={`toolstatus status-${
+            card.status === "error" ? "error" : card.status === "running" ? "running" : "done"
+          }`}
+        >
+          {running ? <span className="spinner" /> : card.status === "error" ? "✕" : "✓"}
+        </span>
+        <span className="toolresult-title">🤖 {card.description}</span>
+        <span className="toolresult-len">{meta.join(" · ")}</span>
+        {canExpand && <span className="subagent-caret">{open ? "▾" : "▸"}</span>}
+      </button>
+      {stats.length > 0 && <div className="subagent-stats">{stats.join(" · ")}</div>}
+      {open && (
+        <div className="subagent-body msg-text">
+          <Markdown content={output} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolResultView({ message, tools }: { message: ChatMessage; tools: Record<string, ToolCard> }) {
   const [open, setOpen] = useState(false);
   const toolCard = message.toolCallId ? tools[message.toolCallId] : undefined;
+  // subagent 专属卡片：模型/思考深度 + 统计 + 点击展开 Markdown 输出
+  if (toolCard?.subagent) {
+    return <SubagentCard card={toolCard.subagent} output={toolCard.output} />;
+  }
   const status = toolCard?.status ?? (message.isError ? "error" : "done");
   const rawContent = Array.isArray(message.content) ? message.content : [];
   const text = (rawContent as ContentBlock[])

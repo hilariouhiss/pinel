@@ -48,6 +48,25 @@ export interface ToolCard {
   argsText: string;
   status: "running" | "done" | "error";
   output: string;
+  /** subagent 工具专属信息（与宿主 SubagentCardInfo 手工同步）。 */
+  subagent?: SubagentCardInfo;
+}
+
+export type SubagentCardStatus = "running" | "completed" | "error" | "background" | "stopped";
+
+export interface SubagentCardInfo {
+  description: string;
+  subagentType: string | null;
+  /** null = 继承主会话（显示 main model）。 */
+  model: string | null;
+  /** null = 继承主会话（显示 main level）。 */
+  thinking: string | null;
+  status: SubagentCardStatus;
+  activity: string | null;
+  turnCount: number | null;
+  toolUses: number | null;
+  tokens: string | null;
+  durationMs: number | null;
 }
 
 export interface ContentBlock {
