@@ -62,9 +62,11 @@ import {
   setLocalExtensionEnabled,
   setPackageEnabled,
   uninstallLocalExtension,
+  filterExtensionView,
   type ExtensionItem,
   type ExtensionKind,
   type ExtensionScope,
+  type ExtensionView,
 } from "./extensions";
 import {
   inputResponseFor,
@@ -144,7 +146,7 @@ export type OutMessage =
   | { type: "fileList"; items: FileItem[]; truncated: boolean }
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "forkMessages"; messages: ForkMessage[] }
-  | { type: "extensionList"; items: ExtensionItem[] }
+  | { type: "extensionList"; items: ExtensionItem[]; projectAvailable: boolean }
   | { type: "pinelState"; state: PinelStatePayload }
   | { type: "pinelTree"; tree: PinelTreePayload }
   | { type: "pinelPluginState"; state: PinelPluginState }
@@ -786,10 +788,11 @@ export class ChatController {
   // -------------------------------------------------------------------------
 
   /**
-   * 扫描 pi 智能体扩展列表（本地扩展 + settings.json packages 合并）。
+   * 扫描 pi 智能体扩展列表（本地扩展 + settings.json packages），按视图过滤：
+   * all（包去重 project 优先）/ global / project（含继承行 inherited）。
    * 纯文件操作，不依赖 pi 进程状态（pi 未启动时也能浏览/管理）。
    */
-  async getExtensionList(): Promise<ExtensionItem[]> {
+  async getExtensionList(view: ExtensionView = "all"): Promise<ExtensionItem[]> {
     const agentDir = defaultAgentDir();
     const root = this.workspaceRoot;
     const projectDir = root ? projectConfigDir(root) : undefined;
@@ -801,12 +804,12 @@ export class ChatController {
       path.join(agentDir, "settings.json"),
       projectDir ? path.join(projectDir, "settings.json") : undefined,
     );
-    return [...local, ...packages];
+    return filterExtensionView([...local, ...packages], view, agentDir, projectDir);
   }
 
   /**
-   * 启停扩展：本地 = 文件重命名；包 = settings.json 字符串 ↔ 对象空数组。
-   * 失败 notice（不抛）；成功后由面板层刷新列表 + reload 提示。
+   * 启停扩展：本地 = 文件重命名；包 = settings.json 字符串 ↔ 对象空数组（无同 identity
+   * 条目时 upsert 覆盖，支持项目级覆盖全局包）。失败 notice（不抛）；成功后由面板层刷新列表 + reload 提示。
    */
   async setExtensionEnabled(
     id: string,

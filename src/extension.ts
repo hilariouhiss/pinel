@@ -5,7 +5,7 @@ import { ChatPanelProvider } from "./chat/panel";
 import { SessionHistoryProvider, revealChatView } from "./chat/session-history-provider";
 import type { SessionListItem } from "./chat/session-history";
 import type { FileItem } from "./chat/file-scanner";
-import type { ExtensionItem, ExtensionKind, ExtensionScope } from "./chat/extensions";
+import type { ExtensionItem, ExtensionKind, ExtensionScope, ExtensionView } from "./chat/extensions";
 import type { AgentMessage, ExtensionUiRequest, ForkMessage, Model, SlashCommand } from "./rpc/protocol";
 import type { TodoTask } from "./chat/todos";
 import type { QuestionnaireView } from "./chat/questionnaire";
@@ -71,8 +71,8 @@ export interface PinelTestApi {
   newSession(): Promise<void>;
   /** 拉取可 fork 的历史用户消息（get_fork_messages；fork 选择器数据源）。 */
   getForkMessages(): Promise<void>;
-  /** 扫描 pi 智能体扩展列表（本地扩展 + settings.json packages 合并）。 */
-  getExtensionList(): Promise<ExtensionItem[]>;
+  /** 扫描 pi 智能体扩展列表（本地扩展 + settings.json packages；按视图过滤/合成）。 */
+  getExtensionList(view?: ExtensionView): Promise<ExtensionItem[]>;
   /** 启停扩展（本地重命名 / 包 settings 编辑；无确认弹窗）。 */
   setExtensionEnabled(id: string, kind: ExtensionKind, scope: ExtensionScope, enabled: boolean): Promise<void>;
   /** 卸载扩展（本地删除 / 包 pi remove 或 settings 编辑；无确认弹窗——UI 层 seam 负责）。 */
@@ -252,7 +252,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     switchSession: (sessionPath: string) => ctrl.switchSession(sessionPath),
     newSession: () => ctrl.newSession(),
     getForkMessages: () => ctrl.getForkMessages(),
-    getExtensionList: () => ctrl.getExtensionList(),
+    getExtensionList: (view?: ExtensionView) => ctrl.getExtensionList(view),
     setExtensionEnabled: (id, kind, scope, enabled) => ctrl.setExtensionEnabled(id, kind, scope, enabled),
     uninstallExtension: (id, kind, scope, source) => ctrl.uninstallExtension(id, kind, scope, source),
     forkSession: (entryId: string) => ctrl.forkSession(entryId),

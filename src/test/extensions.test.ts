@@ -5,6 +5,7 @@ import * as path from "node:path";
 import {
   defaultAgentDir,
   packageDisplayName,
+  packageIdentity,
   projectConfigDir,
   resolveAgentDir,
   scanLocalExtensions,
@@ -59,6 +60,32 @@ suite("packageDisplayName", () => {
     assert.strictEqual(packageDisplayName("https://github.com/user/repo@v1"), "repo");
     assert.strictEqual(packageDisplayName("/abs/path/my-ext"), "my-ext");
     assert.strictEqual(packageDisplayName("./rel/ext-dir"), "ext-dir");
+  });
+});
+
+suite("packageIdentity", () => {
+  test("npm 去版本（含 scope）", () => {
+    assert.strictEqual(packageIdentity("npm:pi-web-access"), "npm:pi-web-access");
+    assert.strictEqual(packageIdentity("npm:pi-web-access@1.0.0"), "npm:pi-web-access");
+    assert.strictEqual(packageIdentity("npm:@scope/pkg@2.0.0"), "npm:@scope/pkg");
+  });
+
+  test("git:/URL 归一 host/path（去 ref/用户/端口/.git）", () => {
+    assert.strictEqual(packageIdentity("git:github.com/user/repo@v1"), "git:github.com/user/repo");
+    assert.strictEqual(packageIdentity("https://github.com/user/repo"), "git:github.com/user/repo");
+    assert.strictEqual(packageIdentity("https://github.com/user/repo@v1"), "git:github.com/user/repo");
+    assert.strictEqual(
+      packageIdentity("ssh://git@github.com:22/user/repo.git"),
+      "git:github.com/user/repo",
+    );
+  });
+
+  test("本地路径按 baseDir 绝对化", () => {
+    assert.strictEqual(packageIdentity("./rel/ext"), "local:" + path.resolve("./rel/ext"));
+    assert.strictEqual(
+      packageIdentity("./rel/ext", "/ws/.pi"),
+      "local:" + path.resolve("/ws/.pi", "./rel/ext"),
+    );
   });
 });
 
@@ -289,12 +316,49 @@ suite("setPackageEnabled", () => {
     }
   });
 
-  test("source 不存在 → 抛错", async () => {
+  test("source 不存在 → upsert append 覆盖条目（项目级覆盖全局包主路径）", async () => {
     const dir = await tmpdir("pinel-settings-");
     const p = path.join(dir, "settings.json");
     await write(p, JSON.stringify({ packages: ["npm:a"] }));
     try {
-      await assert.rejects(() => setPackageEnabled(p, "npm:missing", false), /not found/);
+      await setPackageEnabled(p, "npm:new", false);
+      const parsed = JSON.parse(await fs.readFile(p, "utf8")) as Record<string, unknown>;
+      assert.deepStrictEqual(parsed.packages, [
+        "npm:a",
+        { source: "npm:new", extensions: [], skills: [], prompts: [], themes: [] },
+      ]);
+      // 再启用：append 条目恢复字符串（不产生重复条目）
+      await setPackageEnabled(p, "npm:new", true);
+      const parsed2 = JSON.parse(await fs.readFile(p, "utf8")) as Record<string, unknown>;
+      assert.deepStrictEqual(parsed2.packages, ["npm:a", "npm:new"]);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("upsert 按 identity 查重：同 repo 不同拼写不重复 append", async () => {
+    const dir = await tmpdir("pinel-settings-");
+    const p = path.join(dir, "settings.json");
+    await write(p, JSON.stringify({ packages: ["https://github.com/user/repo"] }));
+    try {
+      await setPackageEnabled(p, "ssh://git@github.com/user/repo.git", false);
+      const parsed = JSON.parse(await fs.readFile(p, "utf8")) as Record<string, unknown>;
+      assert.strictEqual((parsed.packages as unknown[]).length, 1);
+      const only = (parsed.packages as unknown[])[0] as Record<string, unknown>;
+      assert.strictEqual(only.source, "ssh://git@github.com/user/repo.git");
+      assert.deepStrictEqual(only.extensions, []);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("settings 目录不存在 → mkdir 补建并写入", async () => {
+    const dir = await tmpdir("pinel-settings-");
+    const p = path.join(dir, "missing", "nested", "settings.json");
+    try {
+      await setPackageEnabled(p, "npm:a", true);
+      const parsed = JSON.parse(await fs.readFile(p, "utf8")) as Record<string, unknown>;
+      assert.deepStrictEqual(parsed.packages, ["npm:a"]);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

@@ -2532,6 +2532,98 @@ suite("Pinel 集成测试（假 pi）", () => {
         vscode.window.showInformationMessage = infoOrig;
       }
     });
+
+    test("getExtensionList 视图合成：project 继承行 / global 过滤 / all 包去重", async function () {
+      this.timeout(30000);
+      const projectSettings = path.join(vscode.workspace.workspaceFolders![0].uri.fsPath, ".pi", "settings.json");
+      if (fs.existsSync(projectSettings)) {
+        this.skip(); // 仓库 .pi/settings.json 已存在（非测试场景），避免污染真实配置
+      }
+      // 全局：本地扩展 foo + 包 npm:a / npm:shared（重建干净目录，前序测试有残留）
+      await fs.promises.rm(path.join(agentDir, "extensions"), { recursive: true, force: true });
+      await fs.promises.mkdir(path.join(agentDir, "extensions"), { recursive: true });
+      await fs.promises.writeFile(
+        path.join(agentDir, "settings.json"),
+        JSON.stringify({ packages: ["npm:a", "npm:shared"] }),
+      );
+      await fs.promises.writeFile(path.join(agentDir, "extensions", "foo.ts"), "export default () => {}");
+      // 项目：project-only + 覆盖 shared（禁用）
+      await fs.promises.mkdir(path.dirname(projectSettings), { recursive: true });
+      await fs.promises.writeFile(
+        projectSettings,
+        JSON.stringify({
+          packages: [
+            "npm:project-only",
+            { source: "npm:shared", extensions: [], skills: [], prompts: [], themes: [] },
+          ],
+        }),
+      );
+      try {
+        // project：项目条目 + 继承全局包（inherited，scope 重写 project）；全局本地扩展不列出
+        const proj = await api.getExtensionList("project");
+        const byName = new Map(proj.map((i) => [i.name, i]));
+        assert.strictEqual(proj.length, 3, `project 视图应含 3 条，实际 ${JSON.stringify(proj.map((i) => i.name))}`);
+        assert.strictEqual(byName.get("project-only")?.scope, "project");
+        assert.strictEqual(byName.get("project-only")?.inherited, undefined);
+        assert.strictEqual(byName.get("shared")?.scope, "project");
+        assert.strictEqual(byName.get("shared")?.inherited, undefined);
+        assert.strictEqual(byName.get("shared")?.enabled, false);
+        assert.strictEqual(byName.get("a")?.scope, "project", "继承行 scope 应重写为 project");
+        assert.strictEqual(byName.get("a")?.inherited, true);
+        assert.strictEqual(byName.get("a")?.enabled, true);
+        assert.ok(!byName.has("foo"), "全局本地扩展不应出现在 project 视图");
+
+        // global：仅全局条目，无 inherited
+        const glob = await api.getExtensionList("global");
+        const gNames = new Map(glob.map((i) => [i.name, i]));
+        assert.strictEqual(glob.length, 3);
+        assert.ok(gNames.has("foo") && gNames.has("a") && gNames.has("shared"));
+        for (const i of glob) {
+          assert.strictEqual(i.scope, "global");
+          assert.strictEqual(i.inherited, undefined);
+        }
+
+        // all：包按 identity 去重（project 优先）；本地不去重
+        const all = await api.getExtensionList("all");
+        const aNames = new Map(all.map((i) => [i.name, i]));
+        assert.strictEqual(all.length, 4);
+        assert.strictEqual(aNames.get("foo")?.kind, "local");
+        assert.strictEqual(aNames.get("a")?.scope, "global");
+        assert.strictEqual(aNames.get("shared")?.scope, "project", "同包 project 优先");
+        assert.strictEqual(aNames.get("project-only")?.scope, "project");
+      } finally {
+        await fs.promises.rm(projectSettings, { force: true }); // 测试前不存在 → 删除还原
+      }
+    });
+
+    test("setExtensionEnabled 项目覆盖：inherited 包 upsert 写 .pi/settings.json", async function () {
+      this.timeout(30000);
+      const projectSettings = path.join(vscode.workspace.workspaceFolders![0].uri.fsPath, ".pi", "settings.json");
+      if (fs.existsSync(projectSettings)) {
+        this.skip(); // 仓库 .pi/settings.json 已存在（非测试场景），避免污染真实配置
+      }
+      await fs.promises.writeFile(path.join(agentDir, "settings.json"), JSON.stringify({ packages: ["npm:a"] }));
+      try {
+        // 项目级禁用全局包（upsert append 对象空数组）
+        await api.setExtensionEnabled("npm:a", "package", "project", false);
+        let parsed = JSON.parse(await fs.promises.readFile(projectSettings, "utf8"));
+        assert.deepStrictEqual(parsed.packages, [
+          { source: "npm:a", extensions: [], skills: [], prompts: [], themes: [] },
+        ]);
+        // 项目级启用（恢复字符串，不产生重复条目）
+        await api.setExtensionEnabled("npm:a", "package", "project", true);
+        parsed = JSON.parse(await fs.promises.readFile(projectSettings, "utf8"));
+        assert.deepStrictEqual(parsed.packages, ["npm:a"]);
+        // project 视图：a 为项目条目（非继承行）
+        const proj = await api.getExtensionList("project");
+        assert.strictEqual(proj.length, 1);
+        assert.strictEqual(proj[0].name, "a");
+        assert.strictEqual(proj[0].scope, "project");
+        assert.strictEqual(proj[0].inherited, undefined);
+      } finally {
+        await fs.promises.rm(projectSettings, { force: true }); // 测试前不存在 → 删除还原
+      }
+    });
   });
 
   suite("subagent 卡片（工具事件解析）", () => {

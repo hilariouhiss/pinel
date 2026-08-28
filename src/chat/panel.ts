@@ -142,6 +142,8 @@ interface WebviewGetFileListMessage {
 
 interface WebviewGetExtensionListMessage {
   type: "getExtensionList";
+  /** 弹层视图（默认 all 兼容旧客户端）。 */
+  view?: "all" | "global" | "project";
 }
 
 interface WebviewSetExtensionEnabledMessage {
@@ -226,6 +228,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "pinel.chatView";
 
   private view: vscode.WebviewView | undefined;
+
+  /** 扩展弹层最近请求的视图（启停/卸载后刷新沿用，M1）。 */
+  private lastExtensionView: "all" | "global" | "project" = "all";
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -368,6 +373,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         void this.postFileList();
         break;
       case "getExtensionList":
+        this.lastExtensionView = msg.view ?? "all";
         void this.postExtensionList();
         break;
       case "installPinelPlugin":
@@ -419,11 +425,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** 扫描扩展列表并回发（扩展管理弹层数据源；每次打开/操作后实时扫描）。 */
+  /** 扫描扩展列表并回发（扩展管理弹层数据源；每次打开/操作后实时扫描，沿用最近请求视图）。 */
   private async postExtensionList(): Promise<void> {
     try {
-      const items = await this.controller.getExtensionList();
-      this.post({ type: "extensionList", items });
+      const items = await this.controller.getExtensionList(this.lastExtensionView);
+      this.post({
+        type: "extensionList",
+        items,
+        projectAvailable: (vscode.workspace.workspaceFolders?.length ?? 0) > 0,
+      });
     } catch {
       // 扫描异常：不弹 notice（弹层空列表即可），仅忽略
     }

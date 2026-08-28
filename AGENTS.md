@@ -78,7 +78,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 | subagent 卡片 | subagents.ts；tool_execution details 防御解析 + 专属卡片（内联 assistant 消息工具调用原位，统计行 + Markdown 输出）+ 图标 lucide bot |
 | 工具结果内联 | 工具调用结果展示在原 assistant 消息卡片（ToolCallCard：lucide wrench/bot + spinner/check/x + 预览，展开 args+output）；toolResult 消息命中匹配则跳过独立卡片、孤儿兑底独立卡片；webview 内部映射（App.tsx useMemo），宿主/协议零改动 |
 | 输入框自适应 | Composer scrollHeight 自适应（软换行计入，上限面板高 60%） |
-| 扩展管理 | extensions.ts；本地重命名启停 + packages settings 编辑 + pi remove 卸载 |
+| 扩展管理 | extensions.ts；本地重命名启停 + packages settings 编辑（字符串↔对象空数组，无同 identity 条目 upsert 覆盖）+ pi remove 卸载；弹层 All/Global/Project 三态切换（project 视图含继承全局包 inherited 行，开关写项目覆盖条目；all 包按 identity 去重 project 优先；panel 记忆最近视图刷新沿用） |
 | Pinel 插件（npm 包） | pinel-plugin/（@hilariouhiss/pinel，PINEL_PLUGIN=1 + rpc 守卫）；pinel-install.ts 安装态检测（settings.json packages + 曾安装标记不复活）；pinel-payload.ts 白名单过滤 pinel.* + 防御解析；controller 缓存 + snapshot 重放；panel 一键 pi install（runPiCommand） |
 | 会话树导航/手动压缩 | 插件 /pinel-tree 扩展命令（RPC 派发，control 消息不渲染不写条目）+ TreePopover；compact 原生 RPC（protocol CompactCommand + controller.compact + SessionStatsBar 按钮） |
 | 模型自愈 | get_state 重试 4 次 → 自动重启一次（不走 restart 守卫） |

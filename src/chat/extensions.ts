@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { URL } from "node:url";
 import ignore from "ignore";
 
 /**
@@ -43,6 +44,8 @@ const RESOURCE_TYPES = ["extensions", "skills", "prompts", "themes"] as const;
 export type ExtensionScope = "global" | "project";
 /** 扩展类型。 */
 export type ExtensionKind = "local" | "package";
+/** 弹层视图（对齐 pi config 的全局/项目切换）。 */
+export type ExtensionView = "all" | "global" | "project";
 
 /** 扩展列表项（webview 协议镜像；字段定义见 types.ts）。 */
 export interface ExtensionItem {
@@ -58,6 +61,8 @@ export interface ExtensionItem {
   filtered?: boolean;
   /** 卸载目标：本地 = 文件或目录绝对路径；包 = source spec。 */
   source: string;
+  /** project 视图中的继承行：真实来源全局、项目未覆盖；scope 已重写为 project（开关写项目 settings）。 */
+  inherited?: boolean;
 }
 
 /**
@@ -75,6 +80,33 @@ export function resolveAgentDir(
 /** 默认 agent 目录（真实环境：os.homedir + process.env）。 */
 export function defaultAgentDir(): string {
   return resolveAgentDir(os.homedir());
+}
+
+/**
+ * 包身份归一（对齐 pi getPackageIdentity）：npm = 包名去版本；git/URL = host/path 去 ref、
+ * 用户、端口与 .git 后缀；其余 = 本地路径按 baseDir 绝对化。
+ * baseDir = settings 文件目录（global=agentDir、project=workspace/.pi），对齐 pi scope baseDir。
+ * ponytail: scp 形式（git@host:path）与极端 URL 拼写不归一（pi 侧 last-wins 自愈，见计划风险 4）。
+ */
+export function packageIdentity(source: string, baseDir?: string): string {
+  if (source.startsWith("npm:")) {
+    return `npm:${source.slice(4).replace(/@[^@/]*$/, "")}`;
+  }
+  const urlLike = source.startsWith("git:")
+    ? `git://${source.slice(4)}`
+    : /^(https?|ssh|git):\/\//.test(source)
+      ? source
+      : null;
+  if (urlLike) {
+    try {
+      const u = new URL(urlLike);
+      const p = u.pathname.replace(/^\/+/, "").replace(/\.git$/, "").replace(/@[^/]*$/, "");
+      return `git:${u.hostname}/${p}`;
+    } catch {
+      // URL 解析失败：罕见拼写，原样作为 local 处理（归一失败不抛错）
+    }
+  }
+  return `local:${baseDir ? path.resolve(baseDir, source) : path.resolve(source)}`;
 }
 
 /** 包 source spec → 展示名（纯函数便于单测）。 */
@@ -269,6 +301,53 @@ function packageState(pkg: unknown): { enabled: boolean; filtered: boolean } {
 }
 
 /**
+ * 按视图过滤/合成扩展列表（纯函数）：
+ * - all：本地扩展不去重（双 scope 是不同文件）；包按 identity 去重（project 条目优先，对齐 pi dedupe）
+ * - global：仅全局条目
+ * - project：项目条目 + 全局包中未被项目同 identity 覆盖者（inherited，scope 重写为
+ *   project——开关操作经 setExtensionEnabled 天然写项目 settings，H1 路由机制）
+ * identity 基准：global 条目 = globalBase；project 条目 = projectBase（对齐 pi scope baseDir）。
+ */
+export function filterExtensionView(
+  items: ExtensionItem[],
+  view: ExtensionView,
+  globalBase: string,
+  projectBase?: string,
+): ExtensionItem[] {
+  const identity = (i: ExtensionItem): string =>
+    packageIdentity(i.id, i.scope === "project" ? projectBase : globalBase);
+  if (view === "global") {
+    return items.filter((i) => i.scope === "global");
+  }
+  if (view === "project") {
+    const projectItems = items.filter((i) => i.scope === "project");
+    const covered = new Set(
+      projectItems.filter((i) => i.kind === "package").map((i) => packageIdentity(i.id, projectBase)),
+    );
+    const inherited = items
+      .filter(
+        (i) => i.scope === "global" && i.kind === "package" && !covered.has(packageIdentity(i.id, globalBase)),
+      )
+      .map((i) => ({ ...i, scope: "project" as const, inherited: true }));
+    return [...projectItems, ...inherited];
+  }
+  // all：本地不动；包按 identity 去重（project 优先）
+  const locals = items.filter((i) => i.kind === "local");
+  const pkgs = new Map<string, ExtensionItem>();
+  for (const i of items) {
+    if (i.kind !== "package") {
+      continue;
+    }
+    const key = identity(i);
+    const existing = pkgs.get(key);
+    if (!existing || (existing.scope !== "project" && i.scope === "project")) {
+      pkgs.set(key, i);
+    }
+  }
+  return [...locals, ...pkgs.values()];
+}
+
+/**
  * 启停本地扩展：重命名入口文件（.ts/.js ↔ 追加 .disabled）。
  * @param id 入口文件绝对路径（不含 .disabled；文件样式 = 文件本身，目录样式 = 目录/index.ts）
  */
@@ -298,6 +377,8 @@ export async function uninstallLocalExtension(source: string): Promise<void> {
 /**
  * 启停包：settings.json packages 数组字符串 ↔ 对象空数组。
  * 已含过滤的对象形式在禁用时被对象空数组覆盖（丢失自定义过滤，ponytail 标注）。
+ * 无同 identity 条目时 append 覆盖条目（upsert：项目级覆盖全局包的主路径），
+ * append 前按 packageIdentity 查重（对齐 pi dedupe，防 ssh/https 同 repo 不同拼写重复）。
  */
 export async function setPackageEnabled(
   settingsPath: string,
@@ -306,14 +387,17 @@ export async function setPackageEnabled(
 ): Promise<void> {
   const settings = await readSettings(settingsPath);
   const packages = Array.isArray(settings.packages) ? [...settings.packages] : [];
-  const idx = packages.findIndex(
-    (p) =>
-      (typeof p === "string" ? p : (p as Record<string, unknown> | null)?.source) === source,
-  );
+  const baseDir = path.dirname(settingsPath);
+  const identity = packageIdentity(source, baseDir);
+  const idx = packages.findIndex((p) => {
+    const s = typeof p === "string" ? p : (p as Record<string, unknown> | null)?.source;
+    return typeof s === "string" && packageIdentity(s, baseDir) === identity;
+  });
   if (idx === -1) {
-    throw new Error(`Package not found in settings: ${source}`);
-  }
-  if (enabled) {
+    packages.push(
+      enabled ? source : { source, extensions: [], skills: [], prompts: [], themes: [] },
+    );
+  } else if (enabled) {
     packages[idx] = source;
   } else {
     packages[idx] = { source, extensions: [], skills: [], prompts: [], themes: [] };
@@ -373,6 +457,7 @@ async function readSettings(settingsPath: string): Promise<SettingsObject> {
 async function writeSettings(settingsPath: string, settings: SettingsObject): Promise<void> {
   const tmp = `${settingsPath}.pinel-tmp`;
   const body = `${JSON.stringify(settings, null, 2)}\n`;
+  await fs.mkdir(path.dirname(settingsPath), { recursive: true }); // 全新 workspace 无 .pi/ 时不 ENOENT
   await fs.writeFile(tmp, body, "utf8");
   await fs.rename(tmp, settingsPath); // 原子替换
 }

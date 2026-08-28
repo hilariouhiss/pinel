@@ -2074,6 +2074,36 @@ body {
   font-size: 12px;
 }
 
+.extension-view-switch {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px 6px;
+}
+
+.extension-view-tab {
+  flex: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  background: none;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.extension-view-tab.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.extension-item.inherited {
+  opacity: 0.65;
+}
+
+.extension-item.inherited:hover {
+  opacity: 1;
+}
+
 /* ------------------------------------------------------------ 会话历史 */
 .history-root {
   display: flex;

@@ -8,6 +8,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- 扩展管理弹层作用域切换：All/Global/Project 三态视图（切换即重拉列表，启停/卸载后刷新沿用当前视图）；project 视图展示继承的全局包（inherited 徽标 + dimmed，隐藏卸载按钮），开关操作写入项目覆盖条目（`.pi/settings.json` 对象空数组/字符串，upsert 无则新增，按包身份查重防同 repo 不同拼写重复）；all 视图包按身份去重（项目条目优先，对齐 pi dedupe）；全新 workspace 首次覆盖写入自动补建 .pi 目录；无 workspace 时 project 视图提示不可用
+
 - Pinel Pi 插件（npm 包 `@hilariouhiss/pinel`，源码 `pinel-plugin/`）：面板实时推送会话统计快照与会话树（extension_ui setStatus/setWidget 帧，宿主白名单过滤 pinel.* + 防御解析 + 快照重放）、`/pinel-state`、`/pinel-tree` 会话树导航命令（RPC 扩展命令派发，控制消息不渲染不写会话条目）；未安装时扩展管理弹窗顶部一键 Install（settings.json 安装态检测 + 曾安装标记不复活策略）；插件仅在被 Pinel spawn 的 pi（PINEL_PLUGIN=1）内激活，TUI 下惰性
 
 - 会话信息条 Tree / Compact 按钮：会话树选择器（当前分支链消息节点、当前叶高亮、close-on-select 导航）与手动压缩（pi 原生 compact 命令接入，protocol 补 CompactCommand；压缩中按钮禁用）

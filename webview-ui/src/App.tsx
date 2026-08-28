@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, ContentBlock, ExtensionItem, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelPluginState, PinelState, PinelTree, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelPluginState, PinelState, PinelTree, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
@@ -73,6 +73,10 @@ export default function App() {
   const [forkMessages, setForkMessages] = useState<ForkMessageItem[]>([]);
   /** 扩展列表（getExtensionList 响应填充；打开时拉取，启停/卸载后宿主重发）。 */
   const [extensions, setExtensions] = useState<ExtensionItem[]>([]);
+  /** 扩展弹层当前视图（All/Global/Project 切换；切换时重拉列表）。 */
+  const [extensionView, setExtensionView] = useState<ExtensionView>("all");
+  /** 是否有 workspace（project 视图可用性提示）。 */
+  const [extensionProjectAvailable, setExtensionProjectAvailable] = useState(true);
   /** 会话历史列表（header 弹层数据；getSessionList 响应填充）。 */
   const [sessionItems, setSessionItems] = useState<SessionListItem[]>([]);
   /** 会话统计（get_session_stats 推送；null=尚未拉取）。 */
@@ -291,6 +295,7 @@ export default function App() {
         break;
       case "extensionList":
         setExtensions(msg.items);
+        setExtensionProjectAvailable(msg.projectAvailable);
         break;
       case "triggerEditPrompt":
         setEditPromptTrigger((v) => v + 1);
@@ -439,11 +444,17 @@ export default function App() {
     vscode.postMessage({ type: "getForkMessages" });
   };
 
-  // 扩展管理弹层：打开时拉取列表（每次打开实时扫描）
+  // 扩展管理弹层：打开时按当前视图拉取列表（每次打开实时扫描）
   const openExtensions = () => {
     setPopover((prev) => (prev === "ext" ? null : "ext")); // 已开则关闭（toggle）
     setExtensions([]);
-    vscode.postMessage({ type: "getExtensionList" });
+    vscode.postMessage({ type: "getExtensionList", view: extensionView });
+  };
+
+  // 扩展弹层视图切换：更新本地状态 + 重拉对应视图列表
+  const changeExtensionView = (view: ExtensionView) => {
+    setExtensionView(view);
+    vscode.postMessage({ type: "getExtensionList", view });
   };
 
   // 启停扩展：发 setExtensionEnabled（宿主执行后重发列表 + reload 提示）
@@ -680,8 +691,11 @@ export default function App() {
       <ExtensionPopover
         anchor={popover === "ext" ? extensionBtnRef.current : null}
         items={extensions}
+        view={extensionView}
+        projectAvailable={extensionProjectAvailable}
         pinelPluginState={pinelPluginState}
         onInstallPinelPlugin={() => vscode.postMessage({ type: "installPinelPlugin" })}
+        onChangeView={changeExtensionView}
         onToggle={toggleExtension}
         onUninstall={uninstallExtension}
         onClose={() => setPopover(null)}

@@ -169,6 +169,8 @@ export interface ForkMessageItem {
 export type ExtensionScope = "global" | "project";
 export type ExtensionKind = "local" | "package";
 
+export type ExtensionView = "all" | "global" | "project";
+
 /** pi 智能体扩展列表项（宿主扫描结果镜像）。 */
 export interface ExtensionItem {
   /** 唯一键：本地 = 入口文件绝对路径（不含 .disabled）；包 = source spec。 */
@@ -181,6 +183,8 @@ export interface ExtensionItem {
   filtered?: boolean;
   /** 卸载目标：本地 = 文件/目录绝对路径；包 = source spec。 */
   source: string;
+  /** project 视图继承行：真实来源全局、项目未覆盖；scope 已重写为 project。 */
+  inherited?: boolean;
 }
 
 /** 会话统计（宿主 parseSessionStats 镜像；contextUsage.tokens/percent 可为 null）。 */
@@ -265,7 +269,7 @@ export type HostMessage =
   | { type: "sessionTitle"; title: string | undefined }
   | { type: "fileList"; items: FileItem[]; truncated: boolean }
   | { type: "forkMessages"; messages: ForkMessageItem[] }
-  | { type: "extensionList"; items: ExtensionItem[] }
+  | { type: "extensionList"; items: ExtensionItem[]; projectAvailable: boolean }
   | { type: "pinelState"; state: PinelState }
   | { type: "pinelTree"; tree: PinelTree }
   | { type: "pinelPluginState"; state: PinelPluginState }
