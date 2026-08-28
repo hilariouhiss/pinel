@@ -61,6 +61,7 @@ npm run package      # 生产构建（minify）
 | 功能 | 模块/要点 |
 |---|---|
 | 命令补全 | commands.ts；get_commands fire-and-forget，失败静默空列表 |
+| 消息复制按钮 | MessageView CopyButton；navigator.clipboard 可选链兑底；innerText 所见即所得提取（排除角色行） |
 | /new 拦截 | controller.sendPrompt 精确匹配本地拦截 → newSession；RPC 不展开 slash |
 | Ctrl+G 编辑提示词 | prompt-editor.ts；真实临时文件 + 保存回填 + 发送清理 |
 | @ 添加文件 | file-scanner.ts；controller 自读自拼 file 标记注入 + 图片 base64 |

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage, ContentBlock, StreamBlock, SubagentCardInfo, ToolCard } from "../types";
 import { Markdown } from "./Markdown";
 // SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
@@ -6,6 +6,7 @@ import wrenchIcon from "lucide-static/icons/wrench.svg";
 import botIcon from "lucide-static/icons/bot.svg";
 import checkIcon from "lucide-static/icons/check.svg";
 import xIcon from "lucide-static/icons/x.svg";
+import copyIcon from "lucide-static/icons/copy.svg";
 
 /** toolResult 消息解析结果（webview 内部类型，非宿主协议镜像）。 */
 export interface ToolResultInfo {
@@ -55,16 +56,62 @@ function userImages(content: ChatMessage["content"]): ContentBlock[] {
   return (content as ContentBlock[]).filter((b) => b.type === "image" && typeof b.data === "string");
 }
 
+/**
+ * 复制消息卡片内容按钮（hover/focus-visible 显示，CSS 控制）。
+ * 提取渲染后纯文本（所见即所得）：clone 卡片副本、移除角色标签行（You/Pi）与
+ * 按钮自身后取 innerText——clone 临时挂 body（detached 节点无布局信息，
+ * innerText 换行会退化）。折叠态 thinking/工具卡片内容不在 DOM，与所见一致。
+ */
+function CopyButton({ targetRef }: { targetRef: React.RefObject<HTMLDivElement | null> }) {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timerRef.current), []);
+  const onClick = () => {
+    const el = targetRef.current;
+    if (!el) {
+      return;
+    }
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll(".msg-role, .msg-copy-btn").forEach((n) => n.remove());
+    clone.style.position = "fixed";
+    clone.style.left = "-9999px";
+    clone.style.visibility = "hidden";
+    document.body.appendChild(clone);
+    const text = clone.innerText.trim();
+    clone.remove();
+    if (!text) {
+      return;
+    }
+    // clipboard 不存在（非安全上下文边缘）时同步 TypeError，.catch 接不住——可选链兑底静默
+    navigator.clipboard?.writeText(text)?.catch(() => {});
+    setCopied(true);
+    window.clearTimeout(timerRef.current); // 连续点击重置定时器，✓ 不提前恢复
+    timerRef.current = window.setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button
+      className="msg-copy-btn"
+      title={copied ? "Copied" : "Copy message"}
+      aria-label={copied ? "Copied" : "Copy message"}
+      onClick={onClick}
+      dangerouslySetInnerHTML={{ __html: copied ? checkIcon : copyIcon }}
+    />
+  );
+}
+
 function assistantBlocks(content: ChatMessage["content"]): ContentBlock[] {
   return Array.isArray(content) ? (content as ContentBlock[]) : [];
 }
 
 export function MessageView({ message, tools, toolResults, streamBlocks }: Props) {
+  const userRef = useRef<HTMLDivElement>(null);
+  const assistantRef = useRef<HTMLDivElement>(null);
+  const toolResultRef = useRef<HTMLDivElement>(null);
   if (message.role === "user") {
     const text = userText(message.content);
     const images = userImages(message.content);
     return (
-      <div className="msg msg-user">
+      <div className="msg msg-user" ref={userRef}>
         <div className="msg-role">You</div>
         {images.map((img, i) => (
           <img
@@ -75,6 +122,8 @@ export function MessageView({ message, tools, toolResults, streamBlocks }: Props
           />
         ))}
         {text && <div className="msg-text">{text}</div>}
+        {/* 图片-only 消息无可复制文本，不渲染按钮 */}
+        {text && <CopyButton targetRef={userRef} />}
       </div>
     );
   }
@@ -86,11 +135,12 @@ export function MessageView({ message, tools, toolResults, streamBlocks }: Props
     if (id && toolResults.matched.has(id)) {
       return null;
     }
-    return <ToolResultView message={message} tools={tools} />;
+    return <ToolResultView message={message} tools={tools} targetRef={toolResultRef} />;
   }
 
   // assistant（含流式占位）
   if (streamBlocks) {
+    // 流式中的消息无复制按钮（半截消息复制无意义；settle 后重渲染自动出现）
     return (
       <div className="msg msg-assistant">
         <div className="msg-role">Pi</div>
@@ -103,7 +153,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks }: Props
 
   const blocks = assistantBlocks(message.content);
   return (
-    <div className="msg msg-assistant">
+    <div className="msg msg-assistant" ref={assistantRef}>
       <div className="msg-role">Pi</div>
       {blocks.map((block, i) => (
         <BlockView
@@ -123,6 +173,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks }: Props
           toolResults={toolResults}
         />
       ))}
+      <CopyButton targetRef={assistantRef} />
     </div>
   );
 }
@@ -304,13 +355,26 @@ function SubagentCard({ card, output }: { card: SubagentCardInfo; output: string
   );
 }
 
-function ToolResultView({ message, tools }: { message: ChatMessage; tools: Record<string, ToolCard> }) {
+function ToolResultView({
+  message,
+  tools,
+  targetRef,
+}: {
+  message: ChatMessage;
+  tools: Record<string, ToolCard>;
+  targetRef: React.RefObject<HTMLDivElement | null>;
+}) {
   const [open, setOpen] = useState(false);
   const toolCard = message.toolCallId ? tools[message.toolCallId] : undefined;
   // 注：合并 toolResult 内联后本分支仅孤儿路径可达（有 subagent 实时卡片的
   // 结果已原位渲染在 assistant 消息内）；保留作防御兜底
   if (toolCard?.subagent) {
-    return <SubagentCard card={toolCard.subagent} output={toolCard.output} />;
+    return (
+      <div className="msg msg-toolresult" ref={targetRef}>
+        <SubagentCard card={toolCard.subagent} output={toolCard.output} />
+        <CopyButton targetRef={targetRef} />
+      </div>
+    );
   }
   const status = toolCard?.status ?? (message.isError ? "error" : "done");
   const rawContent = Array.isArray(message.content) ? message.content : [];
@@ -320,7 +384,8 @@ function ToolResultView({ message, tools }: { message: ChatMessage; tools: Recor
     .join("\n");
 
   return (
-    <div className={`toolresult status-${status}`}>
+    <div className="msg msg-toolresult" ref={targetRef}>
+      <div className={`toolresult status-${status}`}>
       <button className="toolresult-head" onClick={() => setOpen(!open)}>
         <span className={`toolstatus status-${status}`}>
           {status === "running" ? (
@@ -339,6 +404,8 @@ function ToolResultView({ message, tools }: { message: ChatMessage; tools: Recor
         </span>
       </button>
       {open && <pre className="toolresult-body">{text}</pre>}
+      </div>
+      <CopyButton targetRef={targetRef} />
     </div>
   );
 }
