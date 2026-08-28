@@ -14,6 +14,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 按钮行视觉微调：设置/扩展按钮图标 16→18px、两按钮间距与按钮行 gap 一致（4px）、模型/思考 chip 字号减小 1px（按钮尺寸不变）
+
 - 模型/思考切换入口收敛：设置面板（ConfigPopover）移除模型/思考内嵌展开区，按钮行 chip 为唯一切换入口；面板只留队列模式/自动压缩/会话信息开关
 
 - 问卷多选选择框改用 lucide 图标（check-square/square，未选灰选中蓝，与全扩展 lucide 图标体系一致）

@@ -1083,11 +1083,11 @@ body {
   display: block;
 }
 
-/* 设置/扩展按钮加大档：图标 16px */
+/* 设置/扩展按钮加大档：图标 18px */
 .status-settings-btn .lucide,
 .status-extensions-btn .lucide {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   display: block;
 }
 
@@ -1126,7 +1126,7 @@ body {
   border: none;
   border-radius: 5px;
   color: var(--vscode-descriptionForeground);
-  font-size: var(--vscode-font-size);
+  font-size: calc(var(--vscode-font-size) - 1px);
   font-family: var(--pinel-font-family);
   cursor: pointer;
 }
@@ -1161,7 +1161,7 @@ body {
 }
 
 /* 下半扩展按钮：与设置按钮同型（无背景描边，图标主题自适应）；
-   与设置按钮间距拉大（视觉上不挨在一起） */
+   与设置按钮间距与按钮行 gap 一致（4px，紧邻） */
 .status-extensions-btn {
   display: flex;
   align-items: center;
@@ -1173,7 +1173,6 @@ body {
   border-radius: 5px;
   padding: 0;
   cursor: pointer;
-  margin-left: 10px;
 }
 
 /* hover 仅背景轻微强调（与 chip 同语义，无边框） */
