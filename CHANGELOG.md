@@ -8,6 +8,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 工具调用卡片标题直接显示工具本名（流式块 name → 实时事件 toolName → 结果消息 toolName 三层兕底，三源皆空才兑底 Tool call）；subagent 图标判定同步用兕底后工具名
+
 - 最近回合悬浮条：点击滚回原消息后悬浮条消失（上滚离开该消息或滚到底部时重新出现；切换会话恢复常驻），焦点移交滚动容器保持键盘滚动可达
 
 - 会话信息条 Tree / Compact 按钮移除：会话树导航改**双击 Esc**弹出（锚定顶部栏分支按钮；焦点在输入框或问卷活跃时不响应）；手动压缩改设置面板 **Compact now** 按钮；设置面板 Auto compaction 区块新增**压缩阈值百分比输入**（1–99，换算写全局 settings.json `compaction.reserveTokens`，默认值按 pi 原样 16384 回显，保存成功 notice 提示重启 pi 生效）

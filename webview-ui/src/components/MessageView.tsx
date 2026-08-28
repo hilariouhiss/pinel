@@ -261,15 +261,19 @@ function ToolCallCard({
   const output = toolCard?.output ?? result?.text ?? "";
   const status: "running" | "done" | "error" =
     toolCard?.status ?? (result ? (result.isError ? "error" : "done") : live ? "running" : "done");
-  // 普通工具 wrench；subagent（无实时卡片时按工具名）bot
-  const isSubagent = toolCall?.name === "subagent";
+  // 工具本名三层兕底：流式/快照块 name → tool_execution 实时 toolName → toolResult 消息落盘 toolName
+  //（覆盖快照重放 + tools 清空场景）；三源皆空保留 Tool call 兕底
+  const toolName = toolCall?.name || toolCard?.toolName || result?.toolName || "Tool call";
+  // 普通工具 wrench；subagent（无实时卡片时按工具名）bot——判定用兕底后的 toolName，
+  // name 缺失时图标与卡片风格保持一致
+  const isSubagent = toolName === "subagent";
   const preview = output.trim() ? output : args;
 
   return (
     <div className="toolchip">
       <button className="toolchip-head" onClick={() => setOpen(!open)}>
         <span className="toolchip-icon" dangerouslySetInnerHTML={{ __html: isSubagent ? botIcon : wrenchIcon }} />
-        <span className="toolchip-name">{toolCall?.name || "Tool call"}</span>
+        <span className="toolchip-name">{toolName}</span>
         <span className={`toolstatus status-${status}`}>
           {status === "running" ? (
             <span className="spinner" />
