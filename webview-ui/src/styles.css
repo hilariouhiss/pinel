@@ -118,7 +118,9 @@ body {
   position: absolute;
   top: calc(100% + 3px);
   left: 10px;
-  right: 10px;
+  /* right 20px = 卡片距滚动条 10px + 滚动条宽 10px（VS Code 注入默认
+     ::-webkit-scrollbar width 10px；chat-header 无滚动条，右缘对齐需补偿） */
+  right: 20px;
   z-index: 20; /* 盖消息（无 z-index）、低于 notices 30——通知横幅短暂压条可接受 */
   display: flex;
   align-items: center;
