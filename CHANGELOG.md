@@ -8,6 +8,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 输入区三行左缘对齐（输入行文本/按钮行/会话信息条统一 21px 基准）；最近回合悬浮条与用户消息卡片样式一致（同宽/同背景/同字号/同 padding，去阴影）
+
 - subagent 卡片思考等级直接显示裸值（去「thinking: 」前缀，如 `模型 · high`），全缺时保留 main level 占位
 
 - subagent 卡片：继承主会话时直接显示主会话实际模型名与思考等级（替代 main model/main level 占位）；工具卡片（含 subagent）运行中自动展开实时输出、完成后自动收起（挂后台保持展开），手动点击在状态不变时优先
