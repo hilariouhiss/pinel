@@ -194,8 +194,22 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
       }}
     >
       <div className="qna-head">
-        Questionnaire ({answeredCount}/{q.questions.length} answered)
-        {locked ? " · Submitted, waiting for Pi…" : ""}
+        <div>
+          Questionnaire ({answeredCount}/{q.questions.length} answered)
+          {locked ? " · Submitted, waiting for Pi…" : ""}
+        </div>
+        <div
+          className="qna-progress"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={q.questions.length}
+          aria-valuenow={answeredCount}
+        >
+          <div
+            className="qna-progress-fill"
+            style={{ width: `${q.questions.length > 0 ? (answeredCount / q.questions.length) * 100 : 0}%` }}
+          />
+        </div>
       </div>
       <div className="qna-tabs" role="tablist">
         {q.questions.map((question, i) => (
@@ -336,13 +350,15 @@ function QuestionCard({
                 }
               }}
             >
-              {question.multiSelect && (
-                <span
-                  className="qna-check"
-                  dangerouslySetInnerHTML={{ __html: selected ? checkSquareIcon : squareIcon }}
-                />
-              )}
-              <span className="qna-option-label">{opt.label}</span>
+              <span className="qna-option-row">
+                {question.multiSelect && (
+                  <span
+                    className="qna-check"
+                    dangerouslySetInnerHTML={{ __html: selected ? checkSquareIcon : squareIcon }}
+                  />
+                )}
+                <span className="qna-option-label">{opt.label}</span>
+              </span>
               {opt.description && <span className="qna-option-desc">{opt.description}</span>}
             </button>
           );

@@ -14,6 +14,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 设置面板视觉升级：新增 Settings 标题栏与关闭按钮，队列模式改分段控件（segmented control），自动压缩/会话信息开关改 CSS 滑动开关（语义 role=switch 不变），分组间距与标题层级重排
+- 扩展管理弹窗改屏幕居中模态：从锚定 footer 按钮的窄浮层改为居中弹窗（420px），新增标题栏与关闭按钮，与设置面板视觉语言一致
+- 问卷选项卡标题与描述分两行展示（不再同排拥挤），选项间距加大；顶部新增答题进度条（随作答实时填充）
 - 工具调用结果内联：工具结果不再渲染为独立卡片，直接展示在原 assistant 消息的工具调用卡片上（状态 ✓/✕ + 输出预览，点击展开完整参数与输出）；subagent 专属卡片同样内联到工具调用原位（统计行 + Markdown 输出保留）；快照重放（重启/切会话）后输出仍可达（从 toolResult 消息重建）
 - 工具卡片图标改用 lucide：普通工具 wrench、subagent bot、完成 check、错误 x（running 保留 spinner），主题自适应（stroke=currentColor）
 

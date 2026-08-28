@@ -502,6 +502,22 @@ body {
   color: var(--vscode-foreground);
 }
 
+/* 答题进度条（fill 宽度由内联 style 按已答比例控制） */
+.qna-progress {
+  height: 3px;
+  margin-top: 5px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--vscode-input-border);
+}
+
+.qna-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--vscode-focusBorder, var(--vscode-button-background));
+  transition: width 0.2s ease;
+}
+
 /* 横向标签栏：窄面板溢出时横向滚动 */
 .qna-tabs {
   display: flex;
@@ -574,16 +590,17 @@ body {
 .qna-options {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 6px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .qna-option {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
   text-align: left;
-  padding: 5px 8px;
+  padding: 7px 10px;
   border: 1px solid var(--vscode-input-border);
   border-radius: 4px;
   background: var(--vscode-input-background);
@@ -592,6 +609,14 @@ body {
   font-size: 12px;
   font-family: var(--pinel-font-family);
   overflow-wrap: anywhere;
+}
+
+/* 首行：check 图标 + 标签（desc 拆到第二行） */
+.qna-option-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .qna-option:hover {
@@ -622,11 +647,12 @@ body {
 
 .qna-option-label {
   font-weight: 600;
-  flex-shrink: 0;
+  min-width: 0;
 }
 
 .qna-option-desc {
   color: var(--vscode-descriptionForeground);
+  font-size: 11px;
 }
 
 .qna-preview {
@@ -1302,6 +1328,43 @@ body {
   z-index: 90;
 }
 
+/* 居中模态公共标题栏（config/extension 弹层共用） */
+.popover-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid var(--vscode-input-border);
+  margin-bottom: 4px;
+}
+
+.popover-titlebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.popover-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.popover-close:hover {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
+}
+
 /* 面板：绝对定位锚在 .pinel-root（相对整个侧边栏视口正中心）；不进 .pinel-scroll（防 overflow 裁剪） */
 .config-popover {
   position: absolute;
@@ -1309,7 +1372,7 @@ body {
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 100;
-  width: min(320px, calc(100% - 16px));
+  width: min(360px, calc(100% - 16px));
   max-height: 70vh;
   overflow-y: auto;
   background: var(--vscode-menu-background, var(--vscode-editor-background));
@@ -1322,7 +1385,7 @@ body {
 }
 
 .config-popover-section {
-  padding: 4px 2px;
+  padding: 8px 4px;
 }
 
 .config-popover-section + .config-popover-section {
@@ -1332,14 +1395,17 @@ body {
 .config-popover-title {
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
-  margin-bottom: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
 }
 
 .config-popover-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 0;
+  gap: 8px;
+  padding: 4px 0;
 }
 
 .config-popover-value {
@@ -1357,43 +1423,7 @@ body {
   font-size: 11px;
 }
 
-/* 模型/思考内嵌展开区（设置面板） */
-.config-popover-expand-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  border: none;
-  background: none;
-  padding: 4px 2px;
-  cursor: pointer;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-}
-
-.config-popover-expand-row:hover {
-  color: var(--vscode-foreground);
-}
-
-.config-popover-arrow {
-  color: var(--vscode-descriptionForeground);
-  font-size: 10px;
-  transition: transform 0.15s;
-}
-
-.config-popover-arrow.open {
-  transform: rotate(90deg);
-}
-
-.config-popover-options {
-  margin-top: 4px;
-  border: 1px solid var(--vscode-input-border);
-  border-radius: 4px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
+/* 注意：.config-popover-option/-label/-detail/-check/-hint 被 ModelPopover 跨组件复用，改动前先查 ModelPopover.tsx */
 .config-popover-option {
   display: flex;
   align-items: baseline;
@@ -1442,27 +1472,37 @@ body {
   text-align: center;
 }
 
-.config-popover-cycle,
-.config-popover-mode,
-.config-popover-toggle {
+/* 分段控件（队列模式双值点选） */
+.config-popover-seg {
+  display: flex;
+  flex: 1;
+  min-width: 0;
   border: 1px solid var(--vscode-input-border);
   border-radius: 4px;
+  overflow: hidden;
+}
+
+.config-popover-mode {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 8px;
+  border: none;
   background: var(--vscode-button-secondaryBackground, var(--vscode-editor-background));
   color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
   cursor: pointer;
   font-size: 11px;
-  padding: 2px 8px;
+  white-space: nowrap;
 }
 
-.config-popover-cycle:hover:not(:disabled),
-.config-popover-mode:hover:not(:disabled),
-.config-popover-toggle:hover:not(:disabled) {
+.config-popover-mode + .config-popover-mode {
+  border-left: 1px solid var(--vscode-input-border);
+}
+
+.config-popover-mode:hover:not(:disabled) {
   background: var(--vscode-button-secondaryHoverBackground, var(--vscode-input-background));
 }
 
-.config-popover-cycle:disabled,
-.config-popover-mode:disabled,
-.config-popover-toggle:disabled {
+.config-popover-mode:disabled {
   opacity: 0.4;
   cursor: default;
 }
@@ -1470,13 +1510,50 @@ body {
 .config-popover-mode.active {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
+}
+
+/* CSS 滑动开关（role=switch/aria-checked 语义由既有按钮承担，纯视觉） */
+.config-popover-switch {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 8px;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-editor-background));
+  cursor: pointer;
+}
+
+.config-popover-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground);
+  transition: transform 0.15s ease;
+}
+
+.config-popover-switch:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-input-background));
+}
+
+.config-popover-switch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.config-popover-switch.on {
+  background: var(--vscode-button-background);
   border-color: var(--vscode-button-background);
 }
 
-.config-popover-toggle.on {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  border-color: var(--vscode-button-background);
+.config-popover-switch.on::after {
+  transform: translateX(14px);
+  background: var(--vscode-button-foreground);
 }
 
 /* ===========================================================================
@@ -1816,16 +1893,19 @@ body {
 }
 
 .extension-popover {
-  position: fixed;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   z-index: 100;
-  width: min(260px, calc(100vw - 16px));
+  width: min(420px, calc(100% - 16px));
   max-height: 60vh;
   overflow-y: auto;
   background: var(--vscode-menu-background, var(--vscode-editor-background));
   border: 1px solid var(--vscode-menu-border, var(--vscode-input-border));
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  padding: 6px;
+  padding: 8px;
   color: var(--vscode-menu-foreground, var(--vscode-foreground));
 }
 
@@ -1846,7 +1926,7 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 6px;
+  padding: 5px 8px;
   border-radius: 4px;
 }
 

@@ -14,8 +14,8 @@ const COOLDOWN_MS = 500;
 type ModeValue = "all" | "one-at-a-time";
 
 /**
- * ⚙ 设置面板（footer 卡片下半按钮触发）：队列模式双值点选、自动压缩开关、
- * 会话信息开关。模型/思考切换入口在输入框按钮行 chip（ModelPopover 锚定下拉）。
+ * ⚙ 设置面板（footer 卡片下半按钮触发）：标题栏 + 队列模式分段控件、自动压缩/
+ * 会话信息滑动开关。模型/思考切换入口在输入框按钮行 chip（ModelPopover 锚定下拉）。
  * 点击外部/Esc 关闭（Esc 在 window capture 阶段拦截，让位于 Composer 的
  * abort/清空分支）；非 running 时切换区禁用。
  */
@@ -48,7 +48,7 @@ export function ConfigPopover({ status, open, onClose }: Props) {
       return;
     }
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const first = panelRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)");
+    const first = panelRef.current?.querySelector<HTMLButtonElement>(".config-popover-section button:not(:disabled)");
     first?.focus();
     return () => {
       if (trigger && trigger.isConnected) {
@@ -99,25 +99,35 @@ export function ConfigPopover({ status, open, onClose }: Props) {
     <>
       <div className="config-popover-overlay" onClick={onClose} />
       <div className="config-popover" role="dialog" aria-label="Pi settings" ref={panelRef}>
+        <div className="popover-titlebar">
+          <span className="popover-titlebar-title">Settings</span>
+          <button className="popover-close" aria-label="Close settings" onClick={onClose}>
+            ×
+          </button>
+        </div>
         <div className="config-popover-section">
           <div className="config-popover-title">Queue mode (send while streaming)</div>
           <div className="config-popover-row">
             <span className="config-popover-label">steering</span>
-            {modeButton("steering", status.steeringMode, "all", "Deliver all", () =>
-              vscode.postMessage({ type: "setSteeringMode", mode: "all" }),
-            )}
-            {modeButton("steering", status.steeringMode, "one-at-a-time", "One at a time", () =>
-              vscode.postMessage({ type: "setSteeringMode", mode: "one-at-a-time" }),
-            )}
+            <div className="config-popover-seg" role="group" aria-label="Steering mode">
+              {modeButton("steering", status.steeringMode, "all", "Deliver all", () =>
+                vscode.postMessage({ type: "setSteeringMode", mode: "all" }),
+              )}
+              {modeButton("steering", status.steeringMode, "one-at-a-time", "One at a time", () =>
+                vscode.postMessage({ type: "setSteeringMode", mode: "one-at-a-time" }),
+              )}
+            </div>
           </div>
           <div className="config-popover-row">
             <span className="config-popover-label">Follow-up</span>
-            {modeButton("followUp", status.followUpMode, "all", "Deliver all", () =>
-              vscode.postMessage({ type: "setFollowUpMode", mode: "all" }),
-            )}
-            {modeButton("followUp", status.followUpMode, "one-at-a-time", "One at a time", () =>
-              vscode.postMessage({ type: "setFollowUpMode", mode: "one-at-a-time" }),
-            )}
+            <div className="config-popover-seg" role="group" aria-label="Follow-up mode">
+              {modeButton("followUp", status.followUpMode, "all", "Deliver all", () =>
+                vscode.postMessage({ type: "setFollowUpMode", mode: "all" }),
+              )}
+              {modeButton("followUp", status.followUpMode, "one-at-a-time", "One at a time", () =>
+                vscode.postMessage({ type: "setFollowUpMode", mode: "one-at-a-time" }),
+              )}
+            </div>
           </div>
         </div>
         <div className="config-popover-section">
@@ -127,16 +137,16 @@ export function ConfigPopover({ status, open, onClose }: Props) {
             <button
               role="switch"
               aria-checked={status.autoCompactionEnabled}
-              className={`config-popover-toggle${status.autoCompactionEnabled ? " on" : ""}`}
+              aria-label="Auto compact when context is nearly full"
+              title={status.autoCompactionEnabled ? "On" : "Off"}
+              className={`config-popover-switch${status.autoCompactionEnabled ? " on" : ""}`}
               disabled={!running || busyKeys.has("compaction")}
               onClick={() =>
                 withCooldown("compaction", () =>
                   vscode.postMessage({ type: "setAutoCompaction", enabled: !status.autoCompactionEnabled }),
                 )
               }
-            >
-              {status.autoCompactionEnabled ? "On" : "Off"}
-            </button>
+            />
           </div>
         </div>
         <div className="config-popover-section">
@@ -147,16 +157,16 @@ export function ConfigPopover({ status, open, onClose }: Props) {
             <button
               role="switch"
               aria-checked={Boolean(status.showSessionStats)}
-              className={`config-popover-toggle${status.showSessionStats ? " on" : ""}`}
+              aria-label="Show token/cost/context usage"
+              title={status.showSessionStats ? "On" : "Off"}
+              className={`config-popover-switch${status.showSessionStats ? " on" : ""}`}
               disabled={busyKeys.has("sessionStats")}
               onClick={() =>
                 withCooldown("sessionStats", () =>
                   vscode.postMessage({ type: "toggleSessionStats" }),
                 )
               }
-            >
-              {status.showSessionStats ? "On" : "Off"}
-            </button>
+            />
           </div>
         </div>
       </div>
