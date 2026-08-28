@@ -836,14 +836,6 @@ body {
   white-space: nowrap;
 }
 
-.todotask-desc {
-  color: var(--vscode-descriptionForeground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-}
-
 /* ---------------------------------------------------------------- markdown */
 .md-codeblock {
   margin: 6px 0;

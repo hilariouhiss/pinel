@@ -33,7 +33,7 @@ export function TodoPanel({ todos }: Props) {
       <button className="todopanel-head" onClick={() => setOpen(!open)}>
         <span className="todopanel-icon">{open ? "▾" : "▸"}</span>
         {!open && activeSummary ? (
-          <span className="todopanel-task">
+          <span className="todopanel-task" title={activeSummary}>
             <span className="todopanel-task-icon" dangerouslySetInnerHTML={{ __html: inProgressIcon }} />
             <span className="todopanel-task-text">{activeSummary}</span>
           </span>
@@ -49,7 +49,11 @@ export function TodoPanel({ todos }: Props) {
       {open && (
         <div className="todopanel-body">
           {visible.map((task) => (
-            <div key={task.id} className={`todotask status-${task.status}`}>
+            <div
+              key={task.id}
+              className={`todotask status-${task.status}`}
+              title={task.description || undefined}
+            >
               <span
                 className="todotask-icon"
                 dangerouslySetInnerHTML={{
@@ -61,7 +65,6 @@ export function TodoPanel({ todos }: Props) {
                 {task.subject}
                 {task.status === "in_progress" && task.activeForm ? ` · ${task.activeForm}` : ""}
               </span>
-              {task.description && <span className="todotask-desc">{task.description}</span>}
             </div>
           ))}
         </div>

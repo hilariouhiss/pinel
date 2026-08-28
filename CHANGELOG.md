@@ -14,6 +14,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 待办面板行内仅显示标题/摘要，完整描述改为悬停原生 tooltip 显示（折叠态摘要同样支持悬停）
 - 设置面板视觉升级：新增 Settings 标题栏与关闭按钮，队列模式改分段控件（segmented control），自动压缩/会话信息开关改 CSS 滑动开关（语义 role=switch 不变），分组间距与标题层级重排
 - 扩展管理弹窗改屏幕居中模态：从锚定 footer 按钮的窄浮层改为居中弹窗（420px），新增标题栏与关闭按钮，与设置面板视觉语言一致
 - 问卷选项卡标题与描述分两行展示（不再同排拥挤），选项间距加大；顶部新增答题进度条（随作答实时填充）
