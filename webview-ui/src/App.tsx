@@ -621,7 +621,6 @@ export default function App() {
         {/* 通知横幅：悬浮于 header 正下方（absolute 定位上下文 = chat-header，
             top:calc(100%+3px)，不挤压布局；见 styles.css .notices） */}
         <Notices notices={notices} onDismiss={dismissNotice} />
-        <RecentRoundBar lastUserText={!roundBarHidden ? lastUserText : ""} onLocate={locateLastUser} />
       </div>
       {showBootAnimation && (
         <div className="session-boot-overlay">
@@ -636,6 +635,12 @@ export default function App() {
         </div>
       )}
       <div className="pinel-scroll" ref={scrollRef} tabIndex={-1} onScroll={onScroll}>
+        {/* 最近回合悬浮条：高 0 sticky 锚点钉在滚动视口顶部（不随内容滚走），
+            宽度 = 滚动内容区宽 → 与消息卡片结构级严格同宽（见 styles.css
+            .recent-round-anchor） */}
+        <div className="recent-round-anchor">
+          <RecentRoundBar lastUserText={!roundBarHidden ? lastUserText : ""} onLocate={locateLastUser} />
+        </div>
         {!hasConversation && (
           <div className="pinel-empty">
             <div className="pinel-empty-title">Pinel — Pi for VS Code</div>

@@ -112,24 +112,24 @@ body {
   margin-bottom: 14px;
 }
 
-/* 最近回合悬浮状态条：锚 .chat-header（position:relative 既有定位上下文，
-   复用 .notices 模式），absolute 若放滚动区内会随内容滚走（absolute 非 sticky） */
-.recent-round-bar {
-  position: absolute;
-  top: calc(100% + 3px);
-  left: 10px;
-  /* right 20px = 卡片距滚动条 10px + 滚动条宽 10px（VS Code 注入默认
-     ::-webkit-scrollbar width 10px；chat-header 无滚动条，右缘对齐需补偿） */
-  right: 20px;
+/* 最近回合悬浮状态条：经 .recent-round-anchor（高 0 sticky）钉在滚动视口顶部，
+   不随内容滚走；宽度 = 滚动内容区宽，与消息卡片结构级严格同宽（滚动条出现
+   自动让位，无需测量补偿） */
+.recent-round-anchor {
+  position: sticky;
+  top: 3px;
+  height: 0; /* 占位 0：不推挤消息流；悬浮条作为溢出子元素向下覆盖 */
   z-index: 20; /* 盖消息（无 z-index）、低于 notices 30——通知横幅短暂压条可接受 */
+}
+
+.recent-round-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
   border: 1px solid var(--vscode-input-border);
   border-radius: 6px;
-  /* 与用户消息卡片样式一致（.msg-user .msg-text）：同背景/同字号/同 padding/无阴影；
-     宽与消息列同距面板 10px（.pinel-scroll padding 8px 10px） */
+  /* 与用户消息卡片样式一致（.msg-user .msg-text）：同背景/同字号/同 padding/无阴影 */
   background: var(--vscode-input-background);
   font-size: var(--vscode-font-size);
   cursor: pointer;

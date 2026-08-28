@@ -65,7 +65,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 |---|---|
 | 命令补全 | commands.ts；get_commands fire-and-forget，失败静默空列表 |
 | 消息复制按钮 | MessageView CopyButton；navigator.clipboard 可选链兑底；innerText 所见即所得提取（排除角色行） |
-| 最近回合悬浮条 | RecentRoundBar 锚 header（absolute 入滚动区会随内容滚走）；纯消息文本 3 行截断；data-msg-index 滚回 + scroll-margin-top 防遮挡；点击滚回后隐藏（roundBarHidden），onScroll 视口离开判定重现（函数式 setState 避空依赖闭包，重置键 sessionFile） |
+| 最近回合悬浮条 | RecentRoundBar 经高 0 sticky 锚点（.recent-round-anchor）钉滚动视口顶部，与消息卡片结构级同宽；纯消息文本 3 行截断；data-msg-index 滚回 + scroll-margin-top 防遮挡；点击滚回后隐藏（roundBarHidden），onScroll 视口离开判定重现（函数式 setState 避空依赖闭包，重置键 sessionFile） |
 | /new 拦截 | controller.sendPrompt 精确匹配本地拦截 → newSession；RPC 不展开 slash |
 | Ctrl+G 编辑提示词 | prompt-editor.ts；真实临时文件 + 保存回填 + 发送清理 |
 | @ 添加文件 | at-refs.ts 发送时文本解析 @引用（引号路径/标点剥离/大小写不敏感）+ file-scanner；panel.ts 透传 fileRefs；controller 自读自拼 file 标记注入 + 图片 base64 |
