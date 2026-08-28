@@ -29,6 +29,10 @@ interface Props {
   streamBlocks?: StreamBlock[];
   /** 消息在 App messages 数组中的全局索引（悬浮状态条点击滚回定位锚）。 */
   msgIndex?: number;
+  /** 主会话模型短名（subagent 继承主会话时的兕底显示；null = 未知）。 */
+  mainModelName: string | null;
+  /** 主会话思考等级（subagent 继承主会话时的兕底显示）。 */
+  mainThinkingLevel: string | null;
 }
 
 /** 提取用户消息的纯文本（导出：App 悬浮状态条复用提取最近输入）。 */
@@ -105,7 +109,7 @@ function assistantBlocks(content: ChatMessage["content"]): ContentBlock[] {
   return Array.isArray(content) ? (content as ContentBlock[]) : [];
 }
 
-export function MessageView({ message, tools, toolResults, streamBlocks, msgIndex }: Props) {
+export function MessageView({ message, tools, toolResults, streamBlocks, msgIndex, mainModelName, mainThinkingLevel }: Props) {
   const userRef = useRef<HTMLDivElement>(null);
   const assistantRef = useRef<HTMLDivElement>(null);
   const toolResultRef = useRef<HTMLDivElement>(null);
@@ -137,7 +141,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
     if (id && toolResults.matched.has(id)) {
       return null;
     }
-    return <ToolResultView message={message} tools={tools} targetRef={toolResultRef} />;
+    return <ToolResultView message={message} tools={tools} targetRef={toolResultRef} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} />;
   }
 
   // assistant（含流式占位）
@@ -147,7 +151,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
       <div className="msg msg-assistant">
         <div className="msg-role">Pi</div>
         {streamBlocks.map((block, i) => (
-          <BlockView key={`s-${i}`} kind={block.kind} text={block.text} toolCall={block.toolCall} live tools={tools} toolResults={toolResults} />
+          <BlockView key={`s-${i}`} kind={block.kind} text={block.text} toolCall={block.toolCall} live tools={tools} toolResults={toolResults} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} />
         ))}
       </div>
     );
@@ -173,6 +177,8 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
           }
           tools={tools}
           toolResults={toolResults}
+          mainModelName={mainModelName}
+          mainThinkingLevel={mainThinkingLevel}
         />
       ))}
       <CopyButton targetRef={assistantRef} />
@@ -187,6 +193,8 @@ function BlockView({
   live,
   tools,
   toolResults,
+  mainModelName,
+  mainThinkingLevel,
 }: {
   kind: "text" | "thinking" | "toolCall";
   text: string;
@@ -194,6 +202,8 @@ function BlockView({
   live?: boolean;
   tools: Record<string, ToolCard>;
   toolResults: ToolResults;
+  mainModelName: string | null;
+  mainThinkingLevel: string | null;
 }) {
   if (kind === "thinking") {
     return <ThinkingBlock text={text} live={live} />;
@@ -203,7 +213,14 @@ function BlockView({
     const result = toolCall?.id ? toolResults.results[toolCall.id] : undefined;
     // subagent 专属卡片原位渲染（保持统计行 + Markdown 输出样式）
     if (toolCard?.subagent) {
-      return <SubagentCard card={toolCard.subagent} output={toolCard.output || result?.text || ""} />;
+      return (
+        <SubagentCard
+          card={toolCard.subagent}
+          output={toolCard.output || result?.text || ""}
+          mainModelName={mainModelName}
+          mainThinkingLevel={mainThinkingLevel}
+        />
+      );
     }
     return <ToolCallCard toolCall={toolCall} live={live} toolCard={toolCard} result={result} />;
   }
@@ -261,6 +278,11 @@ function ToolCallCard({
   const output = toolCard?.output ?? result?.text ?? "";
   const status: "running" | "done" | "error" =
     toolCard?.status ?? (result ? (result.isError ? "error" : "done") : live ? "running" : "done");
+  // 状态驱动自动开合：运行中自动展开实时输出，完成后自动收起；
+  // 手动 toggle 在 status 不变时有效（effect 不重跑，尊重用户操作）
+  useEffect(() => {
+    setOpen(status === "running");
+  }, [status]);
   // 工具本名三层兕底：流式/快照块 name → tool_execution 实时 toolName → toolResult 消息落盘 toolName
   //（覆盖快照重放 + tools 清空场景）；三源皆空保留 Tool call 兕底
   const toolName = toolCall?.name || toolCard?.toolName || result?.toolName || "Tool call";
@@ -297,15 +319,40 @@ function ToolCallCard({
   );
 }
 
-function SubagentCard({ card, output }: { card: SubagentCardInfo; output: string }) {
+function SubagentCard({
+  card,
+  output,
+  mainModelName,
+  mainThinkingLevel,
+}: {
+  card: SubagentCardInfo;
+  output: string;
+  /** 主会话模型短名（继承主会话时兕底显示实际值而非占位）。 */
+  mainModelName: string | null;
+  /** 主会话思考等级（继承主会话时兕底显示实际值）。 */
+  mainThinkingLevel: string | null;
+}) {
   const [open, setOpen] = useState(false);
   const running = card.status === "running";
-  // running 中 partial content 仅 "N tool uses..." 无展开价值；background/stopped
-  // 视为终态，有 output 即可展开，无则仅显示状态标签
-  const canExpand = !running && output.trim().length > 0;
+  // 状态驱动自动开合：running/background 自动展开实时输出（background 是用户
+  // 主动挂后台，输出仍在增长，收起会收掉正在看的输出），完成后自动收起；
+  // 手动 toggle 在 status 不变时有效（effect 不重跑，尊重用户操作）
+  useEffect(() => {
+    setOpen(card.status === "running" || card.status === "background");
+  }, [card.status]);
+  // running 中 partial 输出同样可展开/收起（需求：运行时自动展开展示输出）；
+  // output 为空时不可展开（无内容）；运行中 partial 随 tools map 实时增长
+  const canExpand = output.trim().length > 0;
   const meta: string[] = [];
-  meta.push(card.model ?? "main model");
-  meta.push(card.thinking ? `thinking: ${card.thinking}` : "main level");
+  // 继承主会话时兕底主会话实际模型短名/思考等级，而非 "main model"/"main level" 占位
+  meta.push(card.model ?? mainModelName ?? "main model");
+  meta.push(
+    card.thinking
+      ? `thinking: ${card.thinking}`
+      : mainThinkingLevel
+        ? `thinking: ${mainThinkingLevel}`
+        : "main level",
+  );
   const stats: string[] = [];
   if (running && card.activity) {
     stats.push(card.activity);
@@ -352,7 +399,7 @@ function SubagentCard({ card, output }: { card: SubagentCardInfo; output: string
         {canExpand && <span className="subagent-caret">{open ? "▾" : "▸"}</span>}
       </button>
       {stats.length > 0 && <div className="subagent-stats">{stats.join(" · ")}</div>}
-      {open && (
+      {open && output.trim() && (
         <div className="subagent-body msg-text">
           <Markdown content={output} />
         </div>
@@ -365,19 +412,28 @@ function ToolResultView({
   message,
   tools,
   targetRef,
+  mainModelName,
+  mainThinkingLevel,
 }: {
   message: ChatMessage;
   tools: Record<string, ToolCard>;
   targetRef: React.RefObject<HTMLDivElement | null>;
+  mainModelName: string | null;
+  mainThinkingLevel: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const toolCard = message.toolCallId ? tools[message.toolCallId] : undefined;
   // 注：合并 toolResult 内联后本分支仅孤儿路径可达（有 subagent 实时卡片的
-  // 结果已原位渲染在 assistant 消息内）；保留作防御兜底
+  // 结果已原位渲染在 assistant 消息内）；保留作防御兕底
   if (toolCard?.subagent) {
     return (
       <div className="msg msg-toolresult" ref={targetRef}>
-        <SubagentCard card={toolCard.subagent} output={toolCard.output} />
+        <SubagentCard
+          card={toolCard.subagent}
+          output={toolCard.output || ""}
+          mainModelName={mainModelName}
+          mainThinkingLevel={mainThinkingLevel}
+        />
         <CopyButton targetRef={targetRef} />
       </div>
     );

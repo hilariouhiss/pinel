@@ -575,6 +575,10 @@ export default function App() {
       </div>
     ) : null;
 
+  // 主会话模型短名/思考等级：subagent 卡片继承主会话时的兜底显示（name 优先于 id）
+  const mainModelName = status.model ? (status.model.name ?? status.model.id ?? null) : null;
+  const mainThinkingLevel = status.thinkingLevel;
+
   return (
     <div className="pinel-root">
       <div className="chat-header">
@@ -643,13 +647,13 @@ export default function App() {
           </div>
         )}
         {messages.slice(0, qnaMid).map((m, i) => (
-          <MessageView key={`m-${i}`} message={m} tools={tools} toolResults={toolResults} msgIndex={i} />
+          <MessageView key={`m-${i}`} message={m} tools={tools} toolResults={toolResults} msgIndex={i} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} />
         ))}
         {qnaCollapsed && questionnaire && (
           <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />
         )}
         {messages.slice(qnaMid).map((m, i) => (
-          <MessageView key={`m-${qnaMid + i}`} message={m} tools={tools} toolResults={toolResults} msgIndex={qnaMid + i} />
+          <MessageView key={`m-${qnaMid + i}`} message={m} tools={tools} toolResults={toolResults} msgIndex={qnaMid + i} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} />
         ))}
         {streamBlocks.length > 0 && (
           <MessageView
@@ -658,6 +662,8 @@ export default function App() {
             streamBlocks={streamBlocks}
             tools={tools}
             toolResults={toolResults}
+            mainModelName={mainModelName}
+            mainThinkingLevel={mainThinkingLevel}
           />
         )}
         <UiDialogs requests={pendingUi} />
