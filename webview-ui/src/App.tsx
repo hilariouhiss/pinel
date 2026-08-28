@@ -109,6 +109,8 @@ export default function App() {
   const [notices, setNotices] = useState<Array<{ id: number; level: string; text: string }>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  /** 悬浮条隐藏态：点击滚回后隐藏，上滚离开该消息/滚到底部时重现（见 onScroll）。 */
+  const [roundBarHidden, setRoundBarHidden] = useState(false);
 
   /** toolResult 结果映射（toolCallId → 权威输出/isError/toolName；快照重放可重建）
    *  + 命中集合（assistant 消息或流式块中出现的 toolCall id）。命中集合含流式块：
@@ -127,12 +129,16 @@ export default function App() {
   const lastUserText = lastUser ? lastUser.text || "📎 图片" : "";
 
   // 点击悬浮条滚回原用户消息（scroll-margin-top 防遮挡；stickToBottom 由 onScroll 自然更新）
+  // 点击即隐藏悬浮条：滚回后消息已在视口，无需导航条遮挡内容（上滚离开后 onScroll 重现）
   const locateLastUser = () => {
     if (!lastUser) {
       return;
     }
+    setRoundBarHidden(true);
     const el = scrollRef.current?.querySelector(`[data-msg-index="${lastUser.index}"]`);
     el?.scrollIntoView({ block: "start" });
+    // 焦点移交滚动容器：悬浮条卸载后焦点不落 body，键盘 ↑↓ 仍可滚动
+    scrollRef.current?.focus();
   };
 
   const toolResults = useMemo(() => {
@@ -180,6 +186,8 @@ export default function App() {
           // 消息列表整体替换：问卷收起条位置失效，置 null 由捕获 effect 重新捕获
           //（同会话 agent_end 快照不动这里——submitted 问卷尚在，状态条保持原位）
           setQnaFlowIndex(null);
+          // 新会话恢复悬浮条常驻（重置键用 sessionFile：消息数相同的切换/clone 时 index 不变）
+          setRoundBarHidden(false);
         }
         setMessages(msg.messages);
         setStreamBlocks([]);
@@ -374,7 +382,24 @@ export default function App() {
       return;
     }
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-  }, []);
+    // 悬浮条隐藏态：最近用户消息离开滚动视口（上滚看历史 / 滚到底部）→ 重现。
+    // 函数式更新避开空依赖闭包读陈旧 roundBarHidden；updater 内读 DOM 幂等
+    //（严格模式双调用返回一致结果）。依赖 lastUser 保证索引非陈旧。
+    setRoundBarHidden((hidden) => {
+      if (!hidden || !lastUser) {
+        return hidden;
+      }
+      const msgEl = el.querySelector<HTMLElement>(`[data-msg-index="${lastUser.index}"]`);
+      if (!msgEl) {
+        return hidden; // 快照替换窗口期无元素：保持现状
+      }
+      const m = msgEl.getBoundingClientRect();
+      const c = el.getBoundingClientRect();
+      // 前提：CSS 无 scroll-behavior:smooth（scrollIntoView 瞬时），点击滚回后
+      // 消息已在视口内 → 判定不成立保持隐藏；将来引入 smooth 滚动需重审此判定
+      return m.top > c.bottom || m.bottom < c.top ? false : hidden;
+    });
+  }, [lastUser]);
 
   // 双击 Esc 打开会话树弹层（Tree 按钮移除后的入口）。弹层打开时 Esc 被其
   // capture 监听 stopPropagation，本监听收不到 → 不会在关弹层瞬间又开树。
@@ -592,7 +617,7 @@ export default function App() {
         {/* 通知横幅：悬浮于 header 正下方（absolute 定位上下文 = chat-header，
             top:calc(100%+3px)，不挤压布局；见 styles.css .notices） */}
         <Notices notices={notices} onDismiss={dismissNotice} />
-        <RecentRoundBar lastUserText={lastUserText} onLocate={locateLastUser} />
+        <RecentRoundBar lastUserText={!roundBarHidden ? lastUserText : ""} onLocate={locateLastUser} />
       </div>
       {showBootAnimation && (
         <div className="session-boot-overlay">
@@ -606,7 +631,7 @@ export default function App() {
           <div className="session-boot-text">Switching session…</div>
         </div>
       )}
-      <div className="pinel-scroll" ref={scrollRef} onScroll={onScroll}>
+      <div className="pinel-scroll" ref={scrollRef} tabIndex={-1} onScroll={onScroll}>
         {!hasConversation && (
           <div className="pinel-empty">
             <div className="pinel-empty-title">Pinel — Pi for VS Code</div>
