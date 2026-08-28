@@ -70,7 +70,8 @@ npm run package      # 生产构建（minify）
 | 会话重命名/删除 | set_session_name（当前）/ appendSessionName（非当前）；seam confirmSessionDelete |
 | 会话统计/信息条 | session-stats.ts + git-status.ts + session-env；Maple Mono NF 全扩展字体 |
 | fork/clone | fork-messages.ts + runSessionChange 骨架；fork 后 pi 自动 rebind |
-| subagent 卡片 | subagents.ts；tool_execution details 防御解析 + 专属卡片 + Markdown 输出 |
+| subagent 卡片 | subagents.ts；tool_execution details 防御解析 + 专属卡片（内联 assistant 消息工具调用原位，统计行 + Markdown 输出）+ 图标 lucide bot |
+| 工具结果内联 | 工具调用结果展示在原 assistant 消息卡片（ToolCallCard：lucide wrench/bot + spinner/check/x + 预览，展开 args+output）；toolResult 消息命中匹配则跳过独立卡片、孤儿兑底独立卡片；webview 内部映射（App.tsx useMemo），宿主/协议零改动 |
 | 输入框自适应 | Composer scrollHeight 自适应（软换行计入，上限面板高 60%） |
 | 扩展管理 | extensions.ts；本地重命名启停 + packages settings 编辑 + pi remove 卸载 |
 | 模型自愈 | get_state 重试 4 次 → 自动重启一次（不走 restart 守卫） |

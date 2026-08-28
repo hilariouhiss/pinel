@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, ExtensionItem, FileItem, ForkMessageItem, HostMessage, ModelInfo, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { ChatMessage, ChatStatus, ContentBlock, ExtensionItem, FileItem, ForkMessageItem, HostMessage, ModelInfo, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
@@ -8,7 +8,7 @@ import { ExtensionPopover } from "./components/ExtensionPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
 import { ForkPopover } from "./components/ForkPopover";
 import { SessionStatsBar } from "./components/SessionStatsBar";
-import { MessageView } from "./components/MessageView";
+import { MessageView, type ToolResultInfo } from "./components/MessageView";
 import { Notices } from "./components/Notices";
 import { TodoPanel } from "./components/TodoPanel";
 import { UiDialogs } from "./components/UiDialogs";
@@ -96,6 +96,39 @@ export default function App() {
   const [notices, setNotices] = useState<Array<{ id: number; level: string; text: string }>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+
+  /** toolResult 结果映射（toolCallId → 权威输出/isError/toolName；快照重放可重建）
+   *  + 命中集合（assistant 消息或流式块中出现的 toolCall id）。命中集合含流式块：
+   *  toolResult 消息先于 assistant message_end 到达时仍能跳过独立卡片（防闪现）。 */
+  const toolResults = useMemo(() => {
+    const results: Record<string, ToolResultInfo> = {};
+    const matched = new Set<string>();
+    for (const b of streamBlocks) {
+      if (b.kind === "toolCall" && b.toolCall?.id) {
+        matched.add(b.toolCall.id);
+      }
+    }
+    for (const m of messages) {
+      if (m.role === "assistant" && Array.isArray(m.content)) {
+        for (const b of m.content as ContentBlock[]) {
+          if (b.type === "toolCall" && typeof b.id === "string") {
+            matched.add(b.id);
+          }
+        }
+      } else if (m.role === "toolResult" && typeof m.toolCallId === "string") {
+        const raw = Array.isArray(m.content) ? (m.content as ContentBlock[]) : [];
+        results[m.toolCallId] = {
+          text: raw
+            .filter((b) => b.type === "text" && typeof b.text === "string")
+            .map((b) => b.text as string)
+            .join("\n"),
+          isError: Boolean(m.isError),
+          toolName: typeof m.toolName === "string" ? m.toolName : "",
+        };
+      }
+    }
+    return { results, matched };
+  }, [messages, streamBlocks]);
 
   const handleMessage = useCallback((event: MessageEvent<HostMessage>) => {
     const msg = event.data;
@@ -495,13 +528,13 @@ export default function App() {
           </div>
         )}
         {messages.slice(0, qnaMid).map((m, i) => (
-          <MessageView key={`m-${i}`} message={m} tools={tools} />
+          <MessageView key={`m-${i}`} message={m} tools={tools} toolResults={toolResults} />
         ))}
         {qnaCollapsed && questionnaire && (
           <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />
         )}
         {messages.slice(qnaMid).map((m, i) => (
-          <MessageView key={`m-${qnaMid + i}`} message={m} tools={tools} />
+          <MessageView key={`m-${qnaMid + i}`} message={m} tools={tools} toolResults={toolResults} />
         ))}
         {streamBlocks.length > 0 && (
           <MessageView
@@ -509,6 +542,7 @@ export default function App() {
             message={{ role: "assistant", content: [] }}
             streamBlocks={streamBlocks}
             tools={tools}
+            toolResults={toolResults}
           />
         )}
         <UiDialogs requests={pendingUi} />

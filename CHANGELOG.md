@@ -14,6 +14,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- 工具调用结果内联：工具结果不再渲染为独立卡片，直接展示在原 assistant 消息的工具调用卡片上（状态 ✓/✕ + 输出预览，点击展开完整参数与输出）；subagent 专属卡片同样内联到工具调用原位（统计行 + Markdown 输出保留）；快照重放（重启/切会话）后输出仍可达（从 toolResult 消息重建）
+- 工具卡片图标改用 lucide：普通工具 wrench、subagent bot、完成 check、错误 x（running 保留 spinner），主题自适应（stroke=currentColor）
+
 - 按钮行视觉微调：设置/扩展按钮图标 16→18px、两按钮间距与按钮行 gap 一致（4px）、模型/思考 chip 字号减小 1px（按钮尺寸不变）
 
 - 模型/思考切换入口收敛：设置面板（ConfigPopover）移除模型/思考内嵌展开区，按钮行 chip 为唯一切换入口；面板只留队列模式/自动压缩/会话信息开关

@@ -252,6 +252,42 @@ body {
   font-family: var(--pinel-mono-font-family);
 }
 
+/* toolResult 内联后的统一工具卡片：lucide 图标尺寸 + 展开体（args + output 分块） */
+.toolchip-icon,
+.toolstatus {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.toolchip-icon svg,
+.toolstatus svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.toolcard-body {
+  border-top: 1px solid var(--vscode-input-border);
+}
+
+.toolcard-body .toolchip-args {
+  border-top: none;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.subagent-robot {
+  display: inline-flex;
+  vertical-align: -2px;
+}
+
+.subagent-robot svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
 .toolresult {
   margin: 6px 0;
   border: 1px solid var(--vscode-input-border);
