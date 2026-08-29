@@ -15,11 +15,13 @@
  * - pinel.state: {v:1, leafId?, sessionFile?, messages:{user,assistant,toolResult,total}, model?, thinkingLevel?}
  * - pinel.tree:  {v:1, leafId?, nodes:[{entryId, role, text, timestamp?}]}（当前分支链消息节点）
  *
+ * 推送经 PushScheduler：事件分流（内容事件推快照+树，模型/思考等级事件仅快照）、
+ * 30ms 尾沿合并突发、按会话 append-only 签名记忆化树与计数、快照 JSON 去重。
  * 说明：token/cost 不在此推送（宿主 get_session_stats 权威兑底，防双源漂移）；
  * compact/fork/rename/switch 已有原生 RPC 命令，本插件不重复实现。
  */
-import { buildSnapshot, buildTree } from "./extensions/snapshot.js";
-import { setPinelCtx } from "./extensions/push-target.js";
+import { PushScheduler, FULL_PUSH_EVENTS, SNAPSHOT_ONLY_EVENTS } from "./extensions/push.js";
+import { getPinelCtx, setPinelCtx } from "./extensions/push-target.js";
 
 const VERSION = "0.1.0";
 
@@ -28,30 +30,20 @@ export default function (pi: any) {
     return; // 非 Pinel 面板会话：完全惰性
   }
 
-  // 多候选事件名（注册未知名不报错，实测 pi 0.84.3 行为）：状态变化时推快照。
-  const PUSH_EVENTS = [
-    "session_start",
-    "agent_settled",
-    "turn_end",
-    "message_end",
-    "session_info_changed",
-    "session_compact",
-    "session_compact_failed",
-    "model_select",
-    "thinking_level_select",
-    "thinking_level_changed",
-  ];
+  const scheduler = new PushScheduler(() => getPinelCtx());
 
-  function pushState(ctx: any) {
-    ctx.ui.setStatus("pinel.state", JSON.stringify(buildSnapshot(ctx)));
-    ctx.ui.setWidget("pinel.tree", [JSON.stringify(buildTree(ctx))]);
-  }
-
-  for (const name of PUSH_EVENTS) {
+  for (const name of FULL_PUSH_EVENTS) {
     pi.on(name, (_ev: any, ctx: any) => {
       if (ctx?.mode !== "rpc") return;
       setPinelCtx(ctx); // 供 pinel-workflows 生命周期推送复用
-      pushState(ctx);
+      scheduler.schedule(true);
+    });
+  }
+  for (const name of SNAPSHOT_ONLY_EVENTS) {
+    pi.on(name, (_ev: any, ctx: any) => {
+      if (ctx?.mode !== "rpc") return;
+      setPinelCtx(ctx);
+      scheduler.schedule(false);
     });
   }
 
@@ -59,7 +51,7 @@ export default function (pi: any) {
     description: "推送当前会话状态快照到 Pinel 面板",
     handler: async (_args: any, ctx: any) => {
       setPinelCtx(ctx);
-      pushState(ctx);
+      scheduler.flushNow(true);
       ctx.ui.notify(`Pinel: 状态已刷新（插件 ${VERSION}）`, "info");
       return "pushed";
     },
@@ -71,7 +63,7 @@ export default function (pi: any) {
       const target = typeof args === "string" ? args.trim() : "";
       if (!target) {
         setPinelCtx(ctx);
-        pushState(ctx);
+        scheduler.flushNow(true);
         ctx.ui.notify("Pinel: 已推送会话树", "info");
         return "pushed";
       }
@@ -80,11 +72,11 @@ export default function (pi: any) {
         ctx.ui.notify("Pinel: 导航已取消", "warning");
         return "cancelled";
       }
+      // 导航后写入 ctx：快照/树反映导航后 leafId
       setPinelCtx(ctx);
-      pushState(ctx);
+      scheduler.flushNow(true);
       ctx.ui.notify("Pinel: 已导航到目标节点", "info");
       return "navigated";
     },
   });
 }
-
