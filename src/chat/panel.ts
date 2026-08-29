@@ -14,6 +14,11 @@ interface WebviewAbortMessage {
   type: "abort";
 }
 
+interface WebviewCopyTextMessage {
+  type: "copyText";
+  text: string;
+}
+
 interface WebviewRestartMessage {
   type: "restart";
 }
@@ -207,6 +212,7 @@ interface WebviewSetCompactionThresholdMessage {
 type WebviewInMessage =
   | WebviewPromptMessage
   | WebviewAbortMessage
+  | WebviewCopyTextMessage
   | WebviewRestartMessage
   | WebviewUiResponseMessage
   | WebviewQuestionnaireAnswerMessage
@@ -308,6 +314,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "abort":
         void this.controller.abort();
+        break;
+      case "copyText":
+        // 剪切板桥：webview 内 navigator.clipboard 在 VS Code 环境不可靠（权限/手势限制），
+        // 经宿主 vscode.env.clipboard 写入（权威路径）
+        void vscode.env.clipboard.writeText(msg.text);
         break;
       case "restart":
         void this.controller.restart();

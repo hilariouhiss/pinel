@@ -64,7 +64,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 | 功能 | 模块/要点 |
 |---|---|
 | 命令补全 | commands.ts；get_commands fire-and-forget，失败静默空列表 |
-| 消息复制按钮 | MessageView CopyButton；navigator.clipboard 可选链兑底；innerText 所见即所得提取（排除角色行） |
+| 消息复制 | MessageView CopyButton + 卡片右键菜单（Copy message）；剪切板桥：webview postMessage copyText → 宿主 vscode.env.clipboard（webview 内 navigator.clipboard 不可靠）；innerText 所见即所得提取（排除角色行/按钮/菜单） |
 | 最近回合悬浮条 | RecentRoundBar 经高 0 sticky 锚点（.recent-round-anchor）钉滚动视口顶部，与消息卡片结构级同宽；随视口切换显示上下文用户消息（roundbar-rule.ts 纯函数：贴底仅当最近一条已滚出视口才钉住、顶部越过即切上一条、越最早隐藏）；纯消息文本 3 行截断；data-msg-index 滚回 + scroll-margin-top 防遮挡；点击滚回后隐藏（roundBarHidden），computeVisible 内视口离开判定重现，重置键 sessionFile |
 | /new 拦截 | controller.sendPrompt 精确匹配本地拦截 → newSession；RPC 不展开 slash |
 | Ctrl+G 编辑提示词 | prompt-editor.ts；真实临时文件 + 保存回填 + 发送清理 |

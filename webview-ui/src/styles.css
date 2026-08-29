@@ -195,6 +195,52 @@ body {
   height: 16px;
 }
 
+/* 右键复制菜单：光标处小弹层 + 全屏透明关闭层（拦截默认右键菜单后的自有菜单） */
+.msg-copy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1002;
+}
+
+.msg-copy-menu {
+  position: fixed;
+  z-index: 1003;
+  min-width: 140px;
+  padding: 3px;
+  background: var(--vscode-menu-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.msg-copy-menu button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.msg-copy-menu button:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.msg-copy-menu-icon {
+  display: inline-flex;
+}
+
+.msg-copy-menu-icon .lucide {
+  width: 13px;
+  height: 13px;
+}
+
 .msg-role {
   font-size: 11px;
   font-weight: 700;

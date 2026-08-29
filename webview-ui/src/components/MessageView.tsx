@@ -7,6 +7,7 @@ import botIcon from "lucide-static/icons/bot.svg";
 import checkIcon from "lucide-static/icons/check.svg";
 import xIcon from "lucide-static/icons/x.svg";
 import copyIcon from "lucide-static/icons/copy.svg";
+import { vscode } from "../index";
 
 /** toolResult 消息解析结果（webview 内部类型，非宿主协议镜像）。 */
 export interface ToolResultInfo {
@@ -63,33 +64,40 @@ function userImages(content: ChatMessage["content"]): ContentBlock[] {
 }
 
 /**
- * 复制消息卡片内容按钮（hover/focus-visible 显示，CSS 控制）。
- * 提取渲染后纯文本（所见即所得）：clone 卡片副本、移除角色标签行（You/Pi）与
- * 按钮自身后取 innerText——clone 临时挂 body（detached 节点无布局信息，
+ * 提取卡片渲染后纯文本（所见即所得）：clone 卡片副本、移除角色标签行（You/Pi）、
+ * 按钮与右键菜单后取 innerText——clone 临时挂 body（detached 节点无布局信息，
  * innerText 换行会退化）。折叠态 thinking/工具卡片内容不在 DOM，与所见一致。
+ */
+function extractCardText(el: HTMLElement): string {
+  const clone = el.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll(".msg-role, .msg-copy-btn, .msg-copy-menu, .msg-copy-overlay").forEach((n) => n.remove());
+  clone.style.position = "fixed";
+  clone.style.left = "-9999px";
+  clone.style.visibility = "hidden";
+  document.body.appendChild(clone);
+  const text = clone.innerText.trim();
+  clone.remove();
+  return text;
+}
+
+/** 剪切板桥：经宿主 vscode.env.clipboard 写入（webview 内 clipboard API 不可靠）。 */
+function copyToClipboard(text: string): void {
+  if (!text) {
+    return;
+  }
+  vscode.postMessage({ type: "copyText", text });
+}
+
+/**
+ * 复制消息卡片内容按钮（hover/focus-visible 显示，CSS 控制）。
  */
 function CopyButton({ targetRef }: { targetRef: React.RefObject<HTMLDivElement | null> }) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timerRef.current), []);
   const onClick = () => {
-    const el = targetRef.current;
-    if (!el) {
-      return;
-    }
-    const clone = el.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll(".msg-role, .msg-copy-btn").forEach((n) => n.remove());
-    clone.style.position = "fixed";
-    clone.style.left = "-9999px";
-    clone.style.visibility = "hidden";
-    document.body.appendChild(clone);
-    const text = clone.innerText.trim();
-    clone.remove();
-    if (!text) {
-      return;
-    }
-    // clipboard 不存在（非安全上下文边缘）时同步 TypeError，.catch 接不住——可选链兑底静默
-    navigator.clipboard?.writeText(text)?.catch(() => {});
+    const text = targetRef.current ? extractCardText(targetRef.current) : "";
+    copyToClipboard(text);
     setCopied(true);
     window.clearTimeout(timerRef.current); // 连续点击重置定时器，✓ 不提前恢复
     timerRef.current = window.setTimeout(() => setCopied(false), 1500);
@@ -105,6 +113,63 @@ function CopyButton({ targetRef }: { targetRef: React.RefObject<HTMLDivElement |
   );
 }
 
+/**
+ * 卡片右键复制菜单：阻止默认菜单，在光标处弹「Copy message」；
+ * 点击外部/Esc 关闭；overlay 兼作关闭层。pos=null 不渲染。
+ */
+function CardContextMenu({
+  pos,
+  targetRef,
+  onClose,
+}: {
+  pos: { x: number; y: number } | null;
+  targetRef: React.RefObject<HTMLDivElement | null>;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!pos) {
+      return;
+    }
+    // capture：右键其他卡片时先关旧菜单再开新的（contextmenu 在 window 层先到）
+    window.addEventListener("contextmenu", onClose, true);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("contextmenu", onClose, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [pos, onClose]);
+  if (!pos) {
+    return null;
+  }
+  const doCopy = () => {
+    const text = targetRef.current ? extractCardText(targetRef.current) : "";
+    copyToClipboard(text);
+    onClose();
+  };
+  return (
+    <>
+      <div className="msg-copy-overlay" onClick={onClose} />
+      <div className="msg-copy-menu" style={{ left: pos.x, top: pos.y }} role="menu">
+        <button role="menuitem" onClick={doCopy}>
+          <span className="msg-copy-menu-icon" dangerouslySetInnerHTML={{ __html: copyIcon }} />
+          Copy message
+        </button>
+      </div>
+    </>
+  );
+}
+
+/** 卡片右键打开复制菜单（preventDefault 拦截默认菜单）。 */
+function openCardMenu(e: React.MouseEvent<HTMLDivElement>): { x: number; y: number } {
+  e.preventDefault();
+  return { x: e.clientX, y: e.clientY };
+}
+
 function assistantBlocks(content: ChatMessage["content"]): ContentBlock[] {
   return Array.isArray(content) ? (content as ContentBlock[]) : [];
 }
@@ -113,11 +178,18 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
   const userRef = useRef<HTMLDivElement>(null);
   const assistantRef = useRef<HTMLDivElement>(null);
   const toolResultRef = useRef<HTMLDivElement>(null);
+  /** 右键复制菜单位置（null=关闭）；每卡片实例独立。 */
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   if (message.role === "user") {
     const text = userText(message.content);
     const images = userImages(message.content);
     return (
-      <div className="msg msg-user" ref={userRef} data-msg-index={msgIndex}>
+      <div
+        className="msg msg-user"
+        ref={userRef}
+        data-msg-index={msgIndex}
+        onContextMenu={text ? (e) => setMenuPos(openCardMenu(e)) : undefined}
+      >
         <div className="msg-role">You</div>
         {images.map((img, i) => (
           <img
@@ -130,6 +202,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
         {text && <div className="msg-text">{text}</div>}
         {/* 图片-only 消息无可复制文本，不渲染按钮 */}
         {text && <CopyButton targetRef={userRef} />}
+        <CardContextMenu pos={menuPos} targetRef={userRef} onClose={() => setMenuPos(null)} />
       </div>
     );
   }
@@ -159,7 +232,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
 
   const blocks = assistantBlocks(message.content);
   return (
-    <div className="msg msg-assistant" ref={assistantRef}>
+    <div className="msg msg-assistant" ref={assistantRef} onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
       <div className="msg-role">Pi</div>
       {blocks.map((block, i) => (
         <BlockView
@@ -182,6 +255,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
         />
       ))}
       <CopyButton targetRef={assistantRef} />
+      <CardContextMenu pos={menuPos} targetRef={assistantRef} onClose={() => setMenuPos(null)} />
     </div>
   );
 }
@@ -430,12 +504,13 @@ function ToolResultView({
   mainThinkingLevel: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const toolCard = message.toolCallId ? tools[message.toolCallId] : undefined;
   // 注：合并 toolResult 内联后本分支仅孤儿路径可达（有 subagent 实时卡片的
   // 结果已原位渲染在 assistant 消息内）；保留作防御兕底
   if (toolCard?.subagent) {
     return (
-      <div className="msg msg-toolresult" ref={targetRef}>
+      <div className="msg msg-toolresult" ref={targetRef} onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
         <SubagentCard
           card={toolCard.subagent}
           output={toolCard.output || ""}
@@ -443,6 +518,7 @@ function ToolResultView({
           mainThinkingLevel={mainThinkingLevel}
         />
         <CopyButton targetRef={targetRef} />
+        <CardContextMenu pos={menuPos} targetRef={targetRef} onClose={() => setMenuPos(null)} />
       </div>
     );
   }
@@ -454,7 +530,7 @@ function ToolResultView({
     .join("\n");
 
   return (
-    <div className="msg msg-toolresult" ref={targetRef}>
+    <div className="msg msg-toolresult" ref={targetRef} onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
       <div className={`toolresult status-${status}`}>
       <button className="toolresult-head" onClick={() => setOpen(!open)}>
         <span className={`toolstatus status-${status}`}>
@@ -476,6 +552,7 @@ function ToolResultView({
       {open && <pre className="toolresult-body">{text}</pre>}
       </div>
       <CopyButton targetRef={targetRef} />
+      <CardContextMenu pos={menuPos} targetRef={targetRef} onClose={() => setMenuPos(null)} />
     </div>
   );
 }
