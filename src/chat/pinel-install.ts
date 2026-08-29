@@ -4,7 +4,7 @@ import * as path from "node:path";
 /**
  * Pinel 插件安装检测与安装执行（宿主端；无 vscode 依赖，可单测）。
  *
- * 插件 = npm 包 `@hilariouhiss/pinel`（pinel-plugin/ 目录发布），用户经
+ * 插件 = npm 包 `@hilariouhiss/pinel`（../pi/ 目录发布），用户经
  * `pi install npm:@hilariouhiss/pinel` 安装（写入 ~/.pi/agent/settings.json
  * packages 数组）。宿主只读 settings.json 判安装态（等价 pi list，免 spawn）。
  *

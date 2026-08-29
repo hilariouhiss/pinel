@@ -2,7 +2,7 @@
  * Pinel 插件 payload 防御解析（宿主端；无 vscode 依赖，可单测）。
  *
  * 数据源：pi 插件经 extension_ui_request 帧推送（setStatus.statusText /
- * setWidget.widgetLines 内嵌 JSON 字符串）。payload 契约见 pinel-plugin/pinel.ts
+ * setWidget.widgetLines 内嵌 JSON 字符串）。payload 契约见 ../pi/pinel.ts
  * 头注释（v:1）。解析规则对齐 session-stats.ts：结构不符返回 null，
  * 逐字段容缺——不产出半可信数据（渲染层拿 null 即忽略）。
  */

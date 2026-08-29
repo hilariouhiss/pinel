@@ -2,7 +2,7 @@
  * Pinel 插件真实 pi 冒烟（opt-in，不进 CI；用法：npm run smoke:plugin）。
  *
  * 流程（不触碰用户全局配置——临时项目 + pi install -l）：
- * 1. 临时项目目录内 `pi install -l <repo>/pinel-plugin`（项目级 settings）
+ * 1. 临时项目目录内 `pi install -l <repo>/pi`（项目级 settings）
  * 2. spawn `pi --mode rpc`（env PINEL_PLUGIN=1，cwd=临时项目）→ 项目包自动加载
  * 3. get_commands 断言含 /pinel-state；session_start 推送断言 pinel.state/pinel.tree 帧
  * 4. prompt /pinel-state 断言 notify 回报 + 帧刷新
@@ -18,7 +18,8 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const PLUGIN_DIR = path.join(ROOT, "pinel-plugin");
+// 插件包在仓库根的 sibling 目录 pi/（vscode/ 与 pi/ 平级）
+const PLUGIN_DIR = path.join(ROOT, "..", "pi");
 
 function fail(msg) {
   console.error(`SMOKE FAIL: ${msg}`);
