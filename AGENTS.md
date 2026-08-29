@@ -59,7 +59,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 4. 安全：CSP `default-src 'none'` + nonce；markdown 禁 rehype-raw；用户输入不拼 shell（piPath 配置除外）
 5. Windows 专项（spawn-spec/stop 测试覆盖）：where.exe 解析优先 .cmd/.bat 行；.cmd 用 cmd.exe /d /s /c + windowsVerbatimArguments；进程终止优雅优先（关 stdin → 2.5s 后 taskkill /T /F 或 POSIX 负 PID 组杀），总时长 5s 契约
 
-## Feature Map（一句话索引；完整链路与踩坑见 memory `pinel-feature-links`）
+## Feature Map
 
 | 功能 | 模块/要点 |
 |---|---|
@@ -75,7 +75,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 | 会话重命名/删除 | set_session_name（当前）/ appendSessionName（非当前）；seam confirmSessionDelete |
 | 会话统计/信息条 | session-stats.ts + git-status.ts + session-env；Maple Mono NF 全扩展字体 |
 | fork/clone | fork-messages.ts + runSessionChange 骨架；fork 后 pi 自动 rebind |
-| subagent 卡片 | subagents.ts；tool_execution details 防御解析 + 专属卡片（内联 assistant 消息工具调用原位，统计行 + Markdown 输出；继承主会话兕底主会话实际模型/思考等级 mainModelName/mainThinkingLevel props；状态驱动自动开合 running||background 展开）+ 图标 lucide bot |
+| subagent 卡片 | subagents.ts；tool_execution details 防御解析 + 专属卡片（内联 assistant 消息工具调用原位，统计行 + Markdown 输出；继承主会话兕底主会话实际模型/思考等级 mainModelName/mainThinkingLevel props；状态驱动自动开合 running / background 展开）+ 图标 lucide bot |
 | 工具结果内联 | 工具调用结果展示在原 assistant 消息卡片（ToolCallCard：lucide wrench/bot + spinner/check/x + 预览，展开 args+output；标题工具本名三层兕底 name→toolCard.toolName→result.toolName→Tool call，isSubagent 判定同源；status 驱动自动开合）；toolResult 消息命中匹配则跳过独立卡片、孤儿兑底独立卡片；webview 内部映射（App.tsx useMemo），宿主/协议零改动 |
 | 输入框自适应 | Composer scrollHeight 自适应（软换行计入，上限面板高 60%） |
 | 扩展管理 | extensions.ts；本地重命名启停 + packages settings 编辑（字符串↔对象空数组，无同 identity 条目 upsert 覆盖）+ pi remove 卸载；弹层 All/Global/Project/Catalog 四态切换（project 视图含继承全局包 inherited 行，开关写项目覆盖条目；all 包按 identity 去重 project 优先；panel 记忆最近视图刷新沿用） |
@@ -90,13 +90,9 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 - 新增覆盖：纯逻辑 → mocha 单测；聊天/RPC 行为 → `fixtures/fake-pi.js` 加 prompt 标记场景 + `PinelTestApi` 断言；改 RPC 必须同步 protocol.ts 与假 pi
 - 作用于首次 get_state/get_commands/get_session_stats 的场景用 `PINEL_FAKE_PI_SCENARIO` env 激活（不能 prompt 标记）
 - 插件本体（pinel-plugin/，不在主 tsc program）由 `npm run check-plugin` + `npm run smoke:plugin` 真实 pi 冒烟覆盖（临时项目 pi install -l，不进 CI）
-- 集成测试踩坑（waitForSettled baseline 前置、isStreaming 等待、日志切片、env 场景清单等）见 memory `pinel-testing-pitfalls`
 
 ## Agent Instructions
 
-1. 动手前先理解：读 `.pi/plans/` 与相关模块源码；RPC 行为查 protocol.ts 头注释与 pi docs/rpc.md，不凭想象写协议
-2. 优先复用既有模块；不随意新增依赖（体积/安全权衡；webview 优先 react-markdown + VS Code CSS 变量）
-3. 不修改无关文件、不动构建产物；涉及功能链路行为时先查 memory `pinel-feature-links` 对应条目
-4. 改完 `npm run compile` + `npm test` 全绿才可交付；Conventional Commits（feat/fix/refactor/docs/chore），一次一个完整变更，无 AI 署名
-5. 用户可见变更同步 README.md/CHANGELOG.md；结构/命令/架构约束变更同步本文件；新踩坑沉淀写 memory（不进本文件）
-6. 范围纪律：v0.2+ 功能（Plan Mode、edit diff 预览、@提及、文件内 rewind）非明确需求不得提前实现；既有提前实现项清单见 memory `pinel-feature-links` 末条
+1. 动手前先理解，RPC 行为查 protocol.ts 头注释与 pi docs/rpc.md，不凭想象写协议
+2. 改完后按需测试，中大改动 `npm run compile` + `npm test` 全绿才可交付；Conventional Commits（feat/fix/refactor/docs/chore），一次一个完整变更，无 AI 署名
+3. 用户可见变更同步 README.md/CHANGELOG.md；结构/命令/架构约束变更同步本文件；
