@@ -18,6 +18,9 @@
  * 说明：token/cost 不在此推送（宿主 get_session_stats 权威兑底，防双源漂移）；
  * compact/fork/rename/switch 已有原生 RPC 命令，本插件不重复实现。
  */
+import { buildSnapshot, buildTree } from "./extensions/snapshot.js";
+import { setPinelCtx } from "./extensions/push-target.js";
+
 const VERSION = "0.1.0";
 
 export default function (pi: any) {
@@ -47,6 +50,7 @@ export default function (pi: any) {
   for (const name of PUSH_EVENTS) {
     pi.on(name, (_ev: any, ctx: any) => {
       if (ctx?.mode !== "rpc") return;
+      setPinelCtx(ctx); // 供 pinel-workflows 生命周期推送复用
       pushState(ctx);
     });
   }
@@ -54,6 +58,7 @@ export default function (pi: any) {
   pi.registerCommand("pinel-state", {
     description: "推送当前会话状态快照到 Pinel 面板",
     handler: async (_args: any, ctx: any) => {
+      setPinelCtx(ctx);
       pushState(ctx);
       ctx.ui.notify(`Pinel: 状态已刷新（插件 ${VERSION}）`, "info");
       return "pushed";
@@ -65,6 +70,7 @@ export default function (pi: any) {
     handler: async (args: any, ctx: any) => {
       const target = typeof args === "string" ? args.trim() : "";
       if (!target) {
+        setPinelCtx(ctx);
         pushState(ctx);
         ctx.ui.notify("Pinel: 已推送会话树", "info");
         return "pushed";
@@ -74,6 +80,7 @@ export default function (pi: any) {
         ctx.ui.notify("Pinel: 导航已取消", "warning");
         return "cancelled";
       }
+      setPinelCtx(ctx);
       pushState(ctx);
       ctx.ui.notify("Pinel: 已导航到目标节点", "info");
       return "navigated";
@@ -81,71 +88,3 @@ export default function (pi: any) {
   });
 }
 
-/** 会话统计快照（防御聚合；结构未知字段一律容缺）。 */
-function buildSnapshot(ctx: any): object {
-  const sm = ctx?.sessionManager;
-  const entries = sm?.getEntries?.() ?? [];
-  let user = 0;
-  let assistant = 0;
-  let toolResult = 0;
-  for (const e of entries) {
-    const role = e?.role;
-    if (role === "user") user++;
-    else if (role === "assistant") assistant++;
-    else if (role === "toolResult") toolResult++;
-  }
-  const snap: Record<string, unknown> = {
-    v: 1,
-    messages: { user, assistant, toolResult, total: entries.length },
-  };
-  if (ctx?.model?.provider && ctx?.model?.id) {
-    snap.model = `${ctx.model.provider}/${ctx.model.id}`;
-  }
-  if (typeof ctx?.thinkingLevel === "string") {
-    snap.thinkingLevel = ctx.thinkingLevel;
-  }
-  if (typeof sm?.getLeafId?.() === "string") {
-    snap.leafId = sm.getLeafId();
-  }
-  if (typeof sm?.getSessionFile?.() === "string") {
-    snap.sessionFile = sm.getSessionFile();
-  }
-  return snap;
-}
-
-/** 当前分支链上的用户/assistant 消息节点（树导航目标）。 */
-function buildTree(ctx: any): object {
-  const sm = ctx?.sessionManager;
-  const entries = sm?.getEntries?.() ?? [];
-  const nodes: Record<string, unknown>[] = [];
-  for (const e of entries) {
-    const role = e?.role;
-    if (role !== "user" && role !== "assistant") continue;
-    if (typeof e?.id !== "string" || e.id.length === 0) continue;
-    const text = extractText(e?.content).slice(0, 80);
-    if (text.length === 0) continue;
-    nodes.push({
-      entryId: e.id,
-      role,
-      text,
-      timestamp: typeof e?.timestamp === "number" ? e.timestamp : undefined,
-    });
-  }
-  const tree: Record<string, unknown> = { v: 1, nodes };
-  if (typeof sm?.getLeafId?.() === "string") {
-    tree.leafId = sm.getLeafId();
-  }
-  return tree;
-}
-
-/** 消息 content（string | 块数组）→ 纯文本（非消息条目返回 ""）。 */
-function extractText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((b: any) => (b?.type === "text" && typeof b?.text === "string" ? b.text : ""))
-      .join(" ")
-      .trim();
-  }
-  return "";
-}
