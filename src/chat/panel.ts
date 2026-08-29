@@ -191,12 +191,6 @@ interface WebviewInstallCatalogGroupMessage {
   group: "pi-packages" | "rpiv-mono";
 }
 
-/** 会话树导航（发送 /pinel-tree <entryId> 控制消息；不乐观渲染）。 */
-interface WebviewPinelTreeNavigateMessage {
-  type: "pinelTreeNavigate";
-  entryId: string;
-}
-
 /** 手动压缩会话（原生 RPC compact；customInstructions 可选）。 */
 interface WebviewCompactMessage {
   type: "compact";
@@ -244,7 +238,6 @@ type WebviewInMessage =
   | WebviewGetCatalogStateMessage
   | WebviewInstallCatalogEntryMessage
   | WebviewInstallCatalogGroupMessage
-  | WebviewPinelTreeNavigateMessage
   | WebviewCompactMessage
   | WebviewSetCompactionThresholdMessage
   | WebviewSetExtensionEnabledMessage
@@ -433,10 +426,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "installPinelPlugin":
         void this.controller.installPinelPlugin();
-        break;
-      case "pinelTreeNavigate":
-        // 控制消息：宿主直接发 RPC prompt（/pinel-tree 扩展命令，pi 立即执行）
-        void this.controller.sendPrompt({ text: `/pinel-tree ${msg.entryId}`, control: true });
         break;
       case "compact":
         void this.controller.compact(msg.customInstructions);

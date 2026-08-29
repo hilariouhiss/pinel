@@ -70,7 +70,7 @@ function gitMarkers(git: NonNullable<SessionEnv["git"]>): string {
  * 左侧环境段（Maple Mono NF）：`folderName on  branch [!?↑↓]`（p10k 风格）；
  * 右侧指标段：消息计数、上下文占用/窗口、缓存读↑、缓存写↓、缓存命中率、成本$。
  * 纯展示组件；各元素经 title 提供悬浮语义。
- * （Tree 导航改双击 Esc 入口、手动压缩改设置面板 Compact now，2026-08-28 移除按钮。）
+ * （Tree 导航/双击 Esc 入口与 Fork 弹层重叠已移除、手动压缩改设置面板 Compact now，2026-08 移除按钮。）
  */
 export function SessionStatsBar({ stats, env, pinelState }: Props) {
   if (!stats) {

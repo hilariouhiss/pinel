@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelPluginState, PinelState, PinelTree, PinelWorkflow, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelPluginState, PinelState, PinelWorkflow, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
 import { ExtensionPopover } from "./components/ExtensionPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
 import { ForkPopover } from "./components/ForkPopover";
-import { PinelTreePopover } from "./components/PinelTreePopover";
 import { SessionStatsBar } from "./components/SessionStatsBar";
 import { WorkflowBar } from "./components/WorkflowBar";
 import { MessageView, userText, type ToolResultInfo } from "./components/MessageView";
@@ -40,8 +39,8 @@ const initialStatus: ChatStatus = {
 
 let noticeSeq = 0;
 
-/** 弹窗互斥：任一时刻只开一个（⚙ 设置面板 / 扩展管理 / 会话历史 / 分支选择器 / 会话树）。 */
-type PopoverKind = "config" | "session" | "fork" | "ext" | "model" | "thinking" | "tree" | null;
+/** 弹窗互斥：任一时刻只开一个（⚙ 设置面板 / 扩展管理 / 会话历史 / 分支选择器）。 */
+type PopoverKind = "config" | "session" | "fork" | "ext" | "model" | "thinking" | null;
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -64,7 +63,7 @@ export default function App() {
   const historyBtnRef = useRef<HTMLButtonElement>(null);
   /** 新会话按钮元素引用（锚定不需要，与 historyBtnRef 同组）。 */
   const newSessionBtnRef = useRef<HTMLButtonElement>(null);
-  /** 分支按钮元素引用（ForkPopover 锚定；双击 Esc 打开的会话树弹层同用此锚）。 */
+  /** 分支按钮元素引用（ForkPopover 锚定）。 */
   const forkBtnRef = useRef<HTMLButtonElement>(null);
   /** 扩展按钮元素引用（ExtensionPopover 锚定；按钮在 Composer footer 内渲染）。 */
   const extensionBtnRef = useRef<HTMLButtonElement>(null);
@@ -90,8 +89,6 @@ export default function App() {
   const [pinelState, setPinelState] = useState<PinelState | null>(null);
   /** pinel.workflow 工作流运行状态（rpiv-workflow 生命周期推送；null=无运行/会话已切）。 */
   const [pinelWorkflow, setPinelWorkflow] = useState<PinelWorkflow | null>(null);
-  /** pinel.tree 会话树（分支链消息节点；树选择器数据源）。 */
-  const [pinelTree, setPinelTree] = useState<PinelTree | null>(null);
   /** Pinel 插件安装态（扩展管理弹层安装区数据）。 */
   const [pinelPluginState, setPinelPluginState] = useState<PinelPluginState | null>(null);
   /** 会话信息条环境段（宿主 sessionEnv 推送；含文件夹名 + git 状态）。 */
@@ -252,7 +249,6 @@ export default function App() {
         setSessionEnv(msg.sessionEnv ?? null);
         setPinelState(msg.pinelState); // 插件推送缓存重放（webview 重建恢复）
         setPinelWorkflow(msg.pinelWorkflow);
-        setPinelTree(msg.pinelTree);
         setPinelPluginState(msg.pinelPluginState);
         setPendingUi(msg.pendingUi ?? []);
         setTodos(msg.todos ?? []);
@@ -350,7 +346,8 @@ export default function App() {
         setPinelWorkflow(msg.workflow);
         break;
       case "pinelTree":
-        setPinelTree(msg.tree);
+        // 会话树弹层已移除（双击 Esc 入口废除，与 Fork 弹层功能重叠）；
+        // 帧不再消费——宿主 pinel.tree 推送管线保留（插件集成面 + 测试钩子）
         break;
       case "pinelPluginState":
         setPinelPluginState(msg.state);
@@ -471,38 +468,6 @@ export default function App() {
     // 视口 → 重现）已并入 computeVisible（函数式 setState，无陈旧闭包）
     computeVisible();
   }, [computeVisible]);
-
-  // 双击 Esc 打开会话树弹层（Tree 按钮移除后的入口）。弹层打开时 Esc 被其
-  // capture 监听 stopPropagation，本监听收不到 → 不会在关弹层瞬间又开树。
-  // 门控：焦点在输入框（保护草稿/流式中断语义）或问卷活跃（容器级 Esc=放弃整卷）不触发。
-  useEffect(() => {
-    let lastEscAt = 0;
-    let lastKey = "";
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") {
-        lastKey = e.key; // 非 Esc 打断双击序列
-        return;
-      }
-      const now = Date.now();
-      const isDouble = lastKey === "Escape" && now - lastEscAt <= 350;
-      lastEscAt = now;
-      lastKey = "Escape";
-      if (!isDouble) {
-        return;
-      }
-      const el = document.activeElement;
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-        return;
-      }
-      if (questionnaire !== null) {
-        return;
-      }
-      lastEscAt = 0; // 重置，防三连 Esc 误触
-      setPopover((prev) => (prev === "tree" ? null : "tree"));
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [questionnaire]);
 
   const hasConversation = messages.length > 0 || streamBlocks.length > 0;
 
@@ -666,10 +631,10 @@ export default function App() {
           <button
             ref={forkBtnRef}
             className="chat-fork-btn"
-            title="Fork from a previous message — double-press Esc for session tree"
+            title="Fork from a previous message"
             aria-label="Fork from a previous message"
             aria-haspopup="dialog"
-            aria-expanded={popover === "fork" || popover === "tree"}
+            aria-expanded={popover === "fork"}
             onClick={openFork}
             disabled={switching}
             dangerouslySetInnerHTML={{ __html: forkIcon }}
@@ -841,11 +806,6 @@ export default function App() {
         anchor={popover === "fork" ? forkBtnRef.current : null}
         messages={forkMessages}
         switching={switching}
-        onClose={() => setPopover(null)}
-      />
-      <PinelTreePopover
-        open={popover === "tree"}
-        tree={pinelTree}
         onClose={() => setPopover(null)}
       />
       <ExtensionPopover
