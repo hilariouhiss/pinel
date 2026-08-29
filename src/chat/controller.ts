@@ -38,6 +38,7 @@ import {
 } from "../rpc/protocol";
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
 import { DEFAULT_RESERVE_TOKENS, parseSessionStats, percentToReserveTokens, reserveTokensToPercent } from "./session-stats";
+import { isDuplicateNotice } from "./notice-dedup";
 import { parsePinelState, parsePinelTree, type PinelStatePayload, type PinelTreePayload } from "./pinel-payload";
 import {
   PINEL_PACKAGE_SOURCE,
@@ -247,6 +248,8 @@ export class ChatController {
   private settledCount = 0;
   private restarting = false;
   private disposed = false;
+  /** 最近一条已展示通知（同文本同级别 300ms 窗口去重；pi 双重 emit 的扩展通知）。 */
+  private lastNotice: { level: "info" | "warning" | "error"; text: string; at: number } | null = null;
   private workspaceWatcher: vscode.Disposable;
   /** 会话信息开关配置监听（dispose 释放）。 */
   private configWatcher: vscode.Disposable;
@@ -2437,6 +2440,13 @@ export class ChatController {
   }
 
   private notice(level: "info" | "warning" | "error", text: string): void {
+    const now = Date.now();
+    if (isDuplicateNotice(this.lastNotice, level, text, now)) {
+      // 重复帧不打扰 UI，仅记入输出日志供诊断（pi 上游双重 emit）
+      this.output.appendLine(`[${level}] ${text} (dup)`);
+      return;
+    }
+    this.lastNotice = { level, text, at: now };
     this.fire({ type: "notice", level, text });
     this.output.appendLine(`[${level}] ${text}`);
   }
