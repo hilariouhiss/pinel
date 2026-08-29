@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
 import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelPluginState, PinelState, PinelTree, PinelWorkflow, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
@@ -116,6 +116,18 @@ export default function App() {
   const [notices, setNotices] = useState<Array<{ id: number; level: string; text: string }>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  /** 用户滚动意图标记：wheel/pointer/touch 后短窗内（400ms）到达的 scroll 事件才算用户滚动。
+   *  浏览器 scroll anchoring 与程序性滚动（自动跟随）同样产生 scroll 事件，
+   *  若按位置重算 stickToBottom 会被锚定补偿误关（长文本回流/思考卡触顶时停止跟随）。 */
+  const userScrollIntent = useRef(false);
+  const intentTimer = useRef<number | undefined>(undefined);
+  const markUserScrollIntent = useCallback(() => {
+    userScrollIntent.current = true;
+    window.clearTimeout(intentTimer.current);
+    intentTimer.current = window.setTimeout(() => {
+      userScrollIntent.current = false;
+    }, 400);
+  }, []);
   /** 悬浮条隐藏态：点击滚回后隐藏，上滚离开该消息/滚到底部时重现（computeVisible 内判定）。 */
   const [roundBarHidden, setRoundBarHidden] = useState(false);
 
@@ -410,12 +422,20 @@ export default function App() {
   }, []);
 
   // 自动滚动到底部（用户上滚查看历史时不打扰）；pendingUi 新卡片出现在
-  // 流末尾时也滚动，确保对话框可见
-  useEffect(() => {
+  // 流末尾时也滚动，确保对话框可见。useLayoutEffect：paint 前完成滚动，
+  // 无中间帧错位；rAF 兕底：图片/字体等异步布局在首帧后仍可能增长，下一帧再校正。
+  useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el && stickToBottom.current) {
-      el.scrollTop = el.scrollHeight;
+    if (!el || !stickToBottom.current) {
+      return;
     }
+    el.scrollTop = el.scrollHeight;
+    const raf = requestAnimationFrame(() => {
+      if (stickToBottom.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+    return () => cancelAnimationFrame(raf);
   }, [messages, streamBlocks, tools, pendingUi]);
 
   // 消息列表变化（新回合/快照替换）后按当前滚动位置重算悬浮条显示目标。
@@ -442,7 +462,10 @@ export default function App() {
     if (!el) {
       return;
     }
-    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    // 仅用户滚动更新跟随态；锚定补偿/程序性滚动不碰 stickToBottom（见 markUserScrollIntent）
+    if (userScrollIntent.current) {
+      stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    }
     // 悬浮条随视口切换显示上下文用户消息；隐藏态重现判定（应显示消息离开
     // 视口 → 重现）已并入 computeVisible（函数式 setState，无陈旧闭包）
     computeVisible();
@@ -687,7 +710,15 @@ export default function App() {
           <div className="session-boot-text">Switching session…</div>
         </div>
       )}
-      <div className="pinel-scroll" ref={scrollRef} tabIndex={-1} onScroll={onScroll}>
+      <div
+        className="pinel-scroll"
+        ref={scrollRef}
+        tabIndex={-1}
+        onScroll={onScroll}
+        onWheel={markUserScrollIntent}
+        onPointerDown={markUserScrollIntent}
+        onTouchStart={markUserScrollIntent}
+      >
         {/* 最近回合悬浮条：高 0 sticky 锚点钉在滚动视口顶部（不随内容滚走），
             宽度 = 滚动内容区宽 → 与消息卡片结构级严格同宽（见 styles.css
             .recent-round-anchor） */}

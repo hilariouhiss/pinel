@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage, ContentBlock, StreamBlock, SubagentCardInfo, ToolCard } from "../types";
 import { Markdown } from "./Markdown";
 // SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
@@ -327,8 +327,19 @@ function BlockView({
 function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
   const [open, setOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
-  /** 思考体跟随最新：用户上滚后关闭，滚回底部恢复（阈值对齐外层 stickToBottom）。 */
+  /** 思考体跟随最新：仅用户滚动关闭，滚回底部恢复（阈值对齐外层 stickToBottom）。 */
   const followRef = useRef(true);
+  /** 用户滚动意图标记：锚定补偿/程序性滚动产生的 scroll 事件不关闭跟随
+   *  （长思考触顶时锚定会把思考体拖离底部，按位置重算会被误关——与外层同机制）。 */
+  const intentRef = useRef(false);
+  const intentTimerRef = useRef<number | undefined>(undefined);
+  const markIntent = () => {
+    intentRef.current = true;
+    window.clearTimeout(intentTimerRef.current);
+    intentTimerRef.current = window.setTimeout(() => {
+      intentRef.current = false;
+    }, 400);
+  };
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   // 状态驱动自动开合：思考开始（live 转真）自动展开，思考完毕自动收起；
   // 手动 toggle 在 live 不变时有效（effect 不重跑，尊重用户操作）
@@ -340,19 +351,27 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
     }
   }, [live]);
   // 流式增长时思考体滚到最新（到最大高度后卡片不再增高，新内容在内部滚动区）；
-  // 用户手动上滚（followRef 关闭）后停止，滚回底部恢复
-  useEffect(() => {
+  // 仅用户滚动关闭跟随，滚回底部恢复。useLayoutEffect + rAF：paint 前完成，
+  // 异步布局增长后下一帧校正（与消息区自动滚动同机制）
+  useLayoutEffect(() => {
     if (!live || !open) {
       return;
     }
     const el = bodyRef.current;
-    if (el && followRef.current) {
-      el.scrollTop = el.scrollHeight;
+    if (!el || !followRef.current) {
+      return;
     }
+    el.scrollTop = el.scrollHeight;
+    const raf = requestAnimationFrame(() => {
+      if (followRef.current && bodyRef.current) {
+        bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+      }
+    });
+    return () => cancelAnimationFrame(raf);
   }, [text, live, open]);
   const onBodyScroll = () => {
     const el = bodyRef.current;
-    if (!el) {
+    if (!el || !intentRef.current) {
       return;
     }
     followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
@@ -364,7 +383,14 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
         Thinking{live ? "…" : ""}
         {text.length > 0 && !open && <span className="thinking-preview">{text.slice(0, 60)}</span>}
       </summary>
-      <div className="msg-text thinking-body" ref={bodyRef} onScroll={onBodyScroll}>
+      <div
+        className="msg-text thinking-body"
+        ref={bodyRef}
+        onScroll={onBodyScroll}
+        onWheel={markIntent}
+        onPointerDown={markIntent}
+        onTouchStart={markIntent}
+      >
         <Markdown content={text} />
       </div>
       {/* 数据直拷思考全文（不受展开态/预览截断影响）；流式中不提供（半截无意义） */}
