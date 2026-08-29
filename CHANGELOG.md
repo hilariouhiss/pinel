@@ -6,6 +6,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### Added
+
+- 插件目录与一键安装（Catalog 视图）：扩展管理弹窗新增 Catalog 视图，内置 pi-packages（9 包 @gotgenes）与 rpiv-mono（11 包 @juicesharp）两仓插件目录；每项描述 + 兼容性徽标（TUI only/limited 置灰标注原因），一键 `pi install npm:...` 全局安装（非静默、可重试、已装态回显）；按组批量——rpiv「Install default set」（rpiv-todo/ask-user-question/voice 三包）与 pi-packages「Install all」（git 整仓 9 包）；安装中按钮禁用，完成后 Reload 确认重启生效。兼容性判定来自 20 插件 `pi --mode rpc` 实测矩阵（计划文档 §7.5）
+
 ### Changed
 
 - 最近回合悬浮条随滚动切换显示上下文用户消息：底部钉住最近一条；上滚越过某条消息顶部即切换为显示上一条（部分可见即切换）；越过最早消息顶部则隐藏；点击滚回当前显示的消息；规则抽纯函数 roundbar-rule.ts
