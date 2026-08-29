@@ -8,6 +8,7 @@ import checkIcon from "lucide-static/icons/check.svg";
 import xIcon from "lucide-static/icons/x.svg";
 import copyIcon from "lucide-static/icons/copy.svg";
 import { vscode } from "../index";
+import { useSmoothText } from "../use-smooth-text";
 
 /** toolResult 消息解析结果（webview 内部类型，非宿主协议镜像）。 */
 export interface ToolResultInfo {
@@ -292,9 +293,6 @@ function BlockView({
   mainModelName: string | null;
   mainThinkingLevel: string | null;
 }) {
-  /** 正文区块复制（DOM 提取，所见即所得；不含兄弟区块如 thinking/工具卡）。 */
-  const textRef = useRef<HTMLDivElement>(null);
-  const [textMenuPos, setTextMenuPos] = useState<{ x: number; y: number } | null>(null);
   if (kind === "thinking") {
     return <ThinkingBlock text={text} live={live} />;
   }
@@ -314,12 +312,21 @@ function BlockView({
     }
     return <ToolCallCard toolCall={toolCall} live={live} toolCard={toolCard} result={result} />;
   }
+  return <TextBlock text={text} live={live} />;
+}
+
+/** 正文区块：流式中纯文本 + 平滑揭示，完成态 Markdown（快照重放即完成态）。 */
+function TextBlock({ text, live }: { text: string; live?: boolean }) {
+  const displayText = useSmoothText(text, live === true);
+  /** 正文区块复制（DOM 提取，所见即所得；不含兄弟区块如 thinking/工具卡）。 */
+  const textRef = useRef<HTMLDivElement>(null);
+  const [textMenuPos, setTextMenuPos] = useState<{ x: number; y: number } | null>(null);
   return (
     <div className="msg-text copy-target" ref={textRef} onContextMenu={(e) => setTextMenuPos(openCardMenu(e))}>
-      {/* 流式中纯文本渲染：Markdown 全量重解析是逐 delta 重绘卡顿主源；
+      {/* 流式中纯文本渲染 + 平滑揭示：Markdown 全量重解析是逐 delta 重绘卡顿主源；
           message_end 后切回 Markdown（快照重放即完成态） */}
-      {live ? <span className="msg-text-live">{text}</span> : <Markdown content={text} />}
-      {live && text.length > 0 && <span className="caret" />}
+      {live ? <span className="msg-text-live">{displayText}</span> : <Markdown content={text} />}
+      {live && displayText.length > 0 && <span className="caret" />}
       {!live && <CopyButton targetRef={textRef} />}
       <CardContextMenu pos={textMenuPos} targetRef={textRef} onClose={() => setTextMenuPos(null)} />
     </div>
@@ -327,6 +334,7 @@ function BlockView({
 }
 
 function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
+  const displayText = useSmoothText(text, live === true);
   const [open, setOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   /** 思考体跟随最新：仅用户滚动关闭，滚回底部恢复（阈值对齐外层 stickToBottom）。 */
@@ -370,7 +378,7 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
       }
     });
     return () => cancelAnimationFrame(raf);
-  }, [text, live, open]);
+  }, [displayText, live, open]);
   const onBodyScroll = () => {
     const el = bodyRef.current;
     if (!el || !intentRef.current) {
@@ -393,8 +401,15 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
         onPointerDown={markIntent}
         onTouchStart={markIntent}
       >
-        {/* 流式中纯文本（同正文：免 Markdown 逐 delta 重解析） */}
-        {live ? <span className="msg-text-live">{text}</span> : <Markdown content={text} />}
+        {/* 流式中纯文本 + 平滑揭示（同正文：免 Markdown 逐 delta 重解析） */}
+        {live ? (
+          <span className="msg-text-live">
+            {displayText}
+            {displayText.length > 0 && <span className="caret" />}
+          </span>
+        ) : (
+          <Markdown content={text} />
+        )}
       </div>
       {/* 数据直拷思考全文（不受展开态/预览截断影响）；流式中不提供（半截无意义） */}
       {!live && <CopyButton getText={() => text} />}
@@ -421,6 +436,7 @@ function ToolCallCard({
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const args = toolCall?.arguments ?? "";
+  const displayArgs = useSmoothText(args, live === true);
   const prettyArgs = useMemo(() => {
     if (!args) {
       return "";
@@ -431,6 +447,8 @@ function ToolCallCard({
       return args;
     }
   }, [args]);
+  /** 流式中显示揭示中的原始参数（免每帧 JSON.parse 重试），完成后切换 pretty。 */
+  const shownArgs = live ? displayArgs : prettyArgs;
   const output = toolCard?.output ?? result?.text ?? "";
   const status: "running" | "done" | "error" =
     toolCard?.status ?? (result ? (result.isError ? "error" : "done") : live ? "running" : "done");
@@ -445,7 +463,7 @@ function ToolCallCard({
   // 普通工具 wrench；subagent（无实时卡片时按工具名）bot——判定用兕底后的 toolName，
   // name 缺失时图标与卡片风格保持一致
   const isSubagent = toolName === "subagent";
-  const preview = output.trim() ? output : args;
+  const preview = output.trim() ? output : shownArgs;
   /** 数据直拷：args（pretty JSON）+ 输出，不经过截断预览/卡片文字。 */
   const copyToolText = () =>
     [prettyArgs, output.trim()]
@@ -472,7 +490,7 @@ function ToolCallCard({
       </button>
       {open && (
         <div className="toolcard-body">
-          {args && <pre className="toolchip-args">{prettyArgs}</pre>}
+          {args && <pre className="toolchip-args">{shownArgs}</pre>}
           {output.trim() && <pre className="toolresult-body">{output}</pre>}
         </div>
       )}
