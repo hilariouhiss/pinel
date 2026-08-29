@@ -1,21 +1,34 @@
-/** 会话统计快照（防御聚合；结构未知字段一律容缺）。 */
-export function buildSnapshot(ctx: any): object {
-  const sm = ctx?.sessionManager;
-  const entries = sm?.getEntries?.() ?? [];
+/** 角色计数（user/assistant/toolResult；meta 条目不计入，total 与三桶之和一致）。 */
+export interface MessageCounts {
+  user: number;
+  assistant: number;
+  toolResult: number;
+  total: number;
+}
+
+export function countRoles(entries: ReadonlyArray<any>): MessageCounts {
   let user = 0;
   let assistant = 0;
   let toolResult = 0;
-  // pi 会话条目：message 条目的 role 嵌套在 entry.message 下（顶层无 role）。
   for (const e of entries) {
     const role = e?.message?.role;
     if (role === "user") user++;
     else if (role === "assistant") assistant++;
     else if (role === "toolResult") toolResult++;
   }
+  return { user, assistant, toolResult, total: user + assistant + toolResult };
+}
+
+/** 会话统计快照（防御聚合；结构未知字段一律容缺）。counts 可选——调用方已
+ *  按 append-only 签名记忆化计数时传入，避免重复遍历。 */
+export function buildSnapshot(ctx: any, counts?: MessageCounts): object {
+  const sm = ctx?.sessionManager;
+  const entries = sm?.getEntries?.() ?? [];
+  const messages = counts ?? countRoles(entries);
   const snap: Record<string, unknown> = {
     v: 1,
     // total 与三桶之和一致，保证 UI 数字与悬浮明细不漂移（meta 条目不计入）。
-    messages: { user, assistant, toolResult, total: user + assistant + toolResult },
+    messages: { ...messages },
   };
   if (ctx?.model?.provider && ctx?.model?.id) {
     snap.model = `${ctx.model.provider}/${ctx.model.id}`;
