@@ -2441,6 +2441,32 @@ suite("Pinel 集成测试（假 pi）", () => {
       await fs.promises.rm(agentDir, { recursive: true, force: true });
     });
 
+    test("getCatalogState：20 项目录 + 安装态按 packages identity 命中", async function () {
+      this.timeout(30000);
+      await fs.promises.writeFile(
+        path.join(agentDir, "settings.json"),
+        JSON.stringify({
+          packages: ["npm:@juicesharp/rpiv-todo", "npm:other"],
+        }),
+      );
+      const entries = await api.getCatalogState();
+      assert.strictEqual(entries.length, 20);
+      const groups = { "pi-packages": 0, "rpiv-mono": 0 };
+      for (const e of entries) {
+        assert.ok(e.installSpec.startsWith("npm:@"), e.installSpec);
+        assert.ok(["ok", "limited", "tui-only"].includes(e.compat));
+        assert.ok(["installed", "available"].includes(e.state));
+        groups[e.group] += 1;
+      }
+      assert.deepStrictEqual(groups, { "pi-packages": 9, "rpiv-mono": 11 });
+      const byId = new Map(entries.map((e) => [e.id, e]));
+      assert.strictEqual(byId.get("rpiv-todo")?.state, "installed"); // 字符串条目命中
+      assert.strictEqual(byId.get("rpiv-btw")?.state, "available");
+      assert.strictEqual(byId.get("rpiv-voice")?.compat, "tui-only");
+      assert.strictEqual(byId.get("rpiv-voice")?.defaultSet, true);
+      assert.strictEqual(byId.get("rpiv-btw")?.defaultSet, undefined);
+    });
+
     test("getExtensionList：本地扩展 + packages 合并（enabled/filtered/scope 判定）", async function () {
       this.timeout(30000);
       await fs.promises.writeFile(path.join(agentDir, "extensions", "foo.ts"), "export default () => {}");

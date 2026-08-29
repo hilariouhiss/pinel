@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { confirmExtensionReload, confirmExtensionUninstall, confirmSessionDelete, type ChatController, type OutMessage } from "./controller";
+import { installSpecsForGroup } from "./catalog";
 
 interface WebviewPromptMessage {
   type: "sendPrompt";
@@ -168,6 +169,23 @@ interface WebviewInstallPinelPluginMessage {
   type: "installPinelPlugin";
 }
 
+/** 拉取插件目录（打开目录视图时）。 */
+interface WebviewGetCatalogStateMessage {
+  type: "getCatalogState";
+}
+
+/** 目录单包安装（spec = 目录项 installSpec，宿主仅透传；显式按钮触发非静默）。 */
+interface WebviewInstallCatalogEntryMessage {
+  type: "installCatalogEntry";
+  spec: string;
+}
+
+/** 目录按组默认集安装（pi-packages = git 整仓；rpiv-mono = 默认集三包）。 */
+interface WebviewInstallCatalogGroupMessage {
+  type: "installCatalogGroup";
+  group: "pi-packages" | "rpiv-mono";
+}
+
 /** 会话树导航（发送 /pinel-tree <entryId> 控制消息；不乐观渲染）。 */
 interface WebviewPinelTreeNavigateMessage {
   type: "pinelTreeNavigate";
@@ -217,6 +235,9 @@ type WebviewInMessage =
   | WebviewGetFileListMessage
   | WebviewGetExtensionListMessage
   | WebviewInstallPinelPluginMessage
+  | WebviewGetCatalogStateMessage
+  | WebviewInstallCatalogEntryMessage
+  | WebviewInstallCatalogGroupMessage
   | WebviewPinelTreeNavigateMessage
   | WebviewCompactMessage
   | WebviewSetCompactionThresholdMessage
@@ -383,6 +404,22 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         this.lastExtensionView = msg.view ?? "all";
         void this.postExtensionList();
         break;
+      case "getCatalogState":
+        void this.postCatalogState();
+        break;
+      case "installCatalogEntry":
+      case "installCatalogGroup":
+        void (async () => {
+          const specs =
+            msg.type === "installCatalogEntry" ? [msg.spec] : installSpecsForGroup(msg.group);
+          await this.controller.installCatalogEntries(specs);
+          await this.postExtensionList();
+          await this.postCatalogState();
+          if (await confirmExtensionReload()) {
+            await this.controller.restart();
+          }
+        })();
+        break;
       case "installPinelPlugin":
         void this.controller.installPinelPlugin();
         break;
@@ -444,6 +481,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         items,
         projectAvailable: (vscode.workspace.workspaceFolders?.length ?? 0) > 0,
       });
+    } catch {
+      // 扫描异常：不弹 notice（弹层空列表即可），仅忽略
+    }
+  }
+
+  /** 扫描插件目录并回发（目录视图数据源；每次打开/安装后实时扫描）。 */
+  private async postCatalogState(): Promise<void> {
+    try {
+      const entries = await this.controller.getCatalogState();
+      this.post({ type: "catalogState", entries });
     } catch {
       // 扫描异常：不弹 notice（弹层空列表即可），仅忽略
     }

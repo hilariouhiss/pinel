@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { ChatController, type ChatStatus, type SessionEnv, type ToolCard } from "./chat/controller";
+import { ChatController, type CatalogItemState, type ChatStatus, type SessionEnv, type ToolCard } from "./chat/controller";
 import type { SessionStatsData } from "./rpc/protocol";
 import { ChatPanelProvider } from "./chat/panel";
 import { SessionHistoryProvider, revealChatView } from "./chat/session-history-provider";
@@ -93,6 +93,10 @@ export interface PinelTestApi {
   compact(customInstructions?: string): Promise<void>;
   /** 一键安装 Pinel 插件（spawn pi install npm:@hilariouhiss/pinel）。 */
   installPinelPlugin(): Promise<void>;
+  /** 插件目录状态（20 项 + 每项安装态；纯文件扫描不依赖 pi 进程）。 */
+  getCatalogState(): Promise<CatalogItemState[]>;
+  /** 目录安装（spawn pi install <spec> 逐个执行；测试勿直调——会写真实全局 settings）。 */
+  installCatalogEntries(specs: string[]): Promise<void>;
   /** 刷新 Pinel 插件安装态（settings.json 检测；测试断言用）。 */
   refreshPinelPluginState(): Promise<void>;
   /** 最近一次 pinel.state 推送缓存（null=未收到）。 */
@@ -265,6 +269,8 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     setShowSessionStats: (enabled: boolean) => ctrl.setShowSessionStats(enabled),
     compact: (customInstructions?: string) => ctrl.compact(customInstructions),
     installPinelPlugin: () => ctrl.installPinelPlugin(),
+    getCatalogState: () => ctrl.getCatalogState(),
+    installCatalogEntries: (specs) => ctrl.installCatalogEntries(specs),
     refreshPinelPluginState: () => ctrl.refreshPinelPluginState(),
     getPinelStateCache: () => ctrl.getPinelStateCache(),
     getPinelTreeCache: () => ctrl.getPinelTreeCache(),

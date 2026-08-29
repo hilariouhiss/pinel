@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelPluginState, PinelState, PinelTree, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelPluginState, PinelState, PinelTree, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
@@ -74,7 +74,10 @@ export default function App() {
   /** 扩展列表（getExtensionList 响应填充；打开时拉取，启停/卸载后宿主重发）。 */
   const [extensions, setExtensions] = useState<ExtensionItem[]>([]);
   /** 扩展弹层当前视图（All/Global/Project 切换；切换时重拉列表）。 */
-  const [extensionView, setExtensionView] = useState<ExtensionView>("all");
+  const [extensionView, setExtensionView] = useState<ExtensionView | "catalog">("all");
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  /** 安装中的 spec（防重复点击；catalogState 刷新时清除）。 */
+  const [installing, setInstalling] = useState<Set<string>>(new Set());
   /** 是否有 workspace（project 视图可用性提示）。 */
   const [extensionProjectAvailable, setExtensionProjectAvailable] = useState(true);
   /** 会话历史列表（header 弹层数据；getSessionList 响应填充）。 */
@@ -344,6 +347,10 @@ export default function App() {
         setExtensions(msg.items);
         setExtensionProjectAvailable(msg.projectAvailable);
         break;
+      case "catalogState":
+        setCatalog(msg.entries);
+        setInstalling(new Set()); // 安装回执已到：清除 busy 标记
+        break;
       case "triggerEditPrompt":
         setEditPromptTrigger((v) => v + 1);
         break;
@@ -532,17 +539,23 @@ export default function App() {
     vscode.postMessage({ type: "getForkMessages" });
   };
 
-  // 扩展管理弹层：打开时按当前视图拉取列表（每次打开实时扫描）
+  // 扩展管理弹层：打开时按当前视图拉取列表（每次打开实时扫描）+ 目录状态
   const openExtensions = () => {
     setPopover((prev) => (prev === "ext" ? null : "ext")); // 已开则关闭（toggle）
     setExtensions([]);
-    vscode.postMessage({ type: "getExtensionList", view: extensionView });
+    // catalog 为本地视图：宿主按 all 刷新扩展列表（背景），目录状态单独拉
+    vscode.postMessage({ type: "getExtensionList", view: extensionView === "catalog" ? "all" : extensionView });
+    vscode.postMessage({ type: "getCatalogState" });
   };
 
-  // 扩展弹层视图切换：更新本地状态 + 重拉对应视图列表
-  const changeExtensionView = (view: ExtensionView) => {
+  // 扩展弹层视图切换：catalog 本地视图只拉目录；其余发宿主按视图重拉
+  const changeExtensionView = (view: ExtensionView | "catalog") => {
     setExtensionView(view);
-    vscode.postMessage({ type: "getExtensionList", view });
+    if (view === "catalog") {
+      vscode.postMessage({ type: "getCatalogState" });
+    } else {
+      vscode.postMessage({ type: "getExtensionList", view });
+    }
   };
 
   // 启停扩展：发 setExtensionEnabled（宿主执行后重发列表 + reload 提示）
@@ -792,7 +805,21 @@ export default function App() {
         view={extensionView}
         projectAvailable={extensionProjectAvailable}
         pinelPluginState={pinelPluginState}
+        catalog={catalog}
+        installing={installing}
         onInstallPinelPlugin={() => vscode.postMessage({ type: "installPinelPlugin" })}
+        onInstallCatalogEntry={(spec) => {
+          setInstalling((prev) => new Set(prev).add(spec));
+          vscode.postMessage({ type: "installCatalogEntry", spec });
+        }}
+        onInstallCatalogGroup={(group, specs) => {
+          setInstalling((prev) => {
+            const next = new Set(prev);
+            for (const s of specs) next.add(s);
+            return next;
+          });
+          vscode.postMessage({ type: "installCatalogGroup", group });
+        }}
         onChangeView={changeExtensionView}
         onToggle={toggleExtension}
         onUninstall={uninstallExtension}

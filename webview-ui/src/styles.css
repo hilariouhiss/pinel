@@ -2167,6 +2167,76 @@ body {
   opacity: 1;
 }
 
+/* 插件目录（Catalog 视图） */
+.catalog-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.catalog-group-install {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  background: none;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.catalog-group-install:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.catalog-item .catalog-item-desc {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.catalog-item-install {
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  background: none;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.catalog-item-install:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.catalog-item-install:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.catalog-item-installed {
+  flex: none;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  padding: 2px 10px;
+}
+
+.extension-item-badge.compat-limited {
+  background: var(--vscode-badge-background, var(--vscode-button-background));
+  opacity: 0.75;
+}
+
+.extension-item-badge.compat-tui-only {
+  background: var(--vscode-inputValidation-warningBackground, var(--vscode-badge-background));
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-badge-foreground));
+}
+
 /* ------------------------------------------------------------ 会话历史 */
 .history-root {
   display: flex;

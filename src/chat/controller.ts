@@ -70,6 +70,10 @@ import {
   type ExtensionView,
   writeSettings,
 } from "./extensions";
+import { catalogInstallState, getCatalog, installedIdentities, type CatalogEntry } from "./catalog";
+
+/** 目录项 + 安装态（webview 协议镜像；字段定义见 webview-ui/src/types.ts）。 */
+export type CatalogItemState = CatalogEntry & { state: "installed" | "available" };
 import {
   inputResponseFor,
   parseQuestionnaireAnswer,
@@ -151,6 +155,7 @@ export type OutMessage =
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "forkMessages"; messages: ForkMessage[] }
   | { type: "extensionList"; items: ExtensionItem[]; projectAvailable: boolean }
+  | { type: "catalogState"; entries: CatalogItemState[] }
   | { type: "pinelState"; state: PinelStatePayload }
   | { type: "pinelTree"; tree: PinelTreePayload }
   | { type: "pinelPluginState"; state: PinelPluginState }
@@ -1537,6 +1542,48 @@ export class ChatController {
       this.notice("info", "Pinel plugin installed. Restart pi to activate it.");
     } catch (err) {
       this.notice("error", `Failed to install Pinel plugin: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * 插件目录状态（目录项 + 每项安装态）。安装态 = 全局 + 项目 packages 的 identity
+   * 并集（已装优先于 compat 标注）；settings 损坏/缺失按未安装处理（getExtensionList 同策略）。
+   */
+  async getCatalogState(): Promise<CatalogItemState[]> {
+    const agentDir = defaultAgentDir();
+    const root = this.workspaceRoot;
+    const projectDir = root ? projectConfigDir(root) : undefined;
+    const installed = new Set<string>();
+    const settingsPaths = [path.join(agentDir, "settings.json")];
+    if (projectDir) {
+      settingsPaths.push(path.join(projectDir, "settings.json"));
+    }
+    for (const settingsPath of settingsPaths) {
+      try {
+        const settings = await readSettings(settingsPath);
+        for (const id of installedIdentities(settings.packages)) {
+          installed.add(id);
+        }
+      } catch {
+        // settings.json 损坏/缺失：该 scope 按无包处理（不阻断目录）
+      }
+    }
+    return getCatalog().map((e) => ({ ...e, state: catalogInstallState(e, installed) }));
+  }
+
+  /**
+   * 目录安装（显式按钮触发，非静默）：逐个 spawn `pi install <spec>`（全局 settings，
+   * 120s 超时对齐 installPinelPlugin 先例；顺序执行防 settings.json 并发写竞态）。
+   * 失败 notice（可重试）；成功后由面板层刷新列表 + Reload 确认流。
+   */
+  async installCatalogEntries(specs: string[]): Promise<void> {
+    try {
+      for (const spec of specs) {
+        await runPiCommand(this.resolvePiCommand(), ["install", spec], defaultAgentDir(), 120000);
+      }
+      this.notice("info", `Installed ${specs.length} extension${specs.length === 1 ? "" : "s"}. Restart pi to activate.`);
+    } catch (err) {
+      this.notice("error", `Failed to install extension: ${(err as Error).message}`);
     }
   }
   /**

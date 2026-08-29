@@ -189,6 +189,22 @@ export interface ExtensionItem {
   inherited?: boolean;
 }
 
+/** 插件目录兼容性判定（宿主 catalog 镜像）。 */
+export type CatalogCompat = "ok" | "limited" | "tui-only";
+
+/** 插件目录项（含安装态；宿主 CatalogItemState 镜像）。 */
+export interface CatalogItem {
+  id: string;
+  name: string;
+  group: "pi-packages" | "rpiv-mono";
+  description: string;
+  installSpec: string;
+  compat: CatalogCompat;
+  compatNote?: string;
+  defaultSet?: boolean;
+  state: "installed" | "available";
+}
+
 /** 会话统计（宿主 parseSessionStats 镜像；contextUsage.tokens/percent 可为 null）。 */
 export interface SessionStats {
   sessionFile?: string;
@@ -272,6 +288,7 @@ export type HostMessage =
   | { type: "fileList"; items: FileItem[]; truncated: boolean }
   | { type: "forkMessages"; messages: ForkMessageItem[] }
   | { type: "extensionList"; items: ExtensionItem[]; projectAvailable: boolean }
+  | { type: "catalogState"; entries: CatalogItem[] }
   | { type: "pinelState"; state: PinelState }
   | { type: "pinelTree"; tree: PinelTree }
   | { type: "pinelPluginState"; state: PinelPluginState }
