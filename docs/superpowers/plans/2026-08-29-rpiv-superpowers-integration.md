@@ -673,11 +673,11 @@ export const spBuild = defineWorkflow({
 	edges: {
 		brainstorming: "gate-spec",
 		"gate-spec": match("decision",
-			{ approved: "writing-plans", revise: "brainstorming", abort: "stop" },
+			{ "writing-plans": "approved", brainstorming: "revise", stop: "abort" },
 			{ fallback: "stop" }),
 		"writing-plans": "gate-plan",
 		"gate-plan": match("decision",
-			{ approved: "executing-plans", revise: "writing-plans", abort: "stop" },
+			{ "executing-plans": "approved", "writing-plans": "revise", stop: "abort" },
 			{ fallback: "stop" }),
 		"executing-plans": "verification-before-completion",
 		"verification-before-completion": "finishing-a-development-branch",
@@ -708,7 +708,7 @@ export const spFix = defineWorkflow({
 	edges: {
 		"systematic-debugging": "gate-diagnosis",
 		"gate-diagnosis": match("decision",
-			{ approved: "test-driven-development", revise: "systematic-debugging", abort: "stop" },
+			{ "test-driven-development": "approved", "systematic-debugging": "revise", stop: "abort" },
 			{ fallback: "stop" }),
 		"test-driven-development": "verification-before-completion",
 		"verification-before-completion": "finishing-a-development-branch",
