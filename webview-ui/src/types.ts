@@ -251,6 +251,14 @@ export interface PinelTree {
 /** Pinel 插件（npm 包）安装态。 */
 export type PinelPluginState = "installed" | "offer" | "removed";
 
+/** ponytail 状态（宿主 parsePonytailStatus 产物镜像；statusKey "ponytail" 帧）。 */
+export interface PonytailStatus {
+  /** 实心点=激活（agent 运行中）；空心点=已启用空闲。 */
+  active: boolean;
+  /** 当前档位（lite/full/ultra/off）。 */
+  mode: string;
+}
+
 /** pinel.state 快照（插件推送 → 宿主防御解析 → 广播）。 */
 export interface PinelState {
   v: 1;
@@ -274,7 +282,7 @@ export interface PinelWorkflow {
 }
 
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelWorkflow: PinelWorkflow | null; pinelPluginState: PinelPluginState | null }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelWorkflow: PinelWorkflow | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "tool"; tool: ToolCard }
@@ -305,6 +313,7 @@ export type HostMessage =
   | { type: "pinelTree"; tree: PinelTree }
   | { type: "pinelWorkflow"; workflow: PinelWorkflow | null }
   | { type: "pinelPluginState"; state: PinelPluginState }
+  | { type: "ponytailStatus"; status: PonytailStatus }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {

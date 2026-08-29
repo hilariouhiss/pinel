@@ -949,7 +949,8 @@ async function handleCommand(record) {
         break;
       }
       if (text.includes("PINELUI")) {
-        // 模拟 Pinel 插件推送：setStatus/setWidget 帧（含非 pinel 干扰帧与坏 JSON）
+        // 模拟 Pinel 插件推送：setStatus/setWidget 帧（含 ponytail 状态帧、
+        // ponytail 坏帧与 pinel.state 坏 JSON 干扰）
         out({
           type: "extension_ui_request",
           id: "pinel-status-1",
@@ -984,6 +985,14 @@ async function handleCommand(record) {
           method: "setStatus",
           statusKey: "ponytail",
           statusText: "loaded",
+        });
+        // ponytail 状态帧（真实形态：ANSI 装饰 + 实心点 + 档位）
+        out({
+          type: "extension_ui_request",
+          id: "ponytail-status-1",
+          method: "setStatus",
+          statusKey: "ponytail",
+          statusText: "\u001b[36m●\u001b[0m 🐴 \u001b[2mponytail: \u001b[0m\u001b[39m⚡ FULL\u001b[0m",
         });
         out({
           type: "extension_ui_request",

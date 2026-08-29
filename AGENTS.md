@@ -42,7 +42,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 ```
 
 - 首次 `npm test` 下载 VS Code 到 `.vscode-test/`（约 100MB）
-- 质量门：`npm run compile` + `npm test` 全绿（当前 287/287：主套件 283 + 空窗口 4）
+- 质量门：`npm run compile` + `npm test` 全绿（当前 291/291：主套件 287 + 空窗口 4）
 
 ## Coding Guidelines
 
@@ -75,7 +75,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 | lucide 图标 | lucide-static SVG esbuild text loader 内联；stroke=currentColor 主题自适应 |
 | 会话重命名/删除 | set_session_name（当前）/ appendSessionName（非当前）；seam confirmSessionDelete |
 | 会话恢复 | controller 持久化最后会话文件（workspaceState `pinelLastSessionFile`）；spawn 时存在磁盘则 `--session` 恢复（已删除回退新建）；覆盖窗口重载/手动重启/模型自愈重启 |
-| 会话统计/信息条 | session-stats.ts + git-status.ts + session-env；Maple Mono NF 全扩展字体 |
+| 会话统计/信息条 | session-stats.ts + git-status.ts + session-env；Maple Mono NF 全扩展字体；指标段：ponytail 状态（●/○ 激活/空闲 + 档位，解析 ponytail 插件自推 statusKey 帧，ANSI 剥离）+ 上下文占用 + ↑输入 ↓输出 token（对齐 pi CLI footer 语义）+ 缓存命中率 + 成本（缓存读/写不单列） |
 | fork/clone | fork-messages.ts + runSessionChange 骨架；fork 后 pi 自动 rebind |
 | subagent 卡片 | subagents.ts；tool_execution details 防御解析 + 专属卡片（内联 assistant 消息工具调用原位，统计行 + Markdown 输出；继承主会话兕底主会话实际模型/思考等级 mainModelName/mainThinkingLevel props；状态驱动自动开合 background 展开、running 不自动展开）+ 图标 lucide bot |
 | 流式文本平滑显示 | StreamFlushThrottle（stream-flush.ts 纯模块）40ms 尾部节流合并 stream 广播 + webview 流式中纯文本渲染（.msg-text-live，免 Markdown 逐 delta 全量重解析；message_end 后切回 Markdown）；重置/重启/切换/退出路径 cancel 防陈旧块迟到 |

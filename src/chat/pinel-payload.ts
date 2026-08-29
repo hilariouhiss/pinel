@@ -131,6 +131,45 @@ function toCount(v: unknown): number {
 }
 
 // ---------------------------------------------------------------------------
+// ponytail 状态（@dietrichgebert/ponytail 插件自推 setStatus 帧）
+// ---------------------------------------------------------------------------
+
+/** ponytail 状态（statusKey "ponytail" 的 setStatus 帧解析产物）。 */
+export interface PonytailStatus {
+  /** 实心点=激活（agent 运行中）；空心点=已启用但空闲（对齐 ponytail 自身状态行语义）。 */
+  active: boolean;
+  /** 当前档位（lite/full/ultra；off 时 ponytail 推送空文本清除指示器）。 */
+  mode: string;
+}
+
+/** ANSI 颜色序列剥离（RPC 模式 ctx.ui.theme.fg 输出带色码）。 */
+function stripAnsi(text: string): string {
+  return text.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+/**
+ * 防御解析 ponytail 状态文本（形态 "● 🐴 ponytail: ⚡ FULL" / "○ … LITE"）：
+ * - 空文本（mode off 清除指示器）→ {active:false, mode:"off"}
+ * - 首字符 ● → active；末位大写单词 → mode；形状不符 → null（忽略帧）
+ */
+export function parsePonytailStatus(text: unknown): PonytailStatus | null {
+  if (typeof text !== "string") {
+    return null;
+  }
+  const plain = stripAnsi(text).trim();
+  if (plain.length === 0) {
+    return { active: false, mode: "off" };
+  }
+  const active = plain.startsWith("●");
+  const tokens = plain.split(/\s+/);
+  const last = tokens[tokens.length - 1];
+  if (!/^[A-Z]{2,}$/.test(last)) {
+    return null;
+  }
+  return { active, mode: last.toLowerCase() };
+}
+
+// ---------------------------------------------------------------------------
 // pinel.workflow / pinel.workflows（rpiv-workflow 生命周期推送）
 // ---------------------------------------------------------------------------
 

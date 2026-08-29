@@ -350,6 +350,11 @@ suite("Pinel 集成测试（假 pi）", () => {
     // 干扰帧（非 pinel statusKey）与坏 JSON 帧均不得污染缓存（好值保留）
     assert.strictEqual(state.messages.total, 6, "坏 JSON 帧不得覆盖好缓存");
 
+    // ponytail 状态帧：ANSI 装饰解析（坏帧 "loaded" 先到且被忽略，好帧后到覆盖）
+    const ponytail = api.getPonytailStatusCache();
+    assert.ok(ponytail, "ponytail 状态帧必须被解析并缓存");
+    assert.deepStrictEqual(ponytail, { active: true, mode: "full" }, "ANSI 剥离 + 实心点 + 档位解析");
+
     // 工作流帧：status 好帧 → widget 好帧（覆盖）→ 空 widget（结束清空，不覆盖）→ 坏 JSON（不污染）
     const workflow = api.getPinelWorkflowCache();
     assert.ok(workflow, "pinel.workflow 必须被解析并缓存");

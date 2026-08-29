@@ -1,19 +1,18 @@
-import type { PinelState, SessionEnv, SessionStats } from "../types";
+import type { PonytailStatus, SessionEnv, SessionStats } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import upArrowIcon from "lucide-static/icons/arrow-up.svg";
 import downArrowIcon from "lucide-static/icons/arrow-down.svg";
 import dollarIcon from "lucide-static/icons/dollar-sign.svg";
 import cacheIcon from "lucide-static/icons/database.svg";
 import branchIcon from "lucide-static/icons/git-branch.svg";
-import messageIcon from "lucide-static/icons/message-square.svg";
 
 interface Props {
   /** 会话统计（宿主 parseSessionStats 结果）；null = 尚未拉取（占位）。 */
   stats: SessionStats | null;
   /** 会话信息条环境段（folderName + git 状态）；null = 尚未广播。 */
   env: SessionEnv | null;
-  /** pinel.state 插件实时快照（消息计数；null = 插件未装/未推送）。 */
-  pinelState: PinelState | null;
+  /** ponytail 状态（●/○ 激活/空闲 + 当前档位；null=未收到/未装 → 不显示）。 */
+  ponytailStatus: PonytailStatus | null;
 }
 
 /**
@@ -68,11 +67,12 @@ function gitMarkers(git: NonNullable<SessionEnv["git"]>): string {
 /**
  * 会话信息条（输入卡正后方、从背后探出；设置面板「显示会话信息」开关开启时显示）。
  * 左侧环境段（Maple Mono NF）：`folderName on  branch [!?↑↓]`（p10k 风格）；
- * 右侧指标段：消息计数、上下文占用/窗口、缓存读↑、缓存写↓、缓存命中率、成本$。
+ * 右侧指标段：ponytail 状态（空心/实心点 + 当前档位）、上下文占用/窗口、
+ * 输入↑、输出↓、缓存命中率、成本$——↑↓ 对齐 pi CLI footer 语义（缓存读/写不再单列）。
  * 纯展示组件；各元素经 title 提供悬浮语义。
  * （Tree 导航/双击 Esc 入口与 Fork 弹层重叠已移除、手动压缩改设置面板 Compact now，2026-08 移除按钮。）
  */
-export function SessionStatsBar({ stats, env, pinelState }: Props) {
+export function SessionStatsBar({ stats, env, ponytailStatus }: Props) {
   if (!stats) {
     return (
       <div className="session-stats-bar">
@@ -82,7 +82,7 @@ export function SessionStatsBar({ stats, env, pinelState }: Props) {
   }
   const cu = stats.contextUsage;
   const hitRate = cacheHitRate(stats);
-  const { cacheRead, cacheWrite } = stats.tokens;
+  const { input, output } = stats.tokens;
   const contextText = cu
     ? `${cu.percent !== null ? cu.percent.toFixed(1) + "%" : "—"}/${compact(cu.contextWindow)}`
     : "—";
@@ -111,22 +111,27 @@ export function SessionStatsBar({ stats, env, pinelState }: Props) {
           )}
         </span>
         <span className="session-stats-metrics">
-          {pinelState && (
-            <span className="session-stats-item" title={`Messages: user ${pinelState.messages.user} / assistant ${pinelState.messages.assistant} / tool ${pinelState.messages.toolResult}`}>
-              <span className="session-stats-icon" dangerouslySetInnerHTML={{ __html: messageIcon }} />{" "}
-              {fmt(pinelState.messages.total)}
+          {ponytailStatus && (
+            <span
+              className="session-stats-item"
+              title={`Ponytail: ${ponytailStatus.mode.toUpperCase()}${ponytailStatus.active ? "" : " (idle)"}`}
+            >
+              <span className={`ponytail-dot${ponytailStatus.active ? " ponytail-dot-active" : ""}`}>
+                {ponytailStatus.active ? "●" : "○"}
+              </span>{" "}
+              ponytail: {ponytailStatus.mode.toUpperCase()}
             </span>
           )}
           <span className="session-stats-value" title="Context usage / window">
             {contextText}
           </span>
-          <span className="session-stats-item" title="Cache read">
+          <span className="session-stats-item" title="Input tokens">
             <span className="session-stats-icon" dangerouslySetInnerHTML={{ __html: upArrowIcon }} />{" "}
-            {fmt(cacheRead)}
+            {fmt(input)}
           </span>
-          <span className="session-stats-item" title="Cache write">
+          <span className="session-stats-item" title="Output tokens">
             <span className="session-stats-icon" dangerouslySetInnerHTML={{ __html: downArrowIcon }} />{" "}
-            {fmt(cacheWrite)}
+            {fmt(output)}
           </span>
           <span className="session-stats-item" title="Cache hit rate">
             <span className="session-stats-icon" dangerouslySetInnerHTML={{ __html: cacheIcon }} />{" "}

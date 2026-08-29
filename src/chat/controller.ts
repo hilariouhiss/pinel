@@ -40,7 +40,7 @@ import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly"
 import { StreamFlushThrottle } from "./stream-flush";
 import { DEFAULT_RESERVE_TOKENS, parseSessionStats, percentToReserveTokens, reserveTokensToPercent } from "./session-stats";
 import { isDuplicateNotice } from "./notice-dedup";
-import { parsePinelState, parsePinelTree, parsePinelWorkflow, type PinelStatePayload, type PinelTreePayload, type PinelWorkflowPayload } from "./pinel-payload";
+import { parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, type PinelStatePayload, type PinelTreePayload, type PinelWorkflowPayload, type PonytailStatus } from "./pinel-payload";
 import {
   PINEL_PACKAGE_SOURCE,
   agentSettingsPath,
@@ -131,7 +131,7 @@ export interface SessionEnv {
 }
 
 export type OutMessage =
-  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null; sessionEnv: SessionEnv; pinelState: PinelStatePayload | null; pinelTree: PinelTreePayload | null; pinelWorkflow: PinelWorkflowPayload | null; pinelPluginState: PinelPluginState | null }
+  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null; sessionEnv: SessionEnv; pinelState: PinelStatePayload | null; pinelTree: PinelTreePayload | null; pinelWorkflow: PinelWorkflowPayload | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; tool: ToolCard }
@@ -162,6 +162,7 @@ export type OutMessage =
   | { type: "pinelTree"; tree: PinelTreePayload }
   | { type: "pinelWorkflow"; workflow: PinelWorkflowPayload | null }
   | { type: "pinelPluginState"; state: PinelPluginState }
+  | { type: "ponytailStatus"; status: PonytailStatus }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
@@ -291,6 +292,8 @@ export class ChatController {
   private pinelWorkflowCache: PinelWorkflowPayload | null = null;
   /** Pinel 插件（npm 包）安装态缓存；null = 未检测。 */
   private pinelPluginStateCache: PinelPluginState | null = null;
+  /** ponytail 状态缓存（statusKey "ponytail" 帧；null = 未收到/插件未装）。 */
+  private ponytailStatusCache: PonytailStatus | null = null;
   /** 曾安装标记存储：vscode globalState 或内存兑底（无 globalState 时，测试）。 */
   private readonly pluginStateStore: { get(key: string): unknown; update(key: string, value: unknown): Thenable<void> };
   /** 最后会话存储：vscode workspaceState 或内存兑底（无 workspaceState 时，测试）。 */
@@ -1550,7 +1553,17 @@ export class ChatController {
       this.fire({ type: "pinelWorkflow", workflow: parsed });
       return;
     }
-    // 其余 statusKey（mcp/ponytail/colgrep 等生态插件）忽略：不白名单过滤会涌入 webview
+    if (req.statusKey === "ponytail") {
+      // ponytail 插件自推的状态行帧（ANSI 装饰 "● 🐴 ponytail: ⚡ FULL"）
+      const parsed = parsePonytailStatus(req.statusText);
+      if (!parsed) {
+        return;
+      }
+      this.ponytailStatusCache = parsed;
+      this.fire({ type: "ponytailStatus", status: parsed });
+      return;
+    }
+    // 其余 statusKey（mcp/colgrep 等生态插件）忽略：不白名单过滤会涌入 webview
   }
 
   /** pinel.* setWidget 帧：同 setStatus 处理路径。 */
@@ -2488,6 +2501,7 @@ export class ChatController {
       pinelTree: this.pinelTreeCache,
       pinelWorkflow: this.pinelWorkflowCache,
       pinelPluginState: this.pinelPluginStateCache,
+      ponytailStatus: this.ponytailStatusCache,
     });
     // 会话文件变化（首次/切换/新建/重启后恢复）→ 异步解析标题；重放去重不重复解析
     if (this.status.sessionFile !== this.lastTitleSessionFile) {
@@ -2581,6 +2595,11 @@ export class ChatController {
   /** Pinel 插件安装态缓存（null=未检测）。 */
   getPinelPluginState(): PinelPluginState | null {
     return this.pinelPluginStateCache;
+  }
+
+  /** 最近一次 ponytail 状态（statusKey "ponytail" 帧解析缓存；null=未收到）。 */
+  getPonytailStatusCache(): PonytailStatus | null {
+    return this.ponytailStatusCache;
   }
 
   getMessages(): AgentMessage[] {

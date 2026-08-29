@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "mocha";
-import { parsePinelState, parsePinelTree, parsePinelWorkflow } from "../chat/pinel-payload";
+import { parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus } from "../chat/pinel-payload";
 
 describe("pinel-payload 防御解析", () => {
   describe("parsePinelState", () => {
@@ -194,6 +194,30 @@ describe("pinel-payload 防御解析", () => {
       assert.strictEqual(parsed.stage, "plan");
       assert.strictEqual(parsed.stageNumber, undefined);
       assert.strictEqual(parsed.message, undefined);
+    });
+  });
+
+  describe("parsePonytailStatus", () => {
+    it("ANSI 装饰的实心点激活帧 → active + full", () => {
+      const parsed = parsePonytailStatus("\u001b[36m●\u001b[0m 🐴 \u001b[2mponytail: \u001b[0m\u001b[39m⚡ FULL\u001b[0m");
+      assert.deepStrictEqual(parsed, { active: true, mode: "full" });
+    });
+
+    it("空心点空闲帧 → inactive + lite", () => {
+      const parsed = parsePonytailStatus("○ 🐴 ponytail: 🌿 LITE");
+      assert.deepStrictEqual(parsed, { active: false, mode: "lite" });
+    });
+
+    it("空文本（mode off 清除指示器）→ off", () => {
+      const parsed = parsePonytailStatus("");
+      assert.deepStrictEqual(parsed, { active: false, mode: "off" });
+    });
+
+    it("形状不符（无档位单词/非字符串/超极档位）→ null", () => {
+      assert.strictEqual(parsePonytailStatus("loaded"), null);
+      assert.strictEqual(parsePonytailStatus("● 🐴 ponytail: ⚡"), null);
+      assert.strictEqual(parsePonytailStatus(42), null);
+      assert.strictEqual(parsePonytailStatus(undefined), null);
     });
   });
 });
