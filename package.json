@@ -5,6 +5,7 @@
   "keywords": ["pi-package", "pinel", "vscode"],
   "license": "MIT",
   "type": "module",
+  "files": ["pinel.ts", "extensions/", "skills/", "workflows/", "docs/", "README.md", "!**/*.test.ts"],
   "dependencies": {
     "@gotgenes/pi-autoformat": "^5.1.9",
     "@gotgenes/pi-colgrep": "^1.5.3",
@@ -40,7 +41,7 @@
     "@earendil-works/pi-tui": "*"
   },
   "pi": {
-    "extensions": ["./pinel.ts", "./extensions/*.ts"],
+    "extensions": ["./pinel.ts", "./extensions/pinel-workflows.ts"],
     "skills": ["./skills"]
   }
 }

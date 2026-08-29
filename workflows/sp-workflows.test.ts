@@ -37,6 +37,23 @@ describe("SP_WORKFLOWS 图结构", () => {
 		expect(gatePlan.targets).toContain("executing-plans");
 		expect(gatePlan.targets).toContain("writing-plans");
 	});
+	it("门禁 match 方向：approved 前进 / revise 打回 / abort 停止", () => {
+		const invoke = (wf: (typeof SP_WORKFLOWS)[number], edgeName: string, decision: string) => {
+			const edge = (wf.edges as Record<string, (ctx: { output: { data: { decision: string } }; state: unknown }) => string>)[edgeName];
+			return edge!({ output: { data: { decision } }, state: {} });
+		};
+		const build = SP_WORKFLOWS[0]!;
+		expect(invoke(build, "gate-spec", "approved")).toBe("writing-plans");
+		expect(invoke(build, "gate-spec", "revise")).toBe("brainstorming");
+		expect(invoke(build, "gate-spec", "abort")).toBe("stop");
+		expect(invoke(build, "gate-plan", "approved")).toBe("executing-plans");
+		expect(invoke(build, "gate-plan", "revise")).toBe("writing-plans");
+		expect(invoke(build, "gate-plan", "abort")).toBe("stop");
+		const fix = SP_WORKFLOWS[1]!;
+		expect(invoke(fix, "gate-diagnosis", "approved")).toBe("test-driven-development");
+		expect(invoke(fix, "gate-diagnosis", "revise")).toBe("systematic-debugging");
+		expect(invoke(fix, "gate-diagnosis", "abort")).toBe("stop");
+	});
 	it("每条工作流的首阶段都有 outcome（规避 FAIL_MISSING_ARTIFACT）", () => {
 		for (const wf of SP_WORKFLOWS) {
 			const first = wf.stages[wf.start] as { outcome?: unknown };

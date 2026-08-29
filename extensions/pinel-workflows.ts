@@ -34,6 +34,7 @@ export default function pinelWorkflowsExtension(_pi: unknown): void {
 		registerBuiltIns(SP_WORKFLOWS);
 	});
 
+	// ponytail: 丢弃 disposer 是有意的——pi 用 jiti moduleCache:false 加载扩展，/reload 会重估本模块（模块级守卫同样失效），且无扩展卸载钩子可调 disposer；重复注册的推送幂等。上游提供 unload 生命周期时再接 disposer。
 	registerLifecycle({
 		onWorkflowStart: (lc) => push(getPinelCtx(), { runId: lc.runId, workflow: lc.workflow, totalStages: lc.totalStages, status: "running" }),
 		onStageStart: (stage, lc) => push(getPinelCtx(), {

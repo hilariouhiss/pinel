@@ -24,7 +24,7 @@ contract:
 
 ## Steps
 
-1. **读产物。** 输入里带 `--<channel>` 标签的路径（如 `--specs` / `--plans` / `--diagnosis`）是待批准产物。用 Read 工具**完整**读取每个文件（不用 limit/offset）。
+1. **读产物。** 输入里带 `--<channel>` 标签的路径（如 `--specs` / `--plans` / `--diagnosis`）是待批准产物。用 Read 工具**完整**读取每个文件（不用 limit/offset）。`--diagnosis` 的值可能就是产物正文本身（内联文本）——直接使用该文本，不要当作文件路径去 Read。
 2. **写摘要。** 3-5 条要点：产物是什么、关键决策、风险点、下一步。
 3. **提问。** 调 `ask_user_question` 工具，单问：
 

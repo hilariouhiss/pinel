@@ -16,9 +16,11 @@ pi install git:github.com/obra/superpowers@v6.3.0   # 工作流按名引用这�
 
 ## 用法
 
-/wf sp-build "给 export 命令加 --json 标志"   # 构建流程（默认工作流）
+/wf sp-build "给 export 命令加 --json 标志"   # 构建流程
 /wf sp-fix  "<bug 症状描述>"                    # 调试流程
 /wf sp-review "<评审上下文>"                    # 评审流程
+
+默认工作流 = 首个注册的工作流（当前包加载顺序下为 sp-build）；要固定请在项目 .rpiv/workflows/config.ts 里声明 default。
 
 ### 批准门（停靠提问）
 
