@@ -234,6 +234,15 @@ function BlockView({
 
 function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
   const [open, setOpen] = useState(false);
+  // 状态驱动自动开合：思考开始（live 转真）自动展开，思考完毕自动收起；
+  // 手动 toggle 在 live 不变时有效（effect 不重跑，尊重用户操作）
+  useEffect(() => {
+    if (live) {
+      setOpen(true);
+    } else {
+      setOpen(false);
+    }
+  }, [live]);
   return (
     <details className="thinking" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="thinking-summary">
@@ -278,10 +287,10 @@ function ToolCallCard({
   const output = toolCard?.output ?? result?.text ?? "";
   const status: "running" | "done" | "error" =
     toolCard?.status ?? (result ? (result.isError ? "error" : "done") : live ? "running" : "done");
-  // 状态驱动自动开合：运行中自动展开实时输出，完成后自动收起；
+  // 运行结束自动收起；running 不自动展开（不打扰，用户可手动展开看实时输出）；
   // 手动 toggle 在 status 不变时有效（effect 不重跑，尊重用户操作）
   useEffect(() => {
-    setOpen(status === "running");
+    setOpen((prev) => prev && status !== "running");
   }, [status]);
   // 工具本名三层兕底：流式/快照块 name → tool_execution 实时 toolName → toolResult 消息落盘 toolName
   //（覆盖快照重放 + tools 清空场景）；三源皆空保留 Tool call 兕底
@@ -334,11 +343,15 @@ function SubagentCard({
 }) {
   const [open, setOpen] = useState(false);
   const running = card.status === "running";
-  // 状态驱动自动开合：running/background 自动展开实时输出（background 是用户
-  // 主动挂后台，输出仍在增长，收起会收掉正在看的输出），完成后自动收起；
+  // 状态驱动自动开合：background（用户主动挂后台）自动展开实时输出；
+  // running 不自动展开（对齐工具卡片）；完成后自动收起；
   // 手动 toggle 在 status 不变时有效（effect 不重跑，尊重用户操作）
   useEffect(() => {
-    setOpen(card.status === "running" || card.status === "background");
+    if (card.status === "background") {
+      setOpen(true);
+    } else if (card.status !== "running") {
+      setOpen(false);
+    }
   }, [card.status]);
   // running 中 partial 输出同样可展开/收起（需求：运行时自动展开展示输出）；
   // output 为空时不可展开（无内容）；运行中 partial 随 tools map 实时增长
