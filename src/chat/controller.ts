@@ -288,8 +288,12 @@ export class ChatController {
   private pinelPluginStateCache: PinelPluginState | null = null;
   /** 曾安装标记存储：vscode globalState 或内存兑底（无 globalState 时，测试）。 */
   private readonly pluginStateStore: { get(key: string): unknown; update(key: string, value: unknown): Thenable<void> };
+  /** 最后会话存储：vscode workspaceState 或内存兑底（无 workspaceState 时，测试）。 */
+  private readonly sessionStore: { get(key: string): unknown; update(key: string, value: unknown): Thenable<void> };
+  /** 最近一次会话文件（get_state 变化即更新；spawn 时用于恢复会话）。 */
+  private lastSessionFile: string | undefined;
 
-  constructor(output: vscode.OutputChannel, globalState?: vscode.Memento) {
+  constructor(output: vscode.OutputChannel, globalState?: vscode.Memento, workspaceState?: vscode.Memento) {
     this.output = output;
     // 曾安装标记：优先 vscode globalState；缺省（测试直构）时内存兑底
     const memory = new Map<string, unknown>();
@@ -299,6 +303,16 @@ export class ChatController {
         memory.set(key, value);
       },
     };
+    // 最后会话：优先 vscode workspaceState（跨 reload 持久）；缺省时内存兑底
+    const sessionMemory = new Map<string, unknown>();
+    this.sessionStore = workspaceState ?? {
+      get: (key) => sessionMemory.get(key),
+      update: async (key, value) => {
+        sessionMemory.set(key, value);
+      },
+    };
+    const storedSession = this.sessionStore.get(ChatController.LAST_SESSION_FILE_KEY);
+    this.lastSessionFile = typeof storedSession === "string" ? storedSession : undefined;
     // 保存回填：临时文件保存 → 内容广播回输入框（fillPrompt）
     this.promptEditor = new PromptEditorManager((text) => this.fire({ type: "fillPrompt", text }));
     // 未打开文件夹时提示用户；打开文件夹后自动连接
@@ -458,9 +472,15 @@ export class ChatController {
 
     try {
       // 自定义会话目录（pinel.sessionDir）：透传给 pi（--session-dir），
-      // 会话历史视图用同一路径扫描（布局为 custom，无 cwd 子目录）
+      // 会话历史视图用同一路径扫描（布局为 custom，无 cwd 子目录）；
+      // 上次会话（VS Code reload / restart 后继续原会话而非新建）：
+      // 持久化路径仍存在磁盘才作为 --session 传入（已删除则回退全新会话）
       const configured = vscode.workspace.getConfiguration("pinel").get<string>("sessionDir")?.trim();
-      const extraArgs = configured ? ["--session-dir", configured] : undefined;
+      const restoreSession = await this.restoreSessionArg();
+      const extraArgs = [
+        ...(configured ? ["--session-dir", configured] : []),
+        ...(restoreSession ? ["--session", restoreSession] : []),
+      ];
       await client.start(command, this.workspaceRoot, { ...process.env, PINEL_PLUGIN: "1" }, extraArgs);
     } catch (err) {
       if (this.client === client) {
@@ -473,6 +493,23 @@ export class ChatController {
       return null; // 已被 restart 取代：放弃本次启动流程
     }
     return client;
+  }
+
+  /**
+   * 恢复候选：持久化的最后会话路径，仅当磁盘上仍存在时返回
+   * （已删除/不可访问 → undefined，回退 pi 默认新建会话）。
+   */
+  private async restoreSessionArg(): Promise<string | undefined> {
+    const stored = this.lastSessionFile;
+    if (!stored) {
+      return undefined;
+    }
+    try {
+      await fs.access(stored);
+      return stored;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -1180,6 +1217,7 @@ export class ChatController {
    * 初始同步与切换后回读共用，保证字段合并逻辑一致。
    */
   private applySessionState(state: SessionState): void {
+    const sessionFile = typeof state.sessionFile === "string" ? state.sessionFile : this.status.sessionFile;
     this.status = {
       ...this.status,
       model: state.model ?? null,
@@ -1193,8 +1231,13 @@ export class ChatController {
           : this.status.autoCompactionEnabled,
       isStreaming: Boolean(state.isStreaming),
       isCompacting: Boolean(state.isCompacting),
-      sessionFile: typeof state.sessionFile === "string" ? state.sessionFile : this.status.sessionFile,
+      sessionFile,
     };
+    // 会话文件变化 → 持久化（reload/restart 后 spawn 时恢复原会话）
+    if (sessionFile && sessionFile !== this.lastSessionFile) {
+      this.lastSessionFile = sessionFile;
+      void this.sessionStore.update(ChatController.LAST_SESSION_FILE_KEY, sessionFile);
+    }
     this.fire({ type: "status", status: this.status });
   }
 
@@ -1524,6 +1567,9 @@ export class ChatController {
 
   /** 曾安装标记键（globalState）。 */
   private static readonly PINEL_INSTALLED_FLAG_KEY = "pinelPluginPreviouslyInstalled";
+
+  /** 最后会话文件键（workspaceState）：reload/restart 后 spawn 恢复用。 */
+  private static readonly LAST_SESSION_FILE_KEY = "pinelLastSessionFile";
 
   /**
    * 手动压缩会话上下文（原生 RPC compact；可选 customInstructions 传给总结 LLM）。

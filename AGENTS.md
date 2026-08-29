@@ -42,7 +42,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 ```
 
 - 首次 `npm test` 下载 VS Code 到 `.vscode-test/`（约 100MB）
-- 质量门：`npm run compile` + `npm test` 全绿（当前 280/280：主套件 276 + 空窗口 4）
+- 质量门：`npm run compile` + `npm test` 全绿（当前 282/282：主套件 278 + 空窗口 4）
 
 ## Coding Guidelines
 
@@ -73,6 +73,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 | 配置面板/模型思考 chip | ConfigPopover（队列/压缩阈值/Compact now/会话信息）+ ModelPopover chip 下拉（models.ts） |
 | lucide 图标 | lucide-static SVG esbuild text loader 内联；stroke=currentColor 主题自适应 |
 | 会话重命名/删除 | set_session_name（当前）/ appendSessionName（非当前）；seam confirmSessionDelete |
+| 会话恢复 | controller 持久化最后会话文件（workspaceState `pinelLastSessionFile`）；spawn 时存在磁盘则 `--session` 恢复（已删除回退新建）；覆盖窗口重载/手动重启/模型自愈重启 |
 | 会话统计/信息条 | session-stats.ts + git-status.ts + session-env；Maple Mono NF 全扩展字体 |
 | fork/clone | fork-messages.ts + runSessionChange 骨架；fork 后 pi 自动 rebind |
 | subagent 卡片 | subagents.ts；tool_execution details 防御解析 + 专属卡片（内联 assistant 消息工具调用原位，统计行 + Markdown 输出；继承主会话兕底主会话实际模型/思考等级 mainModelName/mainThinkingLevel props；状态驱动自动开合 background 展开、running 不自动展开）+ 图标 lucide bot |

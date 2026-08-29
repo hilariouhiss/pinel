@@ -85,7 +85,7 @@ const LOG_PATH = process.env.PINEL_FAKE_PI_LOG || path.join(os.tmpdir(), "pinel-
 /** 场景开关（进程启动时读取一次）：作用于 get_state 的模型字段。 */
 const SCENARIO = process.env.PINEL_FAKE_PI_SCENARIO || "";
 
-log({ dir: "meta", event: "startup", pid: process.pid, scenario: SCENARIO });
+log({ dir: "meta", event: "startup", pid: process.pid, scenario: SCENARIO, argv: process.argv.slice(2) });
 
 function log(record) {
   try {

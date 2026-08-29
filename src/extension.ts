@@ -154,7 +154,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
   const output = vscode.window.createOutputChannel("Pinel");
   context.subscriptions.push(output);
 
-  controller = new ChatController(output, context.globalState);
+  controller = new ChatController(output, context.globalState, context.workspaceState);
   const ctrl = controller; // 局部常量供闭包使用（模块级可变引用无法收窄）
   // dispose 回调返回 Promise：VS Code 对 Thenable dispose 的等待行为无强保证，
   // deactivate() 中另有显式 await（dispose 幂等，双调用安全）

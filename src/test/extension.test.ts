@@ -1427,6 +1427,55 @@ suite("Pinel 集成测试（假 pi）", () => {
       assert.strictEqual(steers.length, 0, "/new 不得转为 steer 送达");
     });
 
+    test("重启恢复会话：spawn 携带 --session 指向上次会话文件", async function () {
+      this.timeout(60000);
+      // 切到真实存在的会话文件（reload/restart 后应继续该会话而非新建）
+      await api.switchSession(sessionA);
+      await waitFor(() => api.getCurrentSessionFile() === sessionA, 10000, "切换后 sessionFile 回显");
+
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+        30000,
+        "重启后恢复",
+      );
+      // 最新 fake-pi 进程应收到 --session <上次会话文件>（恢复链路断言；
+      // fake-pi 忽略该参数——真实 pi 会打开指定会话文件继续）
+      const records = readFakePiLog(logPath);
+      const startups = records.filter((r) => {
+        const rec = r.record as { dir?: string; event?: string } | undefined;
+        return rec?.dir === "meta" && rec?.event === "startup";
+      });
+      assert.ok(startups.length >= 1, "必须有 fake-pi 启动记录");
+      const argv = (startups[startups.length - 1].record as { argv?: string[] }).argv ?? [];
+      assert.ok(argv.includes("--session"), "spawn 必须携带 --session 参数");
+      assert.ok(argv.includes(sessionA), "--session 必须指向上次会话文件");
+    });
+
+    test("会话文件已删除时重启不恢复（回退新建会话）", async function () {
+      this.timeout(60000);
+      // 独立临时会话文件：删除后不影响其他测试使用的 sessionA/sessionB
+      const sessionGone = path.join(sessionDir, `2026-08-19T01-00-00-000Z_${Date.now()}.jsonl`);
+      await fs.promises.writeFile(sessionGone, sessionHeader("session-gone", "2026-08-19T01:00:00.000Z"));
+      await api.switchSession(sessionGone);
+      await waitFor(() => api.getCurrentSessionFile() === sessionGone, 10000, "切换后 sessionFile 回显");
+      await fs.promises.rm(sessionGone);
+
+      await api.restart();
+      await waitFor(
+        () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+        30000,
+        "重启后恢复",
+      );
+      const records = readFakePiLog(logPath);
+      const startups = records.filter((r) => {
+        const rec = r.record as { dir?: string; event?: string } | undefined;
+        return rec?.dir === "meta" && rec?.event === "startup";
+      });
+      const argv = (startups[startups.length - 1].record as { argv?: string[] }).argv ?? [];
+      assert.ok(!argv.includes("--session"), "会话文件已删除：spawn 不得携带 --session");
+    });
+
     test("SWITCH-CANCEL：切换被取消 → 状态保持 + info notice", async function () {
       this.timeout(60000);
       process.env.PINEL_FAKE_PI_SCENARIO = "SWITCH-CANCEL";
