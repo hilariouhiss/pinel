@@ -37,7 +37,7 @@ import {
   type ToolExecutionUpdateEvent,
 } from "../rpc/protocol";
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
-import { StreamFlushThrottle } from "./stream-flush";
+import { KeyedFlushThrottle, StreamFlushThrottle } from "./stream-flush";
 import { DEFAULT_RESERVE_TOKENS, parseSessionStats, percentToReserveTokens, reserveTokensToPercent } from "./session-stats";
 import { isDuplicateNotice } from "./notice-dedup";
 import { parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, type PinelStatePayload, type PinelTreePayload, type PinelWorkflowPayload, type PonytailStatus } from "./pinel-payload";
@@ -242,6 +242,13 @@ export class ChatController {
   /** 流式广播节流：增量合并为固定节奏刷新（视觉平滑，见 stream-flush.ts）。 */
   private readonly streamFlush = new StreamFlushThrottle(40, (blocks) => {
     this.fire({ type: "stream", blocks });
+  });
+  /** 工具卡广播节流：tool_execution_update 高频大载荷，按 toolCallId 合并为固定节奏广播。
+   *  tools map 本身即时更新（getTools 权威），节流的只是 webview 广播。 */
+  private readonly toolFlush = new KeyedFlushThrottle<ToolCard>(40, (latest) => {
+    for (const tool of latest.values()) {
+      this.fire({ type: "tool", tool });
+    }
   });
   private tools = new Map<string, ToolCard>();
   /** 当前流式消息的角色（message_start 设置，全 role 防旧值残留）；
@@ -589,6 +596,7 @@ export class ChatController {
       this.partialAssembly = createAssembly();
       this.partialBlocks = [];
       this.streamFlush.cancel(); // 旧进程待决节流不得在重启后迟到广播
+      this.toolFlush.cancel();
       this.status = { ...initialStatus };
       this.sessionStats = null; // 统计归属新进程会话：清空，start 首拉后填充
       this.pendingUi.clear();
@@ -639,6 +647,7 @@ export class ChatController {
     }
     this.promptEditor.dispose();
     this.streamFlush.cancel();
+    this.toolFlush.cancel();
     this.onChange.dispose();
   }
 
@@ -1175,6 +1184,7 @@ export class ChatController {
     this.partialAssembly = createAssembly();
     this.partialBlocks = [];
     this.streamFlush.cancel(); // 切换会话：旧会话待决节流不得迟到广播
+    this.toolFlush.cancel();
     this.tools.clear();
     this.todos = []; // 新会话待办从零开始（restart 同语义，fireSnapshot 携带空列表）
     // 工作流运行态属于旧会话：清空并广播（插件不会为新会话重推，等下一次运行开始）
@@ -2046,7 +2056,7 @@ export class ChatController {
           if (tool.subagent) {
             applySubagentDetails(tool.subagent, e.partialResult?.details);
           }
-          this.fire({ type: "tool", tool: { ...tool } });
+          this.toolFlush.push(e.toolCallId, { ...tool });
         }
         break;
       }
@@ -2083,7 +2093,7 @@ export class ChatController {
           }
         }
         this.tools.set(e.toolCallId, tool);
-        this.fire({ type: "tool", tool: { ...tool } });
+        this.toolFlush.push(e.toolCallId, { ...tool });
         break;
       }
 
