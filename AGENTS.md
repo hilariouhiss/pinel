@@ -42,7 +42,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 ```
 
 - 首次 `npm test` 下载 VS Code 到 `.vscode-test/`（约 100MB）
-- 质量门：`npm run compile` + `npm test` 全绿（当前 283/283：主套件 279 + 空窗口 4）
+- 质量门：`npm run compile` + `npm test` 全绿（当前 284/284：主套件 280 + 空窗口 4）
 
 ## Coding Guidelines
 
@@ -67,6 +67,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 | 消息复制 | 区块级复制入口：正文块（copy-target DOM 提取所见即所得）/思考卡（getText 直拷全文，不受折叠与 60 字预览截断影响）/工具卡（args pretty + output 直拷）各自悬浮按钮 + 右键菜单；剪切板桥：webview postMessage copyText → 宿主 vscode.env.clipboard（webview 内 navigator.clipboard 不可靠）；Pi 块不再提供块级复制（防正文复制携带思考全文） |
 | 最近回合悬浮条 | RecentRoundBar 经高 0 sticky 锚点（.recent-round-anchor）钉滚动视口顶部，与消息卡片结构级同宽；随视口切换显示上下文用户消息（roundbar-rule.ts 纯函数：贴底仅当最近一条已滚出视口才钉住、顶部越过即切上一条、越最早隐藏）；纯消息文本 3 行截断；data-msg-index 滚回 + scroll-margin-top 防遮挡；点击滚回后隐藏（roundBarHidden），computeVisible 内视口离开判定重现，重置键 sessionFile |
 | /new 拦截 | controller.sendPrompt 精确匹配本地拦截 → newSession；RPC 不展开 slash |
+| /reload 拦截与 header 重载按钮 | controller.sendPrompt 精确匹配 /reload → restart（进程重载，会话经 --session 恢复）；header 右上角 rotate-cw 按钮复用 restart 消息 |
 | Ctrl+G 编辑提示词 | prompt-editor.ts；真实临时文件 + 保存回填 + 发送清理 |
 | @ 添加文件 | at-refs.ts 发送时文本解析 @引用（引号路径/标点剥离/大小写不敏感）+ file-scanner；panel.ts 透传 fileRefs；controller 自读自拼 file 标记注入 + 图片 base64 |
 | 问卷 | questionnaire.ts；tool_execution_start 整卷本地渲染 + 游标回填；分段进度条 |

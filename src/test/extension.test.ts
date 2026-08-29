@@ -150,6 +150,38 @@ suite("Pinel 集成测试（假 pi）", () => {
     );
   });
 
+  test("/reload 命令：本地拦截并重载 pi 进程（不作为 prompt 送达）", async function () {
+    this.timeout(60000);
+    // 此测试位于会话切换套件之前：fake-pi 会话状态为默认文件，重载前后 sessionFile 一致
+    const beforeFile = api.getCurrentSessionFile();
+    const startupsBefore = readFakePiLog(logPath).filter((r) => {
+      const rec = r.record as { dir?: string; event?: string } | undefined;
+      return rec?.dir === "meta" && rec?.event === "startup";
+    }).length;
+
+    await api.sendPrompt("/reload");
+    // 重启类场景不用 waitForSettled（无新 prompt 时 settled 不前进），轮询等待重载完成
+    await waitFor(
+      () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+      30000,
+      "/reload 后恢复",
+    );
+    // 真实重启证据：新 fake-pi 进程启动记录 +1
+    const startupsAfter = readFakePiLog(logPath).filter((r) => {
+      const rec = r.record as { dir?: string; event?: string } | undefined;
+      return rec?.dir === "meta" && rec?.event === "startup";
+    }).length;
+    assert.ok(startupsAfter > startupsBefore, "/reload 必须重启 pi 进程");
+    assert.strictEqual(api.getCurrentSessionFile(), beforeFile, "重载后会话保持");
+    // /reload 不得作为 prompt 送达 pi（精确匹配断言免疫跨测试累积）
+    const records = readFakePiLog(logPath);
+    const prompts = records.filter((r) => {
+      const rec = r.record as { dir?: string; record?: { type?: string; message?: string } } | undefined;
+      return rec?.dir === "in" && rec?.record?.type === "prompt" && rec?.record?.message === "/reload";
+    });
+    assert.strictEqual(prompts.length, 0, "/reload 不得作为 prompt 送达 pi");
+  });
+
   test("端到端流式响应：多块装配、工具卡片、消息落盘", async () => {
     const marker = `hello-${Date.now()}`;
     const baseline = api.getSettledCount();

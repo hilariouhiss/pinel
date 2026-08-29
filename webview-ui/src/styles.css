@@ -1815,10 +1815,11 @@ body {
   flex: none;
 }
 
-/* 会话历史/新会话/分支按钮（仅图标，作为弹层锚点/独立入口） */
+/* 会话历史/新会话/分支/重载按钮（仅图标，作为弹层锚点/独立入口） */
 .chat-history-btn,
 .chat-new-session-btn,
-.chat-fork-btn {
+.chat-fork-btn,
+.chat-reload-btn {
   display: flex;
   align-items: center;
   background: none;
@@ -1829,7 +1830,8 @@ body {
 
 .chat-history-btn:disabled,
 .chat-new-session-btn:disabled,
-.chat-fork-btn:disabled {
+.chat-fork-btn:disabled,
+.chat-reload-btn:disabled {
   cursor: default;
   opacity: 0.5;
 }
@@ -1837,7 +1839,8 @@ body {
 /* lucide 图标：尺寸覆写（文件内 width=24）+ stroke=currentColor 随容器 color */
 .chat-history-btn .lucide,
 .chat-new-session-btn .lucide,
-.chat-fork-btn .lucide {
+.chat-fork-btn .lucide,
+.chat-reload-btn .lucide {
   width: 16px;
   height: 16px;
   display: block;
@@ -1845,7 +1848,8 @@ body {
 
 .chat-history-btn,
 .chat-new-session-btn,
-.chat-fork-btn {
+.chat-fork-btn,
+.chat-reload-btn {
   color: var(--vscode-descriptionForeground);
 }
 

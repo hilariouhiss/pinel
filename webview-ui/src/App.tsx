@@ -21,6 +21,7 @@ import { Questionnaire } from "./components/Questionnaire";
 import historyIcon from "lucide-static/icons/history.svg";
 import newSessionIcon from "lucide-static/icons/plus.svg";
 import forkIcon from "lucide-static/icons/git-fork.svg";
+import reloadIcon from "lucide-static/icons/rotate-cw.svg";
 
 const initialStatus: ChatStatus = {
   processState: "stopped",
@@ -692,6 +693,14 @@ export default function App() {
             onClick={headerNewSession}
             disabled={switching}
             dangerouslySetInnerHTML={{ __html: newSessionIcon }}
+          />
+          <button
+            className="chat-reload-btn"
+            title="Reload pi (restart process, keep session)"
+            aria-label="Reload pi"
+            onClick={() => vscode.postMessage({ type: "restart" })}
+            disabled={switching}
+            dangerouslySetInnerHTML={{ __html: reloadIcon }}
           />
         </span>
         {/* 通知横幅：悬浮于 header 正下方（absolute 定位上下文 = chat-header，

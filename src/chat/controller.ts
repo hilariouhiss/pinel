@@ -657,6 +657,11 @@ export class ChatController {
       await this.newSession();
       return;
     }
+    // /reload 本地拦截（同上理由）：重载 pi 进程（会话保持——spawn 时 --session 恢复）
+    if (input.text.trim() === "/reload" && !input.images?.length && !input.fileRefs?.length) {
+      await this.restart();
+      return;
+    }
 
     const images: ImageContent[] = (input.images ?? []).map((img) => ({
       type: "image",
