@@ -2635,6 +2635,9 @@ body {
 /* 会话树选择器弹层（锚定 Tree 按钮，样式对齐 fork-popover） */
 .pinel-tree-popover {
   position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   z-index: 1001;
   width: 260px;
   background: var(--vscode-editor-background);
@@ -2709,6 +2712,14 @@ body {
 
 .pinel-tree-role {
   flex: none;
+}
+
+/* lucide 图标（lucide-static SVG 内联，stroke=currentColor 继承文字颜色） */
+.pinel-tree-role .lucide {
+  display: block;
+  width: 13px;
+  height: 13px;
+  stroke-width: 2;
 }
 
 .pinel-tree-text {

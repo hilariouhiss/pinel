@@ -800,7 +800,7 @@ export default function App() {
         onClose={() => setPopover(null)}
       />
       <PinelTreePopover
-        anchor={popover === "tree" ? forkBtnRef.current : null}
+        open={popover === "tree"}
         tree={pinelTree}
         onClose={() => setPopover(null)}
       />

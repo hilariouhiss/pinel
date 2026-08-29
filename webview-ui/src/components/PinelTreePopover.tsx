@@ -1,69 +1,36 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { vscode } from "../index";
 import type { PinelTree } from "../types";
+// lucide 图标原始文本（esbuild text loader 内联；CSS 覆盖尺寸/stroke 主题自适应）
+import userIcon from "lucide-static/icons/user.svg";
+import botIcon from "lucide-static/icons/bot.svg";
 
 interface Props {
-  /** 触发按钮元素（null 时不渲染）。定位/焦点管理都依赖它。 */
-  anchor: HTMLElement | null;
+  /** 是否打开（双击 Esc 入口切换；false 不渲染）。 */
+  open: boolean;
   /** 会话树（插件 pinel.tree 推送；null/空 = 插件未装或树为空）。 */
   tree: PinelTree | null;
   onClose: () => void;
 }
 
-const POPOVER_WIDTH = 260;
-const POPOVER_MARGIN = 8;
-/** 下方空间不足 160px 或少于上方空间时翻转上方。 */
-const MIN_BELOW = 160;
 /** 预览截断长度（单行 ellipsis；超出省略）。 */
 const PREVIEW_MAX = 120;
 
 /**
- * 会话树选择器弹层（SessionStatsBar「Tree」按钮锚定）：
+ * 会话树弹层（双击 Esc 打开，面板居中显示）：
  * - 数据源：插件 pinel.tree 推送（当前分支链 user/assistant 消息节点；实时更新）
  * - 点击节点 → 发 pinelTreeNavigate（宿主发 /pinel-tree <entryId>，插件 navigateTree）；
  *   close-on-select（选中即关弹层，结果由宿主 notice 回报）
  * - 当前叶节点高亮（entryId === leafId）
- * - 交互：Esc / 点击外部关闭；焦点管理对齐 ForkPopover
+ * - 交互：Esc / 点击外部关闭；居中定位由 .pinel-tree-popover CSS 负责
  */
-export function PinelTreePopover({ anchor, tree, onClose }: Props) {
+export function PinelTreePopover({ open, tree, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top?: number; bottom?: number; left?: number; right?: number }>({});
   const triggerRef = useRef<HTMLElement | null>(null);
-
-  // 锚定定位：渲染后按按钮实际位置计算；窗口尺寸变化时重算（对齐 ForkPopover）
-  useLayoutEffect(() => {
-    if (!anchor) {
-      return;
-    }
-    const compute = () => {
-      const rect = anchor.getBoundingClientRect();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const spaceBelow = vh - rect.bottom;
-      const below = spaceBelow >= MIN_BELOW || spaceBelow >= rect.top;
-      const leftAligned = rect.left + POPOVER_WIDTH <= vw - POPOVER_MARGIN;
-      setPos(
-        below
-          ? {
-              top: rect.bottom + 4,
-              left: leftAligned ? rect.left : undefined,
-              right: leftAligned ? undefined : vw - rect.right,
-            }
-          : {
-              bottom: vh - rect.top + 4,
-              left: leftAligned ? rect.left : undefined,
-              right: leftAligned ? undefined : vw - rect.right,
-            },
-      );
-    };
-    compute();
-    window.addEventListener("resize", compute);
-    return () => window.removeEventListener("resize", compute);
-  }, [anchor]);
 
   // Esc 关闭：capture 阶段拦截 + stopPropagation（对齐 ForkPopover）
   useEffect(() => {
-    if (!anchor) {
+    if (!open) {
       return;
     }
     const onKeyDown = (e: KeyboardEvent) => {
@@ -75,11 +42,11 @@ export function PinelTreePopover({ anchor, tree, onClose }: Props) {
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [anchor, onClose]);
+  }, [open, onClose]);
 
-  // 打开时焦点移入弹层；关闭时焦点还原到触发按钮
+  // 打开时焦点移入弹层；关闭时焦点还原
   useEffect(() => {
-    if (!anchor) {
+    if (!open) {
       return;
     }
     triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -89,7 +56,7 @@ export function PinelTreePopover({ anchor, tree, onClose }: Props) {
         triggerRef.current.focus();
       }
     };
-  }, [anchor]);
+  }, [open]);
 
   /** 选中节点：close-on-select（宿主发 /pinel-tree；结果 notice 回报）。 */
   const selectNode = (entryId: string) => {
@@ -97,7 +64,7 @@ export function PinelTreePopover({ anchor, tree, onClose }: Props) {
     vscode.postMessage({ type: "pinelTreeNavigate", entryId });
   };
 
-  if (!anchor) {
+  if (!open) {
     return null;
   }
 
@@ -112,7 +79,6 @@ export function PinelTreePopover({ anchor, tree, onClose }: Props) {
         aria-label="Session tree"
         tabIndex={-1}
         ref={panelRef}
-        style={pos}
       >
         <div className="pinel-tree-title">Session tree</div>
         <div className="pinel-tree-list">
@@ -129,7 +95,10 @@ export function PinelTreePopover({ anchor, tree, onClose }: Props) {
                 onClick={() => selectNode(node.entryId)}
               >
                 <span className="pinel-tree-index">{i + 1}</span>
-                <span className="pinel-tree-role">{node.role === "user" ? "🧑" : "🤖"}</span>
+                <span
+                  className="pinel-tree-role"
+                  dangerouslySetInnerHTML={{ __html: node.role === "user" ? userIcon : botIcon }}
+                />
                 <span className="pinel-tree-text">
                   {node.text.length > PREVIEW_MAX ? node.text.slice(0, PREVIEW_MAX) + "…" : node.text}
                 </span>
