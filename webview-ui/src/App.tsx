@@ -251,6 +251,10 @@ export default function App() {
         setStreamBlocks(msg.blocks);
         break;
       case "message":
+        // 用户消息（乐观渲染）→ 强制回底：手动上滚后再发送也回到最新（后续 stickToBottom 由 onScroll 维护）
+        if (msg.message.role === "user") {
+          stickToBottom.current = true;
+        }
         setMessages((prev) => [...prev, msg.message]);
         break;
       case "tool":
