@@ -1,0 +1,46 @@
+{
+  "name": "@hilariouhiss/pinel",
+  "version": "0.1.0",
+  "description": "Pinel bridge plugin for Pi — live state push and session-tree navigation inside the Pinel VS Code panel",
+  "keywords": ["pi-package", "pinel", "vscode"],
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@gotgenes/pi-autoformat": "^5.1.9",
+    "@gotgenes/pi-colgrep": "^1.5.3",
+    "@gotgenes/pi-github-tools": "^4.3.2",
+    "@gotgenes/pi-nocd": "^1.0.2",
+    "@gotgenes/pi-permission-model-judge": "^2.0.0",
+    "@gotgenes/pi-permission-system": "^27.0.1",
+    "@gotgenes/pi-session-tools": "^1.2.1",
+    "@gotgenes/pi-subagents": "^19.3.5",
+    "@gotgenes/pi-subagents-worktrees": "^0.3.1",
+    "@juicesharp/rpiv-args": "^2.7.1",
+    "@juicesharp/rpiv-ask-user-question": "^2.7.1",
+    "@juicesharp/rpiv-todo": "^2.7.1",
+    "@juicesharp/rpiv-voice": "^2.7.1",
+    "@juicesharp/rpiv-workflow": "^2.7.1",
+    "@juicesharp/rpiv-config": "^2.7.1",
+    "@juicesharp/rpiv-i18n": "^2.7.1",
+    "@juicesharp/rpiv-pi": "^2.7.1",
+    "@standard-schema/spec": "^1.1.0",
+    "decibri": "^3.4.0",
+    "jiti": "^2.7.0",
+    "sherpa-onnx-node": "^1.13.0",
+    "typebox": "^1.1.24"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": ["./pinel.ts", "./extensions/*.ts"],
+    "skills": ["./skills"]
+  }
+}
