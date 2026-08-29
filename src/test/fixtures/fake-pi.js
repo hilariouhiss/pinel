@@ -425,7 +425,7 @@ async function streamSequence(promptText, slow) {
     return;
   }
   out({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "，世界" } });
-  out({ type: "message_update", assistantMessageEvent: { type: "toolcall_start", contentIndex: 2, toolCall: { id: "call_1", name: "read", arguments: "{}" } } });
+  out({ type: "message_update", assistantMessageEvent: { type: "toolcall_start", contentIndex: 2, id: "call_1", toolName: "read" } });
 
   await delay(step);
   if (abortGeneration !== gen) {

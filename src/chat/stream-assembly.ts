@@ -65,7 +65,11 @@ export function applyDelta(a: StreamAssembly, event: AssistantDeltaEvent): Strea
     case "toolcall_start": {
       const b = ensureBlock(a, event.contentIndex, "toolCall");
       if (event.toolCall) {
+        // 包裹形态（旧版/假 pi）：toolCall 对象
         b.toolCall = normalizeToolCall(event.toolCall as Partial<ToolCallContentBlock>);
+      } else if (typeof event.id === "string" || typeof event.toolName === "string") {
+        // 真实 pi 扁平形态：顶层 id/toolName（docs/rpc.md），args 随 delta 增量
+        b.toolCall = { id: event.id ?? "", name: event.toolName ?? "", arguments: "" };
       }
       break;
     }

@@ -40,6 +40,24 @@ suite("流式装配（contentIndex 分块）单元测试", () => {
     ]);
   });
 
+  test("toolcall_start 扁平形态（真实 pi）：顶层 id/toolName 装配工具调用", () => {
+    const a = createAssembly();
+    applyDelta(a, { type: "toolcall_start", contentIndex: 0, id: "call_abc123", toolName: "bash" });
+    // 工具名在 start 即已就位（Tool call 兕底根因回归：流式中卡片必须显示工具本名）
+    assert.deepStrictEqual(a.blocks[0].toolCall, { id: "call_abc123", name: "bash", arguments: "" });
+    applyDelta(a, { type: "toolcall_delta", contentIndex: 0, delta: '{"command":' });
+    applyDelta(a, { type: "toolcall_delta", contentIndex: 0, delta: '"ls"}' });
+    assert.deepStrictEqual(a.blocks[0].toolCall, { id: "call_abc123", name: "bash", arguments: '{"command":"ls"}' });
+    applyDelta(a, {
+      type: "toolcall_end",
+      contentIndex: 0,
+      toolCall: { type: "toolCall", id: "call_abc123", name: "bash", arguments: { command: "ls" } },
+    });
+    assert.deepStrictEqual(a.blocks, [
+      { kind: "toolCall", text: "", toolCall: { id: "call_abc123", name: "bash", arguments: '{"command":"ls"}' } },
+    ]);
+  });
+
   test("contentIndex 乱序到达也按索引落位", () => {
     const a = createAssembly();
     applyDelta(a, { type: "thinking_start", contentIndex: 3 });

@@ -42,7 +42,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 ```
 
 - 首次 `npm test` 下载 VS Code 到 `.vscode-test/`（约 100MB）
-- 质量门：`npm run compile` + `npm test` 全绿（当前 282/282：主套件 278 + 空窗口 4）
+- 质量门：`npm run compile` + `npm test` 全绿（当前 283/283：主套件 279 + 空窗口 4）
 
 ## Coding Guidelines
 

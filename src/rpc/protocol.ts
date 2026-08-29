@@ -9,6 +9,8 @@
  *   注意与 SDK 的 `source:{type:"base64",...}` 不同。
  * - `message_update` 不携带累计消息：客户端必须用 `message_start` +
  *   按 `contentIndex` 的增量自行组装部分消息，以 `message_end.message` 为权威。
+ * - `toolcall_start` 双形态兼容：真实 pi 发顶层扁平 `{id, toolName}`，
+ *   旧版/假 pi 发包裹 `toolCall:{id,name}`——装配层两者归一。
  * - `agent_end` 只是单次低层 agent run 完成（后续仍可能有 retry/compaction/
  *   排队 continuation）；`agent_settled` 才是最终空闲信号。
  */
@@ -427,7 +429,7 @@ export type AssistantDeltaEvent =
   | { type: "thinking_start"; contentIndex: number }
   | { type: "thinking_delta"; contentIndex: number; delta: string }
   | { type: "thinking_end"; contentIndex: number; thinking?: string }
-  | { type: "toolcall_start"; contentIndex: number; toolCall?: Partial<ToolCallContentBlock> }
+  | { type: "toolcall_start"; contentIndex: number; toolCall?: Partial<ToolCallContentBlock>; id?: string; toolName?: string }
   | { type: "toolcall_delta"; contentIndex: number; delta: string }
   | { type: "toolcall_end"; contentIndex: number; toolCall: ToolCallContentBlock };
 
