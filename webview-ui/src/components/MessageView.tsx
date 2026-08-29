@@ -91,14 +91,21 @@ function copyToClipboard(text: string): void {
 }
 
 /**
- * 复制消息卡片内容按钮（hover/focus-visible 显示，CSS 控制）。
+ * 复制按钮：targetRef（DOM 提取，所见即所得）或 getText（数据直拷，如 thinking 全文/工具 args+output）
+ * 二选一；hover/focus-visible 显示，CSS 控制。
  */
-function CopyButton({ targetRef }: { targetRef: React.RefObject<HTMLDivElement | null> }) {
+function CopyButton({
+  targetRef,
+  getText,
+}: {
+  targetRef?: React.RefObject<HTMLElement | null>;
+  getText?: () => string;
+}) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timerRef.current), []);
   const onClick = () => {
-    const text = targetRef.current ? extractCardText(targetRef.current) : "";
+    const text = getText ? getText() : targetRef?.current ? extractCardText(targetRef.current) : "";
     if (!text) {
       return; // 无可复制文本：不写剪切板也不显示 ✓（防误导）
     }
@@ -125,10 +132,12 @@ function CopyButton({ targetRef }: { targetRef: React.RefObject<HTMLDivElement |
 function CardContextMenu({
   pos,
   targetRef,
+  getText,
   onClose,
 }: {
   pos: { x: number; y: number } | null;
-  targetRef: React.RefObject<HTMLDivElement | null>;
+  targetRef?: React.RefObject<HTMLElement | null>;
+  getText?: () => string;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -152,7 +161,7 @@ function CardContextMenu({
     return null;
   }
   const doCopy = () => {
-    const text = targetRef.current ? extractCardText(targetRef.current) : "";
+    const text = getText ? getText() : targetRef?.current ? extractCardText(targetRef.current) : "";
     copyToClipboard(text);
     onClose();
   };
@@ -170,7 +179,7 @@ function CardContextMenu({
 }
 
 /** 卡片右键打开复制菜单（preventDefault 拦截默认菜单）。 */
-function openCardMenu(e: React.MouseEvent<HTMLDivElement>): { x: number; y: number } {
+function openCardMenu(e: React.MouseEvent<HTMLElement>): { x: number; y: number } {
   e.preventDefault();
   return { x: e.clientX, y: e.clientY };
 }
@@ -181,9 +190,8 @@ function assistantBlocks(content: ChatMessage["content"]): ContentBlock[] {
 
 export function MessageView({ message, tools, toolResults, streamBlocks, msgIndex, mainModelName, mainThinkingLevel }: Props) {
   const userRef = useRef<HTMLDivElement>(null);
-  const assistantRef = useRef<HTMLDivElement>(null);
   const toolResultRef = useRef<HTMLDivElement>(null);
-  /** 右键复制菜单位置（null=关闭）；每卡片实例独立。 */
+  /** 右键复制菜单位置（null=关闭）；每卡片实例独立（仅 user 卡片级使用）。 */
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   if (message.role === "user") {
     const text = userText(message.content);
@@ -236,8 +244,10 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
   }
 
   const blocks = assistantBlocks(message.content);
+  // 各区块（正文/思考/工具卡）自带复制入口，不再提供整个 Pi 块级复制——
+  // 块级复制会把上方思考全文一并拷走（评审：复制正文不应携带思考内容）
   return (
-    <div className="msg msg-assistant" ref={assistantRef} onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
+    <div className="msg msg-assistant">
       <div className="msg-role">Pi</div>
       {blocks.map((block, i) => (
         <BlockView
@@ -259,8 +269,6 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
           mainThinkingLevel={mainThinkingLevel}
         />
       ))}
-      <CopyButton targetRef={assistantRef} />
-      <CardContextMenu pos={menuPos} targetRef={assistantRef} onClose={() => setMenuPos(null)} />
     </div>
   );
 }
@@ -284,6 +292,9 @@ function BlockView({
   mainModelName: string | null;
   mainThinkingLevel: string | null;
 }) {
+  /** 正文区块复制（DOM 提取，所见即所得；不含兄弟区块如 thinking/工具卡）。 */
+  const textRef = useRef<HTMLDivElement>(null);
+  const [textMenuPos, setTextMenuPos] = useState<{ x: number; y: number } | null>(null);
   if (kind === "thinking") {
     return <ThinkingBlock text={text} live={live} />;
   }
@@ -304,9 +315,11 @@ function BlockView({
     return <ToolCallCard toolCall={toolCall} live={live} toolCard={toolCard} result={result} />;
   }
   return (
-    <div className="msg-text">
+    <div className="msg-text copy-target" ref={textRef} onContextMenu={(e) => setTextMenuPos(openCardMenu(e))}>
       <Markdown content={text} />
       {live && text.length > 0 && <span className="caret" />}
+      {!live && <CopyButton targetRef={textRef} />}
+      <CardContextMenu pos={textMenuPos} targetRef={textRef} onClose={() => setTextMenuPos(null)} />
     </div>
   );
 }
@@ -316,6 +329,7 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   /** 思考体跟随最新：用户上滚后关闭，滚回底部恢复（阈值对齐外层 stickToBottom）。 */
   const followRef = useRef(true);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   // 状态驱动自动开合：思考开始（live 转真）自动展开，思考完毕自动收起；
   // 手动 toggle 在 live 不变时有效（effect 不重跑，尊重用户操作）
   useEffect(() => {
@@ -344,7 +358,7 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
     followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   };
   return (
-    <details className="thinking" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+    <details className="thinking" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)} onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
       <summary className="thinking-summary">
         <span className="thinking-dot" />
         Thinking{live ? "…" : ""}
@@ -353,6 +367,9 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
       <div className="msg-text thinking-body" ref={bodyRef} onScroll={onBodyScroll}>
         <Markdown content={text} />
       </div>
+      {/* 数据直拷思考全文（不受展开态/预览截断影响）；流式中不提供（半截无意义） */}
+      {!live && <CopyButton getText={() => text} />}
+      <CardContextMenu pos={menuPos} getText={() => text} onClose={() => setMenuPos(null)} />
     </details>
   );
 }
@@ -373,6 +390,7 @@ function ToolCallCard({
   result?: ToolResultInfo;
 }) {
   const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const args = toolCall?.arguments ?? "";
   const prettyArgs = useMemo(() => {
     if (!args) {
@@ -399,9 +417,14 @@ function ToolCallCard({
   // name 缺失时图标与卡片风格保持一致
   const isSubagent = toolName === "subagent";
   const preview = output.trim() ? output : args;
+  /** 数据直拷：args（pretty JSON）+ 输出，不经过截断预览/卡片文字。 */
+  const copyToolText = () =>
+    [prettyArgs, output.trim()]
+      .filter((s) => s.length > 0)
+      .join("\n\n");
 
   return (
-    <div className="toolchip">
+    <div className="toolchip" onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
       <button className="toolchip-head" onClick={() => setOpen(!open)}>
         <span className="toolchip-icon" dangerouslySetInnerHTML={{ __html: isSubagent ? botIcon : wrenchIcon }} />
         <span className="toolchip-name">{toolName}</span>
@@ -424,6 +447,8 @@ function ToolCallCard({
           {output.trim() && <pre className="toolresult-body">{output}</pre>}
         </div>
       )}
+      {!live && <CopyButton getText={copyToolText} />}
+      <CardContextMenu pos={menuPos} getText={copyToolText} onClose={() => setMenuPos(null)} />
     </div>
   );
 }
