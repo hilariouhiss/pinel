@@ -13,7 +13,10 @@
 pi install <本包路径或 npm 源>
 pi install git:github.com/obra/superpowers@v6.3.0   # 工作流按名引用这些技能
 
-> rpiv-pi / rpiv-workflow / rpiv-ask-user-question 等随本包依赖自动安装
+> rpiv-workflow 随本包依赖自动安装。rpiv-pi（停靠提问的 lane）与
+> rpiv-ask-user-question（问卷工具）需单独安装并在 settings.json packages
+> 中加载；其余生态包（@gotgenes/*、rpiv-todo、rpiv-voice 等）按需安装，
+> Pinel 面板的插件目录提供一键批量安装。
 
 ## 用法
 
