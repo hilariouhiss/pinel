@@ -1,4 +1,4 @@
-/** 角色计数（user/assistant/toolResult；meta 条目不计入，total 与三桶之和一致）。 */
+/** 角色计数（user/assistant/toolResult；pi 会话条目 role 嵌套在 entry.message 下，顶层无 role；meta 条目不计入，total 与三桶之和一致）。 */
 export interface MessageCounts {
   user: number;
   assistant: number;

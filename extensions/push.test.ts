@@ -68,7 +68,7 @@ describe("PushScheduler 合并/分流/记忆化", () => {
     expect(calls.widgets.length).toBe(0);
   });
 
-  it("状态未变时连续两次全量推送不产生第二帧（去重）", () => {
+  it("重复全量推送被快照去重（force 绕过）", () => {
     const { ctx, calls } = makeCtx({ entries: E });
     const s = new PushScheduler(() => ctx);
     s.flushNow(true);
@@ -102,6 +102,21 @@ describe("PushScheduler 合并/分流/记忆化", () => {
     vi.advanceTimersByTime(30);
     state.leafId = "e1"; // branch 回指：条目不变，leaf 变
     s.schedule(true);
+    vi.advanceTimersByTime(30);
+    expect(calls.widgets.length).toBe(2);
+  });
+
+  it("快照专属推送先观察到内容变化时，随后的全量推送补发树", () => {
+    const { ctx, calls, state } = makeCtx({ entries: E });
+    const s = new PushScheduler(() => ctx);
+    s.schedule(true);
+    vi.advanceTimersByTime(30);
+    expect(calls.widgets.length).toBe(1);
+    state.entries = [...state.entries, { id: "e3", message: { role: "assistant", content: "done" } }];
+    s.schedule(false); // 快照专属事件先观察到 sig 变化：树已重建缓存但未发
+    vi.advanceTimersByTime(30);
+    expect(calls.widgets.length).toBe(1);
+    s.schedule(true); // 随后的全量推送必须补发树
     vi.advanceTimersByTime(30);
     expect(calls.widgets.length).toBe(2);
   });

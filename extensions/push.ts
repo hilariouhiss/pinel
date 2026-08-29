@@ -36,6 +36,7 @@ export class PushScheduler {
   #counts: MessageCounts | null = null;
   #lastTreeJson: string | null = null;
   #lastSnapshotJson: string | null = null;
+  #treeDirty = false;
 
   constructor(
     private readonly getCtx: () => any,
@@ -72,20 +73,20 @@ export class PushScheduler {
     const sm = ctx?.sessionManager;
     const entries: ReadonlyArray<any> = sm?.getEntries?.() ?? [];
     const sig = `${sm?.getSessionFile?.() ?? ""}|${entries.length}|${sm?.getLeafId?.() ?? ""}|${lastEntryId(entries)}`;
-    let treeChanged = false;
     if (sig !== this.#lastSig) {
       this.#lastSig = sig;
       this.#counts = countRoles(entries);
       this.#lastTreeJson = JSON.stringify(buildTree(ctx));
-      treeChanged = true;
+      this.#treeDirty = true;
     }
     const snapJson = JSON.stringify(buildSnapshot(ctx, this.#counts ?? undefined));
     if (opts.force || snapJson !== this.#lastSnapshotJson) {
       this.#lastSnapshotJson = snapJson;
       ui.setStatus("pinel.state", snapJson);
     }
-    if (withTree && treeChanged) {
+    if (withTree && this.#treeDirty) {
       ui.setWidget("pinel.tree", [this.#lastTreeJson as string]);
+      this.#treeDirty = false;
     }
   }
 
@@ -95,6 +96,7 @@ export class PushScheduler {
     this.#counts = null;
     this.#lastTreeJson = null;
     this.#lastSnapshotJson = null;
+    this.#treeDirty = false;
   }
 }
 
