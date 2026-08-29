@@ -36,13 +36,14 @@ npm run watch        # 监听模式；F5 调试前必跑
 npm test             # 全部测试（pretest 自动 compile + lint）
 npm run check-types  # 仅 tsc 双 tsconfig
 npm run check-plugin # 仅插件（../pi）独立 tsc 检查（不在主 program，lint 亦不覆盖）
+npm run check:smooth-text # webview 平滑揭示纯函数自检（node strip-types）
 npm run lint         # eslint src
 npm run package      # 生产构建（minify）
 npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命令断言；需已装 pi）
 ```
 
 - 首次 `npm test` 下载 VS Code 到 `.vscode-test/`（约 100MB）
-- 质量门：`npm run compile` + `npm test` 全绿（当前 291/291：主套件 287 + 空窗口 4）
+- 质量门：`npm run compile`（含 check:smooth-text）+ `npm test` 全绿（当前 295/295：主套件 291 + 空窗口 4）
 
 ## Coding Guidelines
 
@@ -78,7 +79,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 | 会话统计/信息条 | session-stats.ts + git-status.ts + session-env；Maple Mono NF 全扩展字体；指标段：ponytail 状态（●/○ 激活/空闲 + 档位，解析 ponytail 插件自推 statusKey 帧，ANSI 剥离）+ 上下文占用 + ↑输入 ↓输出 token（对齐 pi CLI footer 语义）+ 缓存命中率 + 成本（缓存读/写不单列） |
 | fork/clone | fork-messages.ts + runSessionChange 骨架；fork 后 pi 自动 rebind |
 | subagent 卡片 | subagents.ts；tool_execution details 防御解析 + 专属卡片（内联 assistant 消息工具调用原位，统计行 + Markdown 输出；继承主会话兕底主会话实际模型/思考等级 mainModelName/mainThinkingLevel props；状态驱动自动开合 background 展开、running 不自动展开）+ 图标 lucide bot |
-| 流式文本平滑显示 | StreamFlushThrottle（stream-flush.ts 纯模块）40ms 尾部节流合并 stream 广播 + webview 流式中纯文本渲染（.msg-text-live，免 Markdown 逐 delta 全量重解析；message_end 后切回 Markdown）；重置/重启/切换/退出路径 cancel 防陈旧块迟到 |
+| 流式文本平滑显示 | StreamFlushThrottle（stream-flush.ts 纯模块）40ms 尾部节流合并 stream 广播 + KeyedFlushThrottle 同节奏合并工具卡广播（toolCallId 记忆最新，重置点同步 cancel 防陈旧卡片复活）+ webview 流式中纯文本渲染与平滑揭示（smooth-text.ts revealAdvance 纯函数 + use-smooth-text.ts rAF hook：逐帧追加、积压追赶、大积压直接落位；.msg-text-live 免 Markdown 逐 delta 全量重解析，message_end 后切回 Markdown；正文/thinking/toolcall 参数三处统一；工具输出不做 reveal——累计全文突发到达，逐字揭示负体验）；重置/重启/切换/退出路径 cancel 防陈旧块迟到 |
 | 工具结果内联 | 工具调用结果展示在原 assistant 消息卡片（ToolCallCard：lucide wrench/bot + spinner/check/x + 预览，展开 args+output；标题工具本名三层兕底 name→toolCard.toolName→result.toolName→Tool call，isSubagent 判定同源；status 驱动自动开合）；toolResult 消息命中匹配则跳过独立卡片、孤儿兑底独立卡片；webview 内部映射（App.tsx useMemo），宿主/协议零改动 |
 | 输入框自适应 | Composer scrollHeight 自适应（软换行计入，上限面板高 60%） |
 | 扩展管理 | extensions.ts；本地重命名启停 + packages settings 编辑（字符串↔对象空数组，无同 identity 条目 upsert 覆盖）+ pi remove 卸载；弹层 All/Global/Project/Catalog 四态切换（project 视图含继承全局包 inherited 行，开关写项目覆盖条目；all 包按 identity 去重 project 优先；panel 记忆最近视图刷新沿用） |
