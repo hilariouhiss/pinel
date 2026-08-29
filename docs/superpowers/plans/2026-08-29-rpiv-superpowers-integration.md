@@ -29,7 +29,7 @@
 - 只从 `@juicesharp/rpiv-workflow/registration` 和 `@juicesharp/rpiv-workflow/startup` 两个入口导入；deep import（`…/api.js` 等）跨包边界不受支持。
 - **不得** import `@juicesharp/rpiv-pi` 的任何模块——它只是被依赖，让它的扩展自己注册执行宿主与 lanes。
 - `@earendil-works/pi-ai`、`pi-coding-agent`、`pi-tui` 保持 peerDependencies，不得写入 dependencies。
-- 默认工作流名 `sp-build` 由本项目 config 层注册时声明（rpiv-pi 已注册过默认工作流的默认值——本项目 config 是更高合并层，覆盖它）。
+- 默认工作流 = 首个注册的工作流（当前包加载顺序下为 sp-build）；框架无包级声明默认的 API——要固定请在项目 `.rpiv/workflows/config.ts` 里声明 `default`（项目 config 是最高的用户可写合并层）。
 - 测试框架 vitest 4.x，无 fixture 框架；每个非平凡模块一个 `*.test.ts`。
 - 命名：pi-pinel 自带的东西一律 `sp-` 前缀（技能 `sp-gate`、工作流 `sp-build`/`sp-fix`/`sp-review`），避免与 rpiv-pi 的 29 技能撞名。
 
@@ -98,8 +98,9 @@ pi-pinel/
     "typescript": "6.0.3",
     "vitest": "4.1.10"
   },
+  "files": ["pinel.ts", "extensions/", "skills/", "workflows/", "docs/", "README.md", "!**/*.test.ts"],
   "pi": {
-    "extensions": ["./pinel.ts", "./extensions/*.ts"],
+    "extensions": ["./pinel.ts", "./extensions/pinel-workflows.ts"],
     "skills": ["./skills"]
   }
 }
