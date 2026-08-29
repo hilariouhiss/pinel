@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelPluginState, PinelState, PinelTree, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelPluginState, PinelState, PinelTree, PinelWorkflow, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
@@ -9,6 +9,7 @@ import { SessionListPopover } from "./components/SessionListPopover";
 import { ForkPopover } from "./components/ForkPopover";
 import { PinelTreePopover } from "./components/PinelTreePopover";
 import { SessionStatsBar } from "./components/SessionStatsBar";
+import { WorkflowBar } from "./components/WorkflowBar";
 import { MessageView, userText, type ToolResultInfo } from "./components/MessageView";
 import { RecentRoundBar } from "./components/RecentRoundBar";
 import { resolveVisibleUser } from "./roundbar-rule";
@@ -86,6 +87,8 @@ export default function App() {
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   /** pinel.state 插件实时快照（消息计数/模型；null=插件未装或未推送）。 */
   const [pinelState, setPinelState] = useState<PinelState | null>(null);
+  /** pinel.workflow 工作流运行状态（rpiv-workflow 生命周期推送；null=无运行/会话已切）。 */
+  const [pinelWorkflow, setPinelWorkflow] = useState<PinelWorkflow | null>(null);
   /** pinel.tree 会话树（分支链消息节点；树选择器数据源）。 */
   const [pinelTree, setPinelTree] = useState<PinelTree | null>(null);
   /** Pinel 插件安装态（扩展管理弹层安装区数据）。 */
@@ -238,6 +241,7 @@ export default function App() {
         setSessionStats(msg.sessionStats ?? null); // 快照恢复（重显/重启不留长期占位）
         setSessionEnv(msg.sessionEnv ?? null);
         setPinelState(msg.pinelState); // 插件推送缓存重放（webview 重建恢复）
+        setPinelWorkflow(msg.pinelWorkflow);
         setPinelTree(msg.pinelTree);
         setPinelPluginState(msg.pinelPluginState);
         setPendingUi(msg.pendingUi ?? []);
@@ -327,6 +331,9 @@ export default function App() {
         break;
       case "pinelState":
         setPinelState(msg.state);
+        break;
+      case "pinelWorkflow":
+        setPinelWorkflow(msg.workflow);
         break;
       case "pinelTree":
         setPinelTree(msg.tree);
@@ -746,6 +753,7 @@ export default function App() {
         {status.showSessionStats && (
           <SessionStatsBar stats={sessionStats} env={sessionEnv} pinelState={pinelState} />
         )}
+        <WorkflowBar workflow={pinelWorkflow} />
       </div>
       {/* key 随开合切换：每次打开重挂载，阈值输入 defaultValue 取最新回显（非受控免草稿态） */}
       <ConfigPopover

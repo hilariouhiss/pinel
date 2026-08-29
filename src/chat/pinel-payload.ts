@@ -129,3 +129,66 @@ function parseJsonObject(text: unknown): Record<string, unknown> | null {
 function toCount(v: unknown): number {
   return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0;
 }
+
+// ---------------------------------------------------------------------------
+// pinel.workflow / pinel.workflows（rpiv-workflow 生命周期推送）
+// ---------------------------------------------------------------------------
+
+/** 工作流运行状态（pi 端 pinel-workflows.ts 生命周期推送的四种值）。 */
+export type PinelWorkflowStatus = "running" | "awaiting-approval" | "done" | "failed";
+
+/** pinel.workflow 载荷（setStatus statusText / setWidget widgetLines[0] 同构）。 */
+export interface PinelWorkflowPayload {
+  v: 1;
+  runId: string;
+  workflow: string;
+  totalStages: number;
+  status: PinelWorkflowStatus;
+  stage?: string;
+  stageNumber?: number;
+  /** onStageError 的 error 文案；仅 failed 携带。 */
+  message?: string;
+}
+
+/** 防御解析 pinel.workflow JSON 字符串（status 非法整帧丢弃）。 */
+export function parsePinelWorkflow(text: unknown): PinelWorkflowPayload | null {
+  const raw = parseJsonObject(text);
+  if (!raw || raw.v !== 1) {
+    return null;
+  }
+  const runId = raw.runId;
+  const workflow = raw.workflow;
+  if (typeof runId !== "string" || runId.length === 0) {
+    return null;
+  }
+  if (typeof workflow !== "string" || workflow.length === 0) {
+    return null;
+  }
+  const status = raw.status;
+  if (
+    status !== "running" &&
+    status !== "awaiting-approval" &&
+    status !== "done" &&
+    status !== "failed"
+  ) {
+    return null;
+  }
+  const payload: PinelWorkflowPayload = {
+    v: 1,
+    runId,
+    workflow,
+    totalStages: toCount(raw.totalStages),
+    status,
+  };
+  if (typeof raw.stage === "string" && raw.stage.length > 0) {
+    payload.stage = raw.stage;
+  }
+  const stageNumber = raw.stageNumber;
+  if (typeof stageNumber === "number" && Number.isInteger(stageNumber) && stageNumber >= 0) {
+    payload.stageNumber = stageNumber;
+  }
+  if (typeof raw.message === "string" && raw.message.length > 0) {
+    payload.message = raw.message;
+  }
+  return payload;
+}

@@ -39,7 +39,7 @@ import {
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
 import { DEFAULT_RESERVE_TOKENS, parseSessionStats, percentToReserveTokens, reserveTokensToPercent } from "./session-stats";
 import { isDuplicateNotice } from "./notice-dedup";
-import { parsePinelState, parsePinelTree, type PinelStatePayload, type PinelTreePayload } from "./pinel-payload";
+import { parsePinelState, parsePinelTree, parsePinelWorkflow, type PinelStatePayload, type PinelTreePayload, type PinelWorkflowPayload } from "./pinel-payload";
 import {
   PINEL_PACKAGE_SOURCE,
   agentSettingsPath,
@@ -130,7 +130,7 @@ export interface SessionEnv {
 }
 
 export type OutMessage =
-  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null; sessionEnv: SessionEnv; pinelState: PinelStatePayload | null; pinelTree: PinelTreePayload | null; pinelPluginState: PinelPluginState | null }
+  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null; sessionEnv: SessionEnv; pinelState: PinelStatePayload | null; pinelTree: PinelTreePayload | null; pinelWorkflow: PinelWorkflowPayload | null; pinelPluginState: PinelPluginState | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; tool: ToolCard }
@@ -159,6 +159,7 @@ export type OutMessage =
   | { type: "catalogState"; entries: CatalogItemState[] }
   | { type: "pinelState"; state: PinelStatePayload }
   | { type: "pinelTree"; tree: PinelTreePayload }
+  | { type: "pinelWorkflow"; workflow: PinelWorkflowPayload | null }
   | { type: "pinelPluginState"; state: PinelPluginState }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
@@ -281,6 +282,8 @@ export class ChatController {
   /** Pinel 插件推送缓存（webview 重建后经 snapshot 重放）。 */
   private pinelStateCache: PinelStatePayload | null = null;
   private pinelTreeCache: PinelTreePayload | null = null;
+  /** 工作流运行状态缓存（会话切换时清空；插件结束不重置——保留 done/failed 展示）。 */
+  private pinelWorkflowCache: PinelWorkflowPayload | null = null;
   /** Pinel 插件（npm 包）安装态缓存；null = 未检测。 */
   private pinelPluginStateCache: PinelPluginState | null = null;
   /** 曾安装标记存储：vscode globalState 或内存兑底（无 globalState 时，测试）。 */
@@ -1121,6 +1124,9 @@ export class ChatController {
     this.partialBlocks = [];
     this.tools.clear();
     this.todos = []; // 新会话待办从零开始（restart 同语义，fireSnapshot 携带空列表）
+    // 工作流运行态属于旧会话：清空并广播（插件不会为新会话重推，等下一次运行开始）
+    this.pinelWorkflowCache = null;
+    this.fire({ type: "pinelWorkflow", workflow: null });
     try {
       const data = await client.send<GetMessagesData>({ type: "get_messages" });
       if (this.client !== client) {
@@ -1470,28 +1476,46 @@ export class ChatController {
    * 不白名单过滤会涌入 webview）。
    */
   private handlePinelStatus(req: ExtensionUiRequest): void {
-    if (req.statusKey !== "pinel.state") {
+    if (req.statusKey === "pinel.state") {
+      const parsed = parsePinelState(req.statusText);
+      if (!parsed) {
+        return; // 解析失败：静默丢弃（插件版本漂移容缺）
+      }
+      this.pinelStateCache = parsed;
+      this.fire({ type: "pinelState", state: parsed });
       return;
     }
-    const parsed = parsePinelState(req.statusText);
-    if (!parsed) {
-      return; // 解析失败：静默丢弃（插件版本漂移容缺）
+    if (req.statusKey === "pinel.workflow") {
+      const parsed = parsePinelWorkflow(req.statusText);
+      if (!parsed) {
+        return;
+      }
+      this.pinelWorkflowCache = parsed;
+      this.fire({ type: "pinelWorkflow", workflow: parsed });
+      return;
     }
-    this.pinelStateCache = parsed;
-    this.fire({ type: "pinelState", state: parsed });
+    // 其余 statusKey（mcp/ponytail/colgrep 等生态插件）忽略：不白名单过滤会涌入 webview
   }
 
   /** pinel.* setWidget 帧：同 setStatus 处理路径。 */
   private handlePinelWidget(req: ExtensionUiRequest): void {
-    if (req.widgetKey !== "pinel.tree") {
+    if (req.widgetKey === "pinel.tree") {
+      const parsed = parsePinelTree(req.widgetLines);
+      if (!parsed) {
+        return;
+      }
+      this.pinelTreeCache = parsed;
+      this.fire({ type: "pinelTree", tree: parsed });
       return;
     }
-    const parsed = parsePinelTree(req.widgetLines);
-    if (!parsed) {
-      return;
+    if (req.widgetKey === "pinel.workflows") {
+      const parsed = parsePinelWorkflow(req.widgetLines?.[0]);
+      if (!parsed) {
+        return; // 空列表（工作流结束清空）不覆盖 status 权威状态
+      }
+      this.pinelWorkflowCache = parsed;
+      this.fire({ type: "pinelWorkflow", workflow: parsed });
     }
-    this.pinelTreeCache = parsed;
-    this.fire({ type: "pinelTree", tree: parsed });
   }
 
   // -------------------------------------------------------------------------
@@ -2397,6 +2421,7 @@ export class ChatController {
       sessionEnv: this.sessionEnv,
       pinelState: this.pinelStateCache,
       pinelTree: this.pinelTreeCache,
+      pinelWorkflow: this.pinelWorkflowCache,
       pinelPluginState: this.pinelPluginStateCache,
     });
     // 会话文件变化（首次/切换/新建/重启后恢复）→ 异步解析标题；重放去重不重复解析
@@ -2481,6 +2506,11 @@ export class ChatController {
   /** 最近一次 pinel.tree 推送缓存（集成测试断言）。 */
   getPinelTreeCache(): PinelTreePayload | null {
     return this.pinelTreeCache;
+  }
+
+  /** 最近一次 pinel.workflow 推送缓存（集成测试断言）。 */
+  getPinelWorkflowCache(): PinelWorkflowPayload | null {
+    return this.pinelWorkflowCache;
   }
 
   /** Pinel 插件安装态缓存（null=未检测）。 */

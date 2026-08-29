@@ -12,7 +12,7 @@ interface Props {
   stats: SessionStats | null;
   /** 会话信息条环境段（folderName + git 状态）；null = 尚未广播。 */
   env: SessionEnv | null;
-  /** pinel.state 插件实时快照（消息计数/模型；null = 插件未装/未推送）。 */
+  /** pinel.state 插件实时快照（消息计数；null = 插件未装/未推送）。 */
   pinelState: PinelState | null;
 }
 
@@ -68,7 +68,7 @@ function gitMarkers(git: NonNullable<SessionEnv["git"]>): string {
 /**
  * 会话信息条（输入卡正后方、从背后探出；设置面板「显示会话信息」开关开启时显示）。
  * 左侧环境段（Maple Mono NF）：`folderName on  branch [!?↑↓]`（p10k 风格）；
- * 右侧指标段：上下文占用/窗口、缓存读↑、缓存写↓、缓存命中率、成本$。
+ * 右侧指标段：消息计数、上下文占用/窗口、缓存读↑、缓存写↓、缓存命中率、成本$。
  * 纯展示组件；各元素经 title 提供悬浮语义。
  * （Tree 导航改双击 Esc 入口、手动压缩改设置面板 Compact now，2026-08-28 移除按钮。）
  */
@@ -115,11 +115,6 @@ export function SessionStatsBar({ stats, env, pinelState }: Props) {
             <span className="session-stats-item" title={`Messages: user ${pinelState.messages.user} / assistant ${pinelState.messages.assistant} / tool ${pinelState.messages.toolResult}`}>
               <span className="session-stats-icon" dangerouslySetInnerHTML={{ __html: messageIcon }} />{" "}
               {fmt(pinelState.messages.total)}
-            </span>
-          )}
-          {pinelState?.model && (
-            <span className="session-stats-item session-stats-model" title={`Model: ${pinelState.model}`}>
-              {pinelState.model}
             </span>
           )}
           <span className="session-stats-value" title="Context usage / window">

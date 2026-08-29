@@ -992,6 +992,53 @@ async function handleCommand(record) {
           statusKey: "pinel.state",
           statusText: "not-json",
         });
+        // 工作流推送：status 好帧 → widget 好帧（覆盖缓存）→ 空 widget（结束清空，不得覆盖）→ 坏 JSON（不得污染）
+        out({
+          type: "extension_ui_request",
+          id: "pinel-wf-1",
+          method: "setStatus",
+          statusKey: "pinel.workflow",
+          statusText: JSON.stringify({
+            v: 1,
+            runId: "run-1",
+            workflow: "sp-build",
+            totalStages: 5,
+            status: "awaiting-approval",
+            stage: "gate-1",
+            stageNumber: 1,
+          }),
+        });
+        out({
+          type: "extension_ui_request",
+          id: "pinel-wfs-1",
+          method: "setWidget",
+          widgetKey: "pinel.workflows",
+          widgetLines: [
+            JSON.stringify({
+              v: 1,
+              runId: "run-2",
+              workflow: "sp-fix",
+              totalStages: 3,
+              status: "running",
+              stage: "fix",
+              stageNumber: 2,
+            }),
+          ],
+        });
+        out({
+          type: "extension_ui_request",
+          id: "pinel-wfs-clear",
+          method: "setWidget",
+          widgetKey: "pinel.workflows",
+          widgetLines: [],
+        });
+        out({
+          type: "extension_ui_request",
+          id: "bad-wf-1",
+          method: "setStatus",
+          statusKey: "pinel.workflow",
+          statusText: "not-json",
+        });
         void streamSequence(text, false);
         break;
       }

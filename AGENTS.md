@@ -42,7 +42,7 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 ```
 
 - 首次 `npm test` 下载 VS Code 到 `.vscode-test/`（约 100MB）
-- 质量门：`npm run compile` + `npm test` 全绿（当前 271/271：主套件 267 + 空窗口 4）
+- 质量门：`npm run compile` + `npm test` 全绿（当前 280/280：主套件 276 + 空窗口 4）
 
 ## Coding Guidelines
 
@@ -80,13 +80,13 @@ npm run smoke:plugin # 真实 pi 冒烟（临时项目 pi install -l + 帧/命�
 | 输入框自适应 | Composer scrollHeight 自适应（软换行计入，上限面板高 60%） |
 | 扩展管理 | extensions.ts；本地重命名启停 + packages settings 编辑（字符串↔对象空数组，无同 identity 条目 upsert 覆盖）+ pi remove 卸载；弹层 All/Global/Project/Catalog 四态切换（project 视图含继承全局包 inherited 行，开关写项目覆盖条目；all 包按 identity 去重 project 优先；panel 记忆最近视图刷新沿用） |
 | 插件目录与一键安装 | catalog.ts（静态清单 20 项 + installedIdentities/defaultInstallSpecs/installSpecsForGroup 纯函数）+ controller.getCatalogState（全局+项目 packages identity 并集判已装）/installCatalogEntries（逐个 pi install 全局 120s，顺序执行防 settings 并发写）+ panel 路由（getCatalogState/installCatalogEntry/installCatalogGroup → postCatalogState + Reload 流）+ ExtensionPopover Catalog 视图（分组/徽标/默认集批量/installing busy 防重复）；安装验证：installPinelPlugin 先例 + spike 实测 npm: 条目格式；compat 判定来自 plan-plugin-catalog-integration-20260829 §7.5 矩阵 |
-| Pinel 插件（npm 包） | ../pi/（@hilariouhiss/pinel，PINEL_PLUGIN=1 + rpc 守卫）；pinel-install.ts 安装态检测（settings.json packages + 曾安装标记不复活）；pinel-payload.ts 白名单过滤 pinel.* + 防御解析；controller 缓存 + snapshot 重放；panel 一键 pi install（runPiCommand） |
+| Pinel 插件（npm 包） | ../pi/（@hilariouhiss/pinel，PINEL_PLUGIN=1 + rpc 守卫）；pinel-install.ts 安装态检测（settings.json packages + 曾安装标记不复活）；pinel-payload.ts 白名单过滤 pinel.* + 防御解析；controller 缓存 + snapshot 重放；panel 一键 pi install（runPiCommand）；pinel.workflow 工作流状态条（WorkflowBar，rpiv-workflow 生命周期推送，会话切换清空） |
 | 会话树导航/压缩 | 插件 /pinel-tree 扩展命令（RPC 派发，control 消息不渲染不写条目）+ PinelTreePopover（双击 Esc 打开，锚定 header 分支按钮，焦点门控）；compact 原生 RPC（protocol CompactCommand + controller.compact + 设置面板 Compact now）；阈值 setCompactionThreshold（百分比↔reserveTokens 写全局 settings.json + status.autoCompactPercent 回显） |
 | 模型自愈 | get_state 重试 4 次 → 自动重启一次（不走 restart 守卫） |
 
 ## Testing Guidelines
 
-- 271 个测试必须全绿：`src/test/` 单测 17 文件（framing/stream-assembly/spawn-spec/stop/todos/commands/models/fork-messages/extensions/questionnaire/session-stats/git-status/session-history/subagents/pinel-payload/pinel-install/catalog）+ `extension.test.ts` 集成（真实 VS Code + 假 pi）+ no-workspace 4 个
+- 280 个测试必须全绿：`src/test/` 单测 18 文件（framing/stream-assembly/spawn-spec/stop/todos/commands/models/fork-messages/extensions/questionnaire/session-stats/git-status/session-history/subagents/pinel-payload/pinel-install/catalog/notice-dedup）+ `extension.test.ts` 集成（真实 VS Code + 假 pi）+ no-workspace 4 个
 - 新增覆盖：纯逻辑 → mocha 单测；聊天/RPC 行为 → `fixtures/fake-pi.js` 加 prompt 标记场景 + `PinelTestApi` 断言；改 RPC 必须同步 protocol.ts 与假 pi
 - 作用于首次 get_state/get_commands/get_session_stats 的场景用 `PINEL_FAKE_PI_SCENARIO` env 激活（不能 prompt 标记）
 - 插件本体（../pi/，不在主 tsc program）由 `npm run check-plugin` + `npm run smoke:plugin` 真实 pi 冒烟覆盖（临时项目 pi install -l，不进 CI）

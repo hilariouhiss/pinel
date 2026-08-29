@@ -261,8 +261,20 @@ export interface PinelState {
   sessionFile?: string;
 }
 
+/** pinel.workflow 载荷（rpiv-workflow 生命周期推送；宿主防御解析后广播）。 */
+export interface PinelWorkflow {
+  v: 1;
+  runId: string;
+  workflow: string;
+  totalStages: number;
+  status: "running" | "awaiting-approval" | "done" | "failed";
+  stage?: string;
+  stageNumber?: number;
+  message?: string;
+}
+
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelPluginState: PinelPluginState | null }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelWorkflow: PinelWorkflow | null; pinelPluginState: PinelPluginState | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "tool"; tool: ToolCard }
@@ -291,6 +303,7 @@ export type HostMessage =
   | { type: "catalogState"; entries: CatalogItem[] }
   | { type: "pinelState"; state: PinelState }
   | { type: "pinelTree"; tree: PinelTree }
+  | { type: "pinelWorkflow"; workflow: PinelWorkflow | null }
   | { type: "pinelPluginState"; state: PinelPluginState }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 

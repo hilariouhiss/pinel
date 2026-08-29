@@ -116,6 +116,7 @@
     "check-types": "tsc --noEmit && tsc -p webview-ui/tsconfig.json",
     "check-plugin": "tsc --noEmit --strict --skipLibCheck --target es2022 --module es2022 --lib es2022 --types node --ignoreConfig ../pi/pinel.ts",
     "smoke:plugin": "node scripts/pinel-plugin-smoke.mjs",
+    "install:all": "node scripts/install-all.mjs",
     "lint": "eslint src",
     "test": "node scripts/clean-test-userdata.mjs && vscode-test"
   },

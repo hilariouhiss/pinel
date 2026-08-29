@@ -317,6 +317,20 @@ suite("Pinel 集成测试（假 pi）", () => {
 
     // 干扰帧（非 pinel statusKey）与坏 JSON 帧均不得污染缓存（好值保留）
     assert.strictEqual(state.messages.total, 6, "坏 JSON 帧不得覆盖好缓存");
+
+    // 工作流帧：status 好帧 → widget 好帧（覆盖）→ 空 widget（结束清空，不覆盖）→ 坏 JSON（不污染）
+    const workflow = api.getPinelWorkflowCache();
+    assert.ok(workflow, "pinel.workflow 必须被解析并缓存");
+    assert.strictEqual(workflow.runId, "run-2", "widget 好帧必须覆盖 status 帧");
+    assert.strictEqual(workflow.workflow, "sp-fix");
+    assert.strictEqual(workflow.status, "running");
+    assert.strictEqual(workflow.stage, "fix");
+    assert.strictEqual(workflow.stageNumber, 2);
+    assert.strictEqual(
+      workflow.runId,
+      "run-2",
+      "空 widget 清空帧与坏 JSON 帧不得覆盖好缓存",
+    );
   });
 
   test("compact 原生命令：响应后 notice + 假 pi 收到命令", async () => {
@@ -2134,7 +2148,11 @@ suite("Pinel 集成测试（假 pi）", () => {
         "首拉 sessionEnv 广播",
       );
       const env = api.getTestEventLog().lastSessionEnv!.env;
-      assert.strictEqual(env.folderName, "pinel", "folderName = 工作区文件夹名");
+      // folderName = 工作区根目录名（controller 用 path.basename 计算；不硬编码仓库名——
+      // 仓库迁移/改名（pinel → vscode/pi 拆分）会破坏硬编码断言）
+      const expectedFolder = path.basename(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "");
+      assert.ok(expectedFolder.length > 0, "测试工作区根目录名非空");
+      assert.strictEqual(env.folderName, expectedFolder, "folderName = 工作区文件夹名");
       assert.ok(env.git, "git 非 null（仓库内）");
       const git = env.git!;
       assert.ok(typeof git.branch === "string" && git.branch.length > 0, "branch 非空");
