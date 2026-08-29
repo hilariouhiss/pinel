@@ -37,6 +37,7 @@ import {
   type ToolExecutionUpdateEvent,
 } from "../rpc/protocol";
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
+import { StreamFlushThrottle } from "./stream-flush";
 import { DEFAULT_RESERVE_TOKENS, parseSessionStats, percentToReserveTokens, reserveTokensToPercent } from "./session-stats";
 import { isDuplicateNotice } from "./notice-dedup";
 import { parsePinelState, parsePinelTree, parsePinelWorkflow, type PinelStatePayload, type PinelTreePayload, type PinelWorkflowPayload } from "./pinel-payload";
@@ -237,6 +238,10 @@ export class ChatController {
   private gitRefreshTimer: NodeJS.Timeout | null = null;
   private messages: AgentMessage[] = [];
   private partialBlocks: StreamBlock[] = [];
+  /** 流式广播节流：增量合并为固定节奏刷新（视觉平滑，见 stream-flush.ts）。 */
+  private readonly streamFlush = new StreamFlushThrottle(40, (blocks) => {
+    this.fire({ type: "stream", blocks });
+  });
   private tools = new Map<string, ToolCard>();
   /** 当前流式消息的角色（message_start 设置，全 role 防旧值残留）；
    *  message_update 仅对 assistant 应用——防御 pi 未来对用户消息发 delta。 */
@@ -580,6 +585,7 @@ export class ChatController {
       this.tools.clear();
       this.partialAssembly = createAssembly();
       this.partialBlocks = [];
+      this.streamFlush.cancel(); // 旧进程待决节流不得在重启后迟到广播
       this.status = { ...initialStatus };
       this.sessionStats = null; // 统计归属新进程会话：清空，start 首拉后填充
       this.pendingUi.clear();
@@ -629,6 +635,7 @@ export class ChatController {
       this.gitRefreshTimer = null;
     }
     this.promptEditor.dispose();
+    this.streamFlush.cancel();
     this.onChange.dispose();
   }
 
@@ -1164,6 +1171,7 @@ export class ChatController {
   private async afterSessionSwitch(client: RpcClient): Promise<void> {
     this.partialAssembly = createAssembly();
     this.partialBlocks = [];
+    this.streamFlush.cancel(); // 切换会话：旧会话待决节流不得迟到广播
     this.tools.clear();
     this.todos = []; // 新会话待办从零开始（restart 同语义，fireSnapshot 携带空列表）
     // 工作流运行态属于旧会话：清空并广播（插件不会为新会话重推，等下一次运行开始）
@@ -1931,7 +1939,7 @@ export class ChatController {
         this.partialBlocks = [];
         this.status = { ...this.status, isStreaming: false, isCompacting: false };
         this.fire({ type: "status", status: this.status });
-        this.fire({ type: "stream", blocks: [] });
+        this.broadcastStream([]);
         // 最终同步（含 compaction/retry 后的最终状态）；命令列表随会话刷新
         //（扩展可能在运行中注册新命令）
         void this.syncMessages();
@@ -1954,7 +1962,7 @@ export class ChatController {
             : "assistant";
         this.partialAssembly = createAssembly();
         this.partialBlocks = [];
-        this.fire({ type: "stream", blocks: [] });
+        this.broadcastStream([]);
         break;
 
       case "message_update":
@@ -1985,7 +1993,7 @@ export class ChatController {
         this.partialBlocks = [];
         this.messages.push(msg);
         this.fire({ type: "message", message: msg });
-        this.fire({ type: "stream", blocks: [] });
+        this.broadcastStream([]);
         break;
       }
 
@@ -2136,11 +2144,17 @@ export class ChatController {
     }
   }
 
-  /** 增量装配：应用 message_update 到 partialAssembly 并广播。 */
+  /** 增量装配：应用 message_update 到 partialAssembly，按固定节奏节流广播。 */
   private handleDelta(event: AssistantDeltaEvent): void {
     applyDelta(this.partialAssembly, event);
     this.partialBlocks = this.partialAssembly.blocks;
-    this.fire({ type: "stream", blocks: this.partialBlocks });
+    this.streamFlush.push(this.partialBlocks);
+  }
+
+  /** 立即广播 stream 块（重置/权威替换路径：先取消节流，防陈旧块迟到覆盖）。 */
+  private broadcastStream(blocks: StreamBlock[]): void {
+    this.streamFlush.cancel();
+    this.fire({ type: "stream", blocks });
   }
 
   private partialAssembly = createAssembly();
@@ -2180,7 +2194,7 @@ export class ChatController {
     this.commands = [];
     this.fire({ type: "commands", commands: this.commands });
     this.fire({ type: "status", status: this.status });
-    this.fire({ type: "stream", blocks: [] });
+    this.broadcastStream([]);
   }
 
   // -------------------------------------------------------------------------

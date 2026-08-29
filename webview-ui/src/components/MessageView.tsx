@@ -316,7 +316,9 @@ function BlockView({
   }
   return (
     <div className="msg-text copy-target" ref={textRef} onContextMenu={(e) => setTextMenuPos(openCardMenu(e))}>
-      <Markdown content={text} />
+      {/* 流式中纯文本渲染：Markdown 全量重解析是逐 delta 重绘卡顿主源；
+          message_end 后切回 Markdown（快照重放即完成态） */}
+      {live ? <span className="msg-text-live">{text}</span> : <Markdown content={text} />}
       {live && text.length > 0 && <span className="caret" />}
       {!live && <CopyButton targetRef={textRef} />}
       <CardContextMenu pos={textMenuPos} targetRef={textRef} onClose={() => setTextMenuPos(null)} />
@@ -391,7 +393,8 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
         onPointerDown={markIntent}
         onTouchStart={markIntent}
       >
-        <Markdown content={text} />
+        {/* 流式中纯文本（同正文：免 Markdown 逐 delta 重解析） */}
+        {live ? <span className="msg-text-live">{text}</span> : <Markdown content={text} />}
       </div>
       {/* 数据直拷思考全文（不受展开态/预览截断影响）；流式中不提供（半截无意义） */}
       {!live && <CopyButton getText={() => text} />}

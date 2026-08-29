@@ -285,6 +285,12 @@ body {
   word-break: break-word;
 }
 
+/* 流式纯文本（完成前渲染形态）：保留换行与连续空白，样式对齐 Markdown 文本流 */
+.msg-text-live {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .caret {
   display: inline-block;
   width: 7px;
