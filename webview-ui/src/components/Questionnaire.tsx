@@ -284,7 +284,7 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
                 Submit
               </button>
               <button className="uidialog-btn uidialog-btn-ghost" onClick={cancel}>
-                Cancel questionnaire
+                Cancel
               </button>
             </div>
           )}
@@ -385,7 +385,7 @@ function QuestionCard({
           disabled={locked || draft.trim().length === 0}
           onClick={() => onAnswer({ kind: "custom", text: draft }, true)}
         >
-          Use custom answer
+          Custom
         </button>
       </div>
       {question.multiSelect && showNext && (
