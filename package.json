@@ -7,6 +7,19 @@
   "type": "module",
   "files": ["pinel.ts", "extensions/", "skills/", "workflows/", "docs/", "README.md", "!**/*.test.ts"],
   "dependencies": {
+    "@gotgenes/pi-autoformat": "^5.1.9",
+    "@gotgenes/pi-colgrep": "^1.5.3",
+    "@gotgenes/pi-github-tools": "^4.3.2",
+    "@gotgenes/pi-nocd": "^1.0.2",
+    "@gotgenes/pi-permission-model-judge": "^2.0.0",
+    "@gotgenes/pi-permission-system": "^27.0.1",
+    "@gotgenes/pi-session-tools": "^1.2.1",
+    "@gotgenes/pi-subagents": "^19.3.5",
+    "@gotgenes/pi-subagents-worktrees": "^0.3.1",
+    "@juicesharp/rpiv-args": "^2.7.1",
+    "@juicesharp/rpiv-ask-user-question": "^2.7.1",
+    "@juicesharp/rpiv-todo": "^2.7.1",
+    "@juicesharp/rpiv-voice": "^2.7.1",
     "@juicesharp/rpiv-workflow": "^2.7.1"
   },
   "devDependencies": {
