@@ -133,14 +133,11 @@ export default function App() {
     });
     return idx;
   }, [messages]);
-  /** 悬浮条当前显示的用户消息索引（null = 隐藏；尚未计算时由 displayUserIndex 兕底最近一条）。 */
+  /** 悬浮条当前显示的用户消息索引（null = 隐藏；computeVisible 未跑过时保持 null，首帧不闪现）。 */
   const [visibleUserIndex, setVisibleUserIndex] = useState<number | null>(null);
-  /** 实际显示索引：计算前兕底最近一条（无闪烁，初始语义 = 现状恒显最近）。 */
-  const displayUserIndex =
-    visibleUserIndex ?? (userMsgIndexes.length > 0 ? userMsgIndexes[userMsgIndexes.length - 1] : null);
-  /** 悬浮条文案：仅图片用户消息兕底 "📎 图片"（评审 N4）；无显示索引 → 空串（组件不渲染）。 */
+  /** 悬浮条文案：仅图片用户消息兕底 "📎 图片"；无显示索引 → 空串（组件不渲染）。 */
   const roundBarText =
-    displayUserIndex !== null ? userText(messages[displayUserIndex].content) || "📎 图片" : "";
+    visibleUserIndex !== null ? userText(messages[visibleUserIndex]?.content) || "📎 图片" : "";
 
   // 按当前滚动位置重算悬浮条应显示的用户消息（规则见 roundbar-rule.ts 纯函数）。
   // 同时维护隐藏态重现：点击滚回后 hidden，仅当应显示的消息离开视口才重现。
@@ -177,11 +174,11 @@ export default function App() {
   // 点击悬浮条滚回当前显示的用户消息（scroll-margin-top 防遮挡；stickToBottom 由 onScroll 自然更新）
   // 点击即隐藏悬浮条：滚回后消息已在视口，无需导航条遮挡内容（上滚离开后 computeVisible 重现）
   const locateLastUser = () => {
-    if (displayUserIndex === null) {
+    if (visibleUserIndex === null) {
       return;
     }
     setRoundBarHidden(true);
-    const el = scrollRef.current?.querySelector(`[data-msg-index="${displayUserIndex}"]`);
+    const el = scrollRef.current?.querySelector(`[data-msg-index="${visibleUserIndex}"]`);
     el?.scrollIntoView({ block: "start" });
     // 焦点移交滚动容器：悬浮条卸载后焦点不落 body，键盘 ↑↓ 仍可滚动
     scrollRef.current?.focus();

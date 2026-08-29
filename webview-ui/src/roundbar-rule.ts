@@ -5,7 +5,8 @@
  * - relTops: 每条用户消息顶部相对视口顶的偏移（rect.top − 视口顶 y）。
  *   > 0 = 顶部在视口顶之下（尚未被越过）；<= 0 = 已越过（在视口顶之上）。
  *   数组按消息顺序（顶部递增）；null = 元素缺失/位置未知（扫描跳过，保守）。
- * - stickToBottom: 贴底态（视口在底部附近）→ 钉住显示最近一条。
+ * - stickToBottom: 贴底态（视口在底部附近）→ 仅当最近一条已滚出视口
+ *   （顶部越过视口顶）时钉住显示；仍在视口内（首条消息刚发送/会话尚短）→ 隐藏；
  *
  * 规则（对齐需求澄清「顶部越过即切换 + 无更多则隐藏」）：
  * - stickToBottom → 最后一条；
@@ -22,7 +23,10 @@ export function resolveVisibleUser(relTops: Array<number | null>, stickToBottom:
     return -1;
   }
   if (stickToBottom) {
-    return n - 1;
+    const t = relTops[n - 1];
+    // 贴底仅钉住已滚出视口的最近一条；顶部仍在视口内（首条刚发送）→ 隐藏；
+    // 元素缺失（null，渲染/流式瞬态）→ 保守钉住。
+    return t === null || t <= 0 ? n - 1 : -1;
   }
   for (let i = 0; i < n; i++) {
     const t = relTops[i];
