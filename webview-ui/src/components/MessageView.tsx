@@ -71,9 +71,11 @@ function userImages(content: ChatMessage["content"]): ContentBlock[] {
 function extractCardText(el: HTMLElement): string {
   const clone = el.cloneNode(true) as HTMLElement;
   clone.querySelectorAll(".msg-role, .msg-copy-btn, .msg-copy-menu, .msg-copy-overlay").forEach((n) => n.remove());
+  // 离屏但保持渲染：visibility:hidden 会让 Chromium innerText 返回空串（实测），
+  // 隐藏的 clone 提取不到文本；fixed 离屏不影响布局也无视觉闪现
   clone.style.position = "fixed";
   clone.style.left = "-9999px";
-  clone.style.visibility = "hidden";
+  clone.style.top = "0";
   document.body.appendChild(clone);
   const text = clone.innerText.trim();
   clone.remove();
@@ -97,6 +99,9 @@ function CopyButton({ targetRef }: { targetRef: React.RefObject<HTMLDivElement |
   useEffect(() => () => window.clearTimeout(timerRef.current), []);
   const onClick = () => {
     const text = targetRef.current ? extractCardText(targetRef.current) : "";
+    if (!text) {
+      return; // 无可复制文本：不写剪切板也不显示 ✓（防误导）
+    }
     copyToClipboard(text);
     setCopied(true);
     window.clearTimeout(timerRef.current); // 连续点击重置定时器，✓ 不提前恢复
