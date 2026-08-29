@@ -3,6 +3,7 @@
 ## 它是什么
 
 两部分：
+
 1. Pinel VS Code 面板桥（原有）：PINEL_PLUGIN=1 的 rpc 会话里推送会话状态/消息树。
 2. superpowers × rpiv-workflow 集成（新增）：三条内置 /wf 工作流，把 superpowers
    技能编排成可停靠、可恢复的多阶段流水线；运行状态推送到 Pinel 面板。
@@ -11,8 +12,8 @@
 
 pi install <本包路径或 npm 源>
 pi install git:github.com/obra/superpowers@v6.3.0   # 工作流按名引用这些技能
-# rpiv-pi / rpiv-workflow / rpiv-ask-user-question 等随本包依赖自动安装
-# 重启 pi
+
+> rpiv-pi / rpiv-workflow / rpiv-ask-user-question 等随本包依赖自动安装
 
 ## 用法
 
