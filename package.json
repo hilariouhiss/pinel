@@ -41,7 +41,7 @@
     "@earendil-works/pi-tui": "*"
   },
   "pi": {
-    "extensions": ["./pinel.ts", "./extensions/pinel-workflows.ts"],
+    "extensions": ["./pinel.ts", "./extensions/pinel-workflows.ts", "./extensions/plugin-usage-guide.ts"],
     "skills": ["./skills"]
   }
 }
