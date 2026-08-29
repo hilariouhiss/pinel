@@ -308,6 +308,9 @@ function BlockView({
 
 function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
   const [open, setOpen] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  /** 思考体跟随最新：用户上滚后关闭，滚回底部恢复（阈值对齐外层 stickToBottom）。 */
+  const followRef = useRef(true);
   // 状态驱动自动开合：思考开始（live 转真）自动展开，思考完毕自动收起；
   // 手动 toggle 在 live 不变时有效（effect 不重跑，尊重用户操作）
   useEffect(() => {
@@ -317,6 +320,24 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
       setOpen(false);
     }
   }, [live]);
+  // 流式增长时思考体滚到最新（到最大高度后卡片不再增高，新内容在内部滚动区）；
+  // 用户手动上滚（followRef 关闭）后停止，滚回底部恢复
+  useEffect(() => {
+    if (!live || !open) {
+      return;
+    }
+    const el = bodyRef.current;
+    if (el && followRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [text, live, open]);
+  const onBodyScroll = () => {
+    const el = bodyRef.current;
+    if (!el) {
+      return;
+    }
+    followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  };
   return (
     <details className="thinking" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="thinking-summary">
@@ -324,7 +345,7 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
         Thinking{live ? "…" : ""}
         {text.length > 0 && !open && <span className="thinking-preview">{text.slice(0, 60)}</span>}
       </summary>
-      <div className="msg-text thinking-body">
+      <div className="msg-text thinking-body" ref={bodyRef} onScroll={onBodyScroll}>
         <Markdown content={text} />
       </div>
     </details>
