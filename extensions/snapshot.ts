@@ -5,15 +5,17 @@ export function buildSnapshot(ctx: any): object {
   let user = 0;
   let assistant = 0;
   let toolResult = 0;
+  // pi 会话条目：message 条目的 role 嵌套在 entry.message 下（顶层无 role）。
   for (const e of entries) {
-    const role = e?.role;
+    const role = e?.message?.role;
     if (role === "user") user++;
     else if (role === "assistant") assistant++;
     else if (role === "toolResult") toolResult++;
   }
   const snap: Record<string, unknown> = {
     v: 1,
-    messages: { user, assistant, toolResult, total: entries.length },
+    // total 与三桶之和一致，保证 UI 数字与悬浮明细不漂移（meta 条目不计入）。
+    messages: { user, assistant, toolResult, total: user + assistant + toolResult },
   };
   if (ctx?.model?.provider && ctx?.model?.id) {
     snap.model = `${ctx.model.provider}/${ctx.model.id}`;
@@ -36,16 +38,18 @@ export function buildTree(ctx: any): object {
   const entries = sm?.getEntries?.() ?? [];
   const nodes: Record<string, unknown>[] = [];
   for (const e of entries) {
-    const role = e?.role;
+    const msg = e?.message;
+    if (!msg) continue; // meta 条目（thinking_level_change 等）无 message，跳过
+    const role = msg.role;
     if (role !== "user" && role !== "assistant") continue;
     if (typeof e?.id !== "string" || e.id.length === 0) continue;
-    const text = extractText(e?.content).slice(0, 80);
+    const text = extractText(msg.content).slice(0, 80);
     if (text.length === 0) continue;
     nodes.push({
       entryId: e.id,
       role,
       text,
-      timestamp: typeof e?.timestamp === "number" ? e.timestamp : undefined,
+      timestamp: typeof e?.timestamp === "number" || typeof e?.timestamp === "string" ? e.timestamp : undefined,
     });
   }
   const tree: Record<string, unknown> = { v: 1, nodes };
