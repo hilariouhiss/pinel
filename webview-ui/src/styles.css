@@ -2757,3 +2757,55 @@ body {
   display: block;
   stroke-width: 2.5;
 }
+
+/* ------------------------------------------------------------ 上下文状态条 */
+/* 输入卡（.composer-stack）顶部状态条（ContextBar）：Prompt/Skill/MCP 计数 chip 行；
+   次要信息层级——小字号 + 降透明度，hover/展开恢复；弹层容器复用 .model-popover 定位 */
+.context-bar {
+  /* 弹层开启时抬升到 overlay(90) 之上：chip 可直接点击切换弹层（popover 自身 z=100 更高） */
+  position: relative;
+  z-index: 95;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 6px 10px 0; /* 与 footer-card 8px 内边距对齐，视觉贴卡片顶 */
+}
+
+/* composer-chip 变体：仅覆盖尺寸/透明度（次要信息层级），不改动基类避免牵动 footer chip */
+.context-chip {
+  font-size: 10px;
+  height: auto;
+  padding: 2px 7px;
+  opacity: 0.75;
+}
+
+.context-chip:hover,
+.context-chip.open {
+  opacity: 1;
+}
+
+/* 行自带左右内边距（10px），容器纵向 4px / 横向归零，避免双重缩进 */
+.ctx-popover {
+  padding: 4px 0;
+}
+
+.ctx-popover-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 10px;
+  max-width: 320px;
+}
+
+.ctx-popover-name {
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.ctx-popover-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.7;
+  font-size: 11px;
+}

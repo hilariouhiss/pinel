@@ -8,6 +8,7 @@ import { ExtensionPopover } from "./components/ExtensionPopover";
 import { SessionListPopover } from "./components/SessionListPopover";
 import { ForkPopover } from "./components/ForkPopover";
 import { SessionStatsBar } from "./components/SessionStatsBar";
+import { ContextBar } from "./components/ContextBar";
 import { WorkflowBar } from "./components/WorkflowBar";
 import { MessageView, userText, type ToolResultInfo } from "./components/MessageView";
 import { RecentRoundBar } from "./components/RecentRoundBar";
@@ -746,6 +747,8 @@ export default function App() {
       {todos.length > 0 && <TodoPanel todos={todos} />}
       {banner}
       <div className="composer-stack">
+        {/* 上下文状态条（Prompt/Skill/MCP 计数 chip）：全空时自隐藏，不占位 */}
+        <ContextBar commands={commands} mcpStatus={mcpStatus} />
         <Composer
           status={status}
           commands={commands}
