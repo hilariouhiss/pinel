@@ -34,7 +34,7 @@
     "typebox": "*"
   },
   "pi": {
-    "extensions": ["./pinel.ts", "./extensions/pinel-workflows.ts", "./extensions/plugin-usage-guide.ts"],
+    "extensions": ["./pinel.ts", "./extensions/pinel-workflows.ts", "./extensions/plugin-usage-guide.ts", "./extensions/auto-commit.ts"],
     "skills": ["./skills"]
   }
 }
