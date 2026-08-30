@@ -120,6 +120,38 @@ body {
   contain-intrinsic-size: auto 320px;
 }
 
+/* 入场动画：新挂载的内容块淡入 + 3px 微上移（opacity/transform 不影响布局，
+   与 stickToBottom 预绘制滚动无冲突）。快照恢复按 key 复用 DOM，不重放；
+   嵌套块（.msg 内 .msg-text / .thinking 内 .msg-text）同时动画，叠加曲线更柔和。
+   ponytail: 动画期间 transform 为 fixed 右键菜单建立定位上下文——仅影响
+   挂载后 ~150ms 窗口内打开的菜单，概率极低，可接受 */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+.msg,
+.msg-text,
+.thinking,
+.toolchip,
+.toolresult,
+.toolcard-body,
+.toolresult-body {
+  animation: msg-in 150ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg,
+  .msg-text,
+  .thinking,
+  .toolchip,
+  .toolresult,
+  .toolcard-body,
+  .toolresult-body {
+    animation: none;
+  }
+}
+
 /* 最近回合悬浮状态条：经 .recent-round-anchor（高 0 sticky）钉在滚动视口顶部，
    不随内容滚走；宽度 = 滚动内容区宽，与消息卡片结构级严格同宽（滚动条出现
    自动让位，无需测量补偿） */
