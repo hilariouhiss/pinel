@@ -42,7 +42,7 @@ import { KeyedFlushThrottle, StreamFlushThrottle } from "./stream-flush";
 import { parseBashInput } from "./bash";
 import { DEFAULT_RESERVE_TOKENS, parseSessionStats, percentToReserveTokens, reserveTokensToPercent } from "./session-stats";
 import { isDuplicateNotice } from "./notice-dedup";
-import { parseMcpStatus, parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, type McpStatus, type PinelStatePayload, type PinelTreePayload, type PinelWorkflowPayload, type PonytailStatus } from "./pinel-payload";
+import { parseMcpStatus, parsePinelPrompt, parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, type McpStatus, type PinelPromptPayload, type PinelStatePayload, type PinelTreePayload, type PinelWorkflowPayload, type PonytailStatus } from "./pinel-payload";
 import {
   PINEL_PACKAGE_SOURCE,
   agentSettingsPath,
@@ -135,7 +135,7 @@ export interface SessionEnv {
 }
 
 export type OutMessage =
-  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null; sessionEnv: SessionEnv; pinelState: PinelStatePayload | null; pinelTree: PinelTreePayload | null; pinelWorkflow: PinelWorkflowPayload | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; mcpStatus: McpStatus | null }
+  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null; sessionEnv: SessionEnv; pinelState: PinelStatePayload | null; pinelTree: PinelTreePayload | null; pinelWorkflow: PinelWorkflowPayload | null; pinelPrompt: PinelPromptPayload | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; mcpStatus: McpStatus | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; tool: ToolCard }
@@ -165,6 +165,7 @@ export type OutMessage =
   | { type: "pinelState"; state: PinelStatePayload }
   | { type: "pinelTree"; tree: PinelTreePayload }
   | { type: "pinelWorkflow"; workflow: PinelWorkflowPayload | null }
+  | { type: "pinelPrompt"; prompt: PinelPromptPayload | null }
   | { type: "pinelPluginState"; state: PinelPluginState }
   | { type: "ponytailStatus"; status: PonytailStatus }
   | { type: "mcpStatus"; status: McpStatus | null }
@@ -325,6 +326,8 @@ export class ChatController {
   private pinelTreeCache: PinelTreePayload | null = null;
   /** 工作流运行状态缓存（会话切换时清空；插件结束不重置——保留 done/failed 展示）。 */
   private pinelWorkflowCache: PinelWorkflowPayload | null = null;
+  /** 提示词组成缓存（statusKey "pinel.prompt" 帧；会话切换/重启清空，首轮 agent_start 重推）。 */
+  private pinelPromptCache: PinelPromptPayload | null = null;
   /** Pinel 插件（npm 包）安装态缓存；null = 未检测。 */
   private pinelPluginStateCache: PinelPluginState | null = null;
   /** ponytail 状态缓存（statusKey "ponytail" 帧；null = 未收到/插件未装）。 */
@@ -637,6 +640,7 @@ export class ChatController {
       this.todos = [];
       this.commands = [];
       this.mcpStatusCache = null; // MCP 状态归属旧 pi 进程：重启即失效
+      this.pinelPromptCache = null; // 提示词组成归属旧 pi 进程：重启即失效
       const staleQuestionnaire = this.questionnaire;
       this.questionnaire = null;
       this.questionnaireCancelPending = null; // 僵尸问卷随重启清空（新进程新回合）
@@ -648,6 +652,7 @@ export class ChatController {
       this.fire({ type: "commands", commands: this.commands });
       this.fire({ type: "questionnaireCleared" });
       this.fire({ type: "mcpStatus", status: null });
+      this.fire({ type: "pinelPrompt", prompt: null });
       // 问卷缓冲帧随旧进程死亡前主动补 cancelled（HIGH-2：与 settled 清理同理由，
       // 插件问卷无 timeout，pi 侧不会自动解锁；进程此刻仍存活，回复有意义）
       if (old && staleQuestionnaire) {
@@ -1303,6 +1308,9 @@ export class ChatController {
     // 工作流运行态属于旧会话：清空并广播（插件不会为新会话重推，等下一次运行开始）
     this.pinelWorkflowCache = null;
     this.fire({ type: "pinelWorkflow", workflow: null });
+    // 提示词组成同样归属旧会话（项目文件/注入可能不同）：首轮 agent_start 重推
+    this.pinelPromptCache = null;
+    this.fire({ type: "pinelPrompt", prompt: null });
     try {
       const data = await client.send<GetMessagesData>({ type: "get_messages" });
       if (this.client !== client) {
@@ -1769,6 +1777,15 @@ export class ChatController {
       }
       this.pinelStateCache = parsed;
       this.fire({ type: "pinelState", state: parsed });
+      return;
+    }
+    if (req.statusKey === "pinel.prompt") {
+      const parsed = parsePinelPrompt(req.statusText);
+      if (!parsed) {
+        return;
+      }
+      this.pinelPromptCache = parsed;
+      this.fire({ type: "pinelPrompt", prompt: parsed });
       return;
     }
     if (req.statusKey === "pinel.workflow") {
@@ -2762,6 +2779,7 @@ export class ChatController {
       pinelState: this.pinelStateCache,
       pinelTree: this.pinelTreeCache,
       pinelWorkflow: this.pinelWorkflowCache,
+      pinelPrompt: this.pinelPromptCache,
       pinelPluginState: this.pinelPluginStateCache,
       ponytailStatus: this.ponytailStatusCache,
       mcpStatus: this.mcpStatusCache,
@@ -2848,6 +2866,11 @@ export class ChatController {
   /** 最近一次 pinel.tree 推送缓存（集成测试断言）。 */
   getPinelTreeCache(): PinelTreePayload | null {
     return this.pinelTreeCache;
+  }
+
+  /** 最近一次 pinel.prompt 推送缓存（集成测试断言）。 */
+  getPinelPromptCache(): PinelPromptPayload | null {
+    return this.pinelPromptCache;
   }
 
   /** 最近一次 pinel.workflow 推送缓存（集成测试断言）。 */

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, McpStatus, ModelInfo, PinelPluginState, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, McpStatus, ModelInfo, PinelPluginState, PinelPrompt, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
@@ -93,6 +93,8 @@ export default function App() {
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
   /** pinel.workflow 工作流运行状态（rpiv-workflow 生命周期推送；null=无运行/会话已切）。 */
   const [pinelWorkflow, setPinelWorkflow] = useState<PinelWorkflow | null>(null);
+  /** pinel.prompt 提示词组成（插件 agent_start 推送；null=未收到 → 组成 chip 隐藏）。 */
+  const [pinelPrompt, setPinelPrompt] = useState<PinelPrompt | null>(null);
   /** Pinel 插件安装态（扩展管理弹层安装区数据）。 */
   const [pinelPluginState, setPinelPluginState] = useState<PinelPluginState | null>(null);
   /** 会话信息条环境段（宿主 sessionEnv 推送；含文件夹名 + git 状态）。 */
@@ -252,6 +254,7 @@ export default function App() {
         setSessionStats(msg.sessionStats ?? null); // 快照恢复（重显/重启不留长期占位）
         setSessionEnv(msg.sessionEnv ?? null);
         setPinelWorkflow(msg.pinelWorkflow);
+        setPinelPrompt(msg.pinelPrompt ?? null);
         setPinelPluginState(msg.pinelPluginState);
         setPonytailStatus(msg.ponytailStatus);
         setMcpStatus(msg.mcpStatus);
@@ -372,6 +375,9 @@ export default function App() {
         break;
       case "pinelWorkflow":
         setPinelWorkflow(msg.workflow);
+        break;
+      case "pinelPrompt":
+        setPinelPrompt(msg.prompt);
         break;
       case "pinelTree":
         // 会话树弹层已移除（双击 Esc 入口废除，与 Fork 弹层功能重叠）；
@@ -770,7 +776,7 @@ export default function App() {
       {banner}
       <div className="composer-stack">
         {/* 上下文状态条（Prompt/Skill/MCP 计数 chip）：全空时自隐藏，不占位 */}
-        <ContextBar commands={commands} mcpStatus={mcpStatus} />
+        <ContextBar commands={commands} mcpStatus={mcpStatus} pinelPrompt={pinelPrompt} />
         <Composer
           status={status}
           commands={commands}

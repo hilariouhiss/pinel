@@ -236,6 +236,134 @@ export function parseMcpStatus(text: unknown): McpStatus | null {
 }
 
 // ---------------------------------------------------------------------------
+// pinel.prompt（提示词组成；插件 prompt-composition.ts 推送）
+// ---------------------------------------------------------------------------
+
+/** 组成段（chars 全量字符数；preview 预览文本，插件侧已截断）。 */
+export interface PinelPromptSection {
+  chars: number;
+  preview: string;
+}
+
+/** 组成文件（contextFiles 条目；level：user=agentDir 下，project=项目及祖先目录）。 */
+export interface PinelPromptFile {
+  level: "user" | "project";
+  name: string;
+  path: string;
+  chars: number;
+  preview: string;
+}
+
+/** pinel.prompt 载荷（statusKey "pinel.prompt" 解析产物）。 */
+export interface PinelPromptPayload {
+  v: 1;
+  /** 基础系统提示词（默认 pi 内置或自定义替换，含文件/技能/工具拼装）。 */
+  system: PinelPromptSection & { kind: "default" | "custom" };
+  /** 用户级 + 项目级上下文文件。 */
+  files: PinelPromptFile[];
+  /** settings appendSystemPrompt（拼接文本）。 */
+  append?: PinelPromptSection;
+  /** 计数：追加准则 / 技能 / 工具。 */
+  counts: { guidelines: number; skills: number; tools: number };
+  /** 插件链注入段（前缀差分成功且非 0）；与 injectedUnknown 互斥。 */
+  injected?: PinelPromptSection;
+  /** true = 插件是替换型注入，无法差分（仅 finalChars 可信）。 */
+  injectedUnknown?: true;
+  /** 最终系统提示词总字符（基础 + 注入）。 */
+  finalChars: number;
+}
+
+function toSection(v: unknown): PinelPromptSection | null {
+  if (typeof v !== "object" || v === null) {
+    return null;
+  }
+  const s = v as Record<string, unknown>;
+  if (typeof s.chars !== "number" || !Number.isFinite(s.chars) || s.chars < 0) {
+    return null;
+  }
+  if (typeof s.preview !== "string") {
+    return null;
+  }
+  return { chars: s.chars, preview: s.preview };
+}
+
+/** 防御解析 pinel.prompt JSON 字符串（system/counts/finalChars 缺一即整帧丢弃）。 */
+export function parsePinelPrompt(text: unknown): PinelPromptPayload | null {
+  const raw = parseJsonObject(text);
+  if (!raw || raw.v !== 1) {
+    return null;
+  }
+  const systemRaw = raw.system;
+  if (typeof systemRaw !== "object" || systemRaw === null) {
+    return null;
+  }
+  const kind = (systemRaw as Record<string, unknown>).kind;
+  if (kind !== "default" && kind !== "custom") {
+    return null;
+  }
+  const section = toSection(systemRaw);
+  if (!section) {
+    return null;
+  }
+  const countsRaw = raw.counts;
+  if (typeof countsRaw !== "object" || countsRaw === null) {
+    return null;
+  }
+  const c = countsRaw as Record<string, unknown>;
+  const counts = {
+    guidelines: toCount(c.guidelines),
+    skills: toCount(c.skills),
+    tools: toCount(c.tools),
+  };
+  const finalChars = raw.finalChars;
+  if (typeof finalChars !== "number" || !Number.isFinite(finalChars) || finalChars < 0) {
+    return null;
+  }
+  const files: PinelPromptFile[] = [];
+  if (Array.isArray(raw.files)) {
+    for (const item of raw.files) {
+      if (typeof item !== "object" || item === null) {
+        continue;
+      }
+      const f = item as Record<string, unknown>;
+      if (f.level !== "user" && f.level !== "project") {
+        continue;
+      }
+      if (typeof f.name !== "string" || f.name.length === 0) {
+        continue;
+      }
+      if (typeof f.path !== "string" || f.path.length === 0) {
+        continue;
+      }
+      const fs = toSection(f);
+      if (!fs) {
+        continue;
+      }
+      files.push({ level: f.level, name: f.name, path: f.path, chars: fs.chars, preview: fs.preview });
+    }
+  }
+  const payload: PinelPromptPayload = {
+    v: 1,
+    system: { ...section, kind },
+    files,
+    counts,
+    finalChars,
+  };
+  const append = toSection(raw.append);
+  if (append) {
+    payload.append = append;
+  }
+  const injected = toSection(raw.injected);
+  if (injected && injected.chars > 0) {
+    payload.injected = injected;
+  }
+  if (raw.injectedUnknown === true) {
+    payload.injectedUnknown = true;
+  }
+  return payload;
+}
+
+// ---------------------------------------------------------------------------
 // pinel.workflow / pinel.workflows（rpiv-workflow 生命周期推送）
 // ---------------------------------------------------------------------------
 

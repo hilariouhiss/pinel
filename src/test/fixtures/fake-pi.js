@@ -971,6 +971,29 @@ async function handleCommand(record) {
         setTimeout(() => process.exit(1), 1500);
         break;
       }
+      if (text.includes("PINELPROMPT")) {
+        // 模拟 pinel 插件 agent_start 推送提示词组成（statusKey "pinel.prompt"；
+        // 真实形状见 pi/extensions/prompt-composition.ts 契约）
+        out({
+          type: "extension_ui_request",
+          id: "pinel-prompt-1",
+          method: "setStatus",
+          statusKey: "pinel.prompt",
+          statusText: JSON.stringify({
+            v: 1,
+            system: { chars: 32400, kind: "default", preview: "You are pi…" },
+            files: [
+              { level: "user", name: "AGENT.md", path: "/home/u/.pi/agent/AGENT.md", chars: 1200, preview: "user rules" },
+              { level: "project", name: "AGENTS.md", path: "/repo/AGENTS.md", chars: 8500, preview: "project rules" },
+            ],
+            counts: { guidelines: 6, skills: 12, tools: 18 },
+            injected: { chars: 4700, preview: "context-mode active…" },
+            finalChars: 37100,
+          }),
+        });
+        void streamSequence(text, false);
+        break;
+      }
       if (text.includes("PINELUI")) {
         // 模拟 Pinel 插件推送：setStatus/setWidget 帧（含 ponytail 状态帧、
         // ponytail 坏帧与 pinel.state 坏 JSON 干扰）

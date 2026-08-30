@@ -303,8 +303,35 @@ export interface PinelWorkflow {
   message?: string;
 }
 
+/** 提示词组成段（chars 全量字符；preview 预览文本）。 */
+export interface PinelPromptSection {
+  chars: number;
+  preview: string;
+}
+
+/** 组成文件（level：user=用户级 agentDir 下；project=项目级）。 */
+export interface PinelPromptFile {
+  level: "user" | "project";
+  name: string;
+  path: string;
+  chars: number;
+  preview: string;
+}
+
+/** pinel.prompt 载荷（提示词组成；插件 agent_start 推送 → 宿主解析广播）。 */
+export interface PinelPrompt {
+  v: 1;
+  system: PinelPromptSection & { kind: "default" | "custom" };
+  files: PinelPromptFile[];
+  append?: PinelPromptSection;
+  counts: { guidelines: number; skills: number; tools: number };
+  injected?: PinelPromptSection;
+  injectedUnknown?: true;
+  finalChars: number;
+}
+
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelWorkflow: PinelWorkflow | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; mcpStatus: McpStatus | null }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelWorkflow: PinelWorkflow | null; pinelPrompt: PinelPrompt | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; mcpStatus: McpStatus | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "bash"; message: ChatMessage }
@@ -335,6 +362,7 @@ export type HostMessage =
   | { type: "pinelState"; state: PinelState }
   | { type: "pinelTree"; tree: PinelTree }
   | { type: "pinelWorkflow"; workflow: PinelWorkflow | null }
+  | { type: "pinelPrompt"; prompt: PinelPrompt | null }
   | { type: "pinelPluginState"; state: PinelPluginState }
   | { type: "ponytailStatus"; status: PonytailStatus }
   | { type: "mcpStatus"; status: McpStatus | null }

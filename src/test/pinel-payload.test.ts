@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "mocha";
-import { parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, parseMcpStatus } from "../chat/pinel-payload";
+import { parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, parseMcpStatus, parsePinelPrompt } from "../chat/pinel-payload";
 
 describe("pinel-payload 防御解析", () => {
   describe("parsePinelState", () => {
@@ -255,6 +255,105 @@ describe("pinel-payload 防御解析", () => {
       assert.strictEqual(parseMcpStatus("hello world"), null);
       assert.strictEqual(parseMcpStatus("MCP: weird"), null);
       assert.strictEqual(parseMcpStatus(42), null);
+    });
+  });
+
+  describe("parsePinelPrompt", () => {
+    const full = JSON.stringify({
+      v: 1,
+      system: { chars: 100, kind: "default", preview: "BASE" },
+      files: [
+        { level: "user", name: "AGENT.md", path: "/home/u/.pi/agent/AGENT.md", chars: 10, preview: "user rules" },
+        { level: "project", name: "AGENTS.md", path: "/repo/AGENTS.md", chars: 20, preview: "project rules" },
+      ],
+      append: { chars: 5, preview: "EXTRA" },
+      counts: { guidelines: 3, skills: 1, tools: 2 },
+      injected: { chars: 7, preview: "INJECT!" },
+      finalChars: 107,
+    });
+
+    it("全字段解析", () => {
+      const parsed = parsePinelPrompt(full)!;
+      assert.strictEqual(parsed.system.kind, "default");
+      assert.strictEqual(parsed.system.chars, 100);
+      assert.strictEqual(parsed.files.length, 2);
+      assert.strictEqual(parsed.files[0].level, "user");
+      assert.strictEqual(parsed.files[1].name, "AGENTS.md");
+      assert.deepStrictEqual(parsed.counts, { guidelines: 3, skills: 1, tools: 2 });
+      assert.deepStrictEqual(parsed.append, { chars: 5, preview: "EXTRA" });
+      assert.deepStrictEqual(parsed.injected, { chars: 7, preview: "INJECT!" });
+      assert.strictEqual(parsed.finalChars, 107);
+      assert.strictEqual(parsed.injectedUnknown, undefined);
+    });
+
+    it("injectedUnknown=true（替换型）；injected 0 字符丢弃", () => {
+      const unknown = parsePinelPrompt(
+        JSON.stringify({
+          v: 1,
+          system: { chars: 1, kind: "default", preview: "B" },
+          files: [],
+          counts: { guidelines: 0, skills: 0, tools: 0 },
+          injectedUnknown: true,
+          finalChars: 99,
+        }),
+      )!;
+      assert.strictEqual(unknown.injectedUnknown, true);
+      assert.strictEqual(unknown.injected, undefined);
+      const zero = parsePinelPrompt(
+        JSON.stringify({
+          v: 1,
+          system: { chars: 1, kind: "default", preview: "B" },
+          files: [],
+          counts: { guidelines: 0, skills: 0, tools: 0 },
+          injected: { chars: 0, preview: "" },
+          finalChars: 1,
+        }),
+      )!;
+      assert.strictEqual(zero.injected, undefined);
+    });
+
+    it("坏条目容缺：files 坏项跳过、可选段缺席容忍", () => {
+      const parsed = parsePinelPrompt(
+        JSON.stringify({
+          v: 1,
+          system: { chars: 1, kind: "custom", preview: "C" },
+          files: [
+            { level: "wrong", name: "x", path: "/x", chars: 1, preview: "x" },
+            { level: "project", name: "ok.md", path: "/ok.md", chars: 2, preview: "ok" },
+            { level: "user", name: "", path: "/n", chars: 1, preview: "n" },
+          ],
+          counts: { guidelines: 0, skills: 0, tools: 0 },
+          finalChars: 1,
+        }),
+      )!;
+      assert.strictEqual(parsed.files.length, 1);
+      assert.strictEqual(parsed.files[0].name, "ok.md");
+      assert.strictEqual(parsed.append, undefined);
+    });
+
+    it("核心字段缺失/非法 → null（整帧丢弃）", () => {
+      assert.strictEqual(parsePinelPrompt("not json"), null);
+      assert.strictEqual(parsePinelPrompt("[]"), null);
+      assert.strictEqual(parsePinelPrompt(JSON.stringify({ v: 2, system: {} })), null);
+      assert.strictEqual(
+        parsePinelPrompt(
+          JSON.stringify({ v: 1, system: { chars: 1, kind: "weird", preview: "x" }, counts: {}, finalChars: 1 }),
+        ),
+        null,
+      );
+      assert.strictEqual(
+        parsePinelPrompt(
+          JSON.stringify({ v: 1, system: { chars: -1, kind: "default", preview: "x" }, counts: {}, finalChars: 1 }),
+        ),
+        null,
+      );
+      assert.strictEqual(
+        parsePinelPrompt(
+          JSON.stringify({ v: 1, system: { chars: 1, kind: "default", preview: "x" }, counts: {}, finalChars: -5 }),
+        ),
+        null,
+      );
+      assert.strictEqual(parsePinelPrompt(undefined), null);
     });
   });
 });

@@ -384,6 +384,37 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.strictEqual(api.getMcpStatus(), null, "重启/退出后 mcp 缓存必须清空");
   });
 
+  test("提示词组成 pinel.prompt 帧：解析缓存 + 重启清空", async function () {
+    this.timeout(60000);
+    // PINELPROMPT：fake-pi 推送 statusKey "pinel.prompt"（真实插件 agent_start 同构帧）
+    const marker = `PINELPROMPT-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+    await api.waitForSettled(30000, baseline);
+
+    const prompt = api.getPinelPromptCache();
+    assert.ok(prompt, "pinel.prompt 必须被解析并缓存");
+    assert.strictEqual(prompt.system.kind, "default");
+    assert.strictEqual(prompt.system.chars, 32400);
+    assert.strictEqual(prompt.files.length, 2);
+    assert.strictEqual(prompt.files[0].level, "user");
+    assert.strictEqual(prompt.files[0].name, "AGENT.md");
+    assert.strictEqual(prompt.files[1].level, "project");
+    assert.deepStrictEqual(prompt.counts, { guidelines: 6, skills: 12, tools: 18 });
+    assert.deepStrictEqual(prompt.injected, { chars: 4700, preview: "context-mode active…" });
+    assert.strictEqual(prompt.finalChars, 37100);
+    assert.strictEqual(prompt.injectedUnknown, undefined);
+
+    // 重启清空（组成归属旧 pi 进程）
+    await api.restart();
+    await waitFor(
+      () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+      20000,
+      "重启后恢复",
+    );
+    assert.strictEqual(api.getPinelPromptCache(), null, "重启后 pinel.prompt 缓存必须清空");
+  });
+
   test("ponytail 档位循环：点击链路发 /ponytail <next> 扩展命令 + 帧回推刷新", async () => {
     // 借 PINELUI 场景建立状态帧缓存（mode: full）
     const marker = `PINELUI-PONYCYCLE-${Date.now()}`;
