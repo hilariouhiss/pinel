@@ -1,3 +1,4 @@
+import { vscode } from "../index";
 import type { PonytailStatus, SessionEnv, SessionStats } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import upArrowIcon from "lucide-static/icons/arrow-up.svg";
@@ -5,6 +6,10 @@ import downArrowIcon from "lucide-static/icons/arrow-down.svg";
 import dollarIcon from "lucide-static/icons/dollar-sign.svg";
 import cacheIcon from "lucide-static/icons/database.svg";
 import branchIcon from "lucide-static/icons/git-branch.svg";
+import leafIcon from "lucide-static/icons/leaf.svg";
+import zapIcon from "lucide-static/icons/zap.svg";
+import flameIcon from "lucide-static/icons/flame.svg";
+import powerIcon from "lucide-static/icons/power.svg";
 
 interface Props {
   /** 会话统计（宿主 parseSessionStats 结果）；null = 尚未拉取（占位）。 */
@@ -46,6 +51,14 @@ function fmt(n: number): string {
   return n.toLocaleString();
 }
 
+/** 档位 → lucide 图标（对齐 ponytail 插件自身 emoji：🌿/⚡/🔥；off → 电源键，点击重新启用）。 */
+const PONYTAIL_LEVEL_ICONS: Record<string, string> = {
+  lite: leafIcon,
+  full: zapIcon,
+  ultra: flameIcon,
+  off: powerIcon,
+};
+
 /** git 状态符号串 `[!?↑↓]`（仅在有指示时返回，否则空串）。 */
 function gitMarkers(git: NonNullable<SessionEnv["git"]>): string {
   const parts: string[] = [];
@@ -67,7 +80,7 @@ function gitMarkers(git: NonNullable<SessionEnv["git"]>): string {
 /**
  * 会话信息条（输入卡正后方、从背后探出；设置面板「显示会话信息」开关开启时显示）。
  * 左侧环境段（Maple Mono NF）：`folderName on  branch [!?↑↓]`（p10k 风格）；
- * 右侧指标段：ponytail 状态（空心/实心点 + 当前档位）、上下文占用/窗口、
+ * 右侧指标段：ponytail 状态（空心/实心点 + 档位图标，点击循环切换档位）、上下文占用/窗口、
  * 输入↑、输出↓、缓存命中率、成本$——↑↓ 对齐 pi CLI footer 语义（缓存读/写不再单列）。
  * 纯展示组件；各元素经 title 提供悬浮语义。
  * （Tree 导航/双击 Esc 入口与 Fork 弹层重叠已移除、手动压缩改设置面板 Compact now，2026-08 移除按钮。）
@@ -112,15 +125,22 @@ export function SessionStatsBar({ stats, env, ponytailStatus }: Props) {
         </span>
         <span className="session-stats-metrics">
           {ponytailStatus && (
-            <span
-              className="session-stats-item"
-              title={`Ponytail: ${ponytailStatus.mode.toUpperCase()}${ponytailStatus.active ? "" : " (idle)"}`}
+            <button
+              type="button"
+              className="session-stats-ponytail"
+              title={`Ponytail: ${ponytailStatus.mode.toUpperCase()}${ponytailStatus.active ? "" : " (idle)"} — click to cycle`}
+              onClick={() => vscode.postMessage({ type: "cyclePonytail" })}
             >
               <span className={`ponytail-dot${ponytailStatus.active ? " ponytail-dot-active" : ""}`}>
                 {ponytailStatus.active ? "●" : "○"}
               </span>{" "}
-              ponytail: {ponytailStatus.mode.toUpperCase()}
-            </span>
+              <span
+                className="session-stats-icon"
+                dangerouslySetInnerHTML={{
+                  __html: PONYTAIL_LEVEL_ICONS[ponytailStatus.mode] ?? zapIcon,
+                }}
+              />
+            </button>
           )}
           <span className="session-stats-value" title="Context usage / window">
             {contextText}

@@ -384,6 +384,40 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.strictEqual(api.getMcpStatus(), null, "重启/退出后 mcp 缓存必须清空");
   });
 
+  test("ponytail 档位循环：点击链路发 /ponytail <next> 扩展命令 + 帧回推刷新", async () => {
+    // 借 PINELUI 场景建立状态帧缓存（mode: full）
+    const marker = `PINELUI-PONYCYCLE-${Date.now()}`;
+    const baseline = api.getSettledCount();
+    await api.sendPrompt(marker);
+    await api.waitForSettled(30000, baseline);
+    assert.strictEqual(api.getPonytailStatusCache()?.mode, "full");
+
+    // full → ultra（/ponytail ultra 扩展命令，假 pi 回推新帧）
+    await api.cyclePonytail();
+    await waitFor(
+      () => api.getPonytailStatusCache()?.mode === "ultra",
+      10000,
+      "ponytail 档位必须切到 ultra",
+    );
+    // ultra → lite（循环回绕）
+    await api.cyclePonytail();
+    await waitFor(
+      () => api.getPonytailStatusCache()?.mode === "lite",
+      10000,
+      "ponytail 档位必须循环到 lite",
+    );
+    // 假 pi 收到的命令序列：marker prompt + 两次扩展命令
+    const records = recordsAfterPrompt(readFakePiLog(logPath), marker);
+    const prompts = (
+      logRecordsWith(records, "in", "prompt") as Array<{ record?: { record?: { message?: string } } }>
+    ).map((rec) => rec.record?.record?.message);
+    assert.deepStrictEqual(
+      prompts,
+      [marker, "/ponytail ultra", "/ponytail lite"],
+      "点击循环必须发出对应扩展命令",
+    );
+  });
+
   test("compact 原生命令：响应后 notice + 假 pi 收到命令", async () => {
     await api.compact();
 

@@ -57,6 +57,10 @@ interface WebviewCycleThinkingMessage {
   type: "cycleThinking";
 }
 
+interface WebviewCyclePonytailMessage {
+  type: "cyclePonytail";
+}
+
 interface WebviewGetModelsMessage {
   type: "getModels";
 }
@@ -214,6 +218,7 @@ type WebviewInMessage =
   | WebviewQuestionnaireCancelMessage
   | WebviewCycleModelMessage
   | WebviewCycleThinkingMessage
+  | WebviewCyclePonytailMessage
   | WebviewGetModelsMessage
   | WebviewSetModelMessage
   | WebviewGetThinkingLevelsMessage
@@ -337,6 +342,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "cycleThinking":
         void this.controller.cycleThinkingLevel();
+        break;
+      case "cyclePonytail":
+        void this.controller.cyclePonytail();
         break;
       case "getModels":
         void this.controller.getModels();

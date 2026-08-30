@@ -1448,6 +1448,34 @@ export class ChatController {
     }
   }
 
+  /**
+   * 循环切换 ponytail 档位（lite→full→ultra→lite；off/未知→full 重新启用）。
+   * `/ponytail <mode>` 是 ponytail 插件扩展命令：RPC prompt 立即执行（流式中亦然）、
+   * 不写会话条目（/pinel-* 同机制实证）；新档位经 statusKey "ponytail" 帧回推刷新，
+   * 无需本地乐观更新。
+   */
+  async cyclePonytail(): Promise<void> {
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("warning", "pi process unavailable, cannot switch ponytail mode");
+      return;
+    }
+    const order = ["lite", "full", "ultra"];
+    const idx = order.indexOf(this.ponytailStatusCache?.mode ?? "");
+    const next = idx >= 0 ? order[(idx + 1) % order.length] : "full";
+    try {
+      await client.send({ type: "prompt", message: `/ponytail ${next}` });
+      if (this.client !== client) {
+        return; // restart 竞态：丢弃迟到响应，不污染新进程状态
+      }
+    } catch (err) {
+      if (this.client !== client) {
+        return;
+      }
+      this.notice("error", `Switch ponytail mode failed: ${(err as Error).message}`);
+    }
+  }
+
   async setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void> {
     await this.applyConfigCommand(
       { type: "set_steering_mode", mode },

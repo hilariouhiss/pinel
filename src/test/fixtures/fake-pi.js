@@ -914,6 +914,18 @@ async function handleCommand(record) {
     case "prompt": {
       respond(id, "prompt", true);
       const text = String(record.message ?? "");
+      // /ponytail <mode> 扩展命令：立即执行（无流），回推新档位状态帧（真实形态）
+      const ponytailCmd = text.match(/^\/ponytail\s+([a-z]+)\s*$/i);
+      if (ponytailCmd) {
+        out({
+          type: "extension_ui_request",
+          id: `ponytail-status-${ponytailCmd[1]}`,
+          method: "setStatus",
+          statusKey: "ponytail",
+          statusText: `● 🐴 ponytail: ⚡ ${ponytailCmd[1].toUpperCase()}`,
+        });
+        break;
+      }
       // 注意：UIREQUEST-CRASH 必须优先于 UIREQUEST 判断（子串包含关系）
       if (text.includes("UIREQUEST-CRASH")) {
         // 对话框 pending 期间进程崩溃：发 confirm 帧后 1.5s exit(1)
