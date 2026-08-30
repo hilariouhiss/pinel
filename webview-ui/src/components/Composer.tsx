@@ -311,9 +311,23 @@ export function Composer({
     if (!ta) {
       return;
     }
+    // 先按无滚动条测量（overflowY 暂置 hidden，避免旧滚动条污染 scrollHeight）
     ta.style.height = "auto";
+    ta.style.overflowY = "hidden";
+    const overflows = ta.scrollHeight > defaultMaxH;
     ta.style.height = `${Math.min(ta.scrollHeight, defaultMaxH)}px`;
-    ta.style.overflowY = ta.scrollHeight > defaultMaxH ? "auto" : "hidden";
+    ta.style.overflowY = overflows ? "auto" : "hidden";
+    if (overflows) {
+      // 滚动条出现后内容区变窄、换行增多：按新 scrollHeight 重算一次高度
+      ta.style.height = "auto";
+      ta.style.height = `${Math.min(ta.scrollHeight, defaultMaxH)}px`;
+    }
+    // 渲染层右缘让出滚动条宽度（offsetWidth - clientWidth）：换行与原文严格
+    // 一致，文字不再被滚动条遮蔽（无滚动条时为 0，右缘保持 2px）
+    const md = mdRef.current;
+    if (md) {
+      md.style.right = `${2 + (ta.offsetWidth - ta.clientWidth)}px`;
+    }
   }, [text, viewportTick]);
   useEffect(() => {
     const onResize = () => setViewportTick((v) => v + 1);
