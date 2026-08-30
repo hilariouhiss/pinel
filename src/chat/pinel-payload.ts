@@ -170,6 +170,72 @@ export function parsePonytailStatus(text: unknown): PonytailStatus | null {
 }
 
 // ---------------------------------------------------------------------------
+// MCP 状态（pi-mcp-adapter setStatus statusKey "mcp" 帧解析）
+// ---------------------------------------------------------------------------
+
+/** MCP 服务器摘要（statusKey "mcp" 的 setStatus 帧解析产物）。 */
+export interface McpStatus {
+  /** connecting = 适配器启动连接中；ready = 稳态（含 0 服务器清除信号）。 */
+  state: "connecting" | "ready";
+  /** 启用服务器数（分母）。 */
+  enabled: number;
+  /** 已连接服务器数（分子）。 */
+  connected: number;
+  /** 禁用服务器数（仅 full 模式帧携带）。 */
+  disabled?: number;
+}
+
+/** MCP 清除信号（setStatus("mcp", undefined) / 空文本：无服务器或 footer 关闭）。 */
+const MCP_CLEARED: McpStatus = { state: "ready", enabled: 0, connected: 0 };
+
+/**
+ * 防御解析 MCP 状态行（pi-mcp-adapter updateStatusBar 三种形态 + 清除）：
+ * - full:  "🔌 MCP: N servers enabled (C connected) (D disabled)"（图标/括号段可选）
+ * - compact: "MCP C/N"（mcpFooterStatus=compact，无图标无冒号）
+ * - 启动:  "🔌 MCP: connecting to N servers..."
+ * - 空文本/undefined → 清除信号（enabled 0）；其余形状 → null（整帧忽略）
+ */
+export function parseMcpStatus(text: unknown): McpStatus | null {
+  if (text === undefined) {
+    return MCP_CLEARED;
+  }
+  if (typeof text !== "string") {
+    return null;
+  }
+  const plain = stripAnsi(text).trim();
+  if (plain.length === 0) {
+    return MCP_CLEARED;
+  }
+  // compact: "MCP C/N"（无前缀无图标；先于 full 匹配，避免 "MCP:" 干扰）
+  const compact = /^MCP (\d+)\/(\d+)$/.exec(plain);
+  if (compact) {
+    return { state: "ready", connected: Number(compact[1]), enabled: Number(compact[2]) };
+  }
+  // 统一剥前缀："🔌 MCP: " / "MCP: "（图标与冒号均可选）
+  const body = plain.replace(/^(?:[^\w]*?)?MCP:\s*/, "");
+  if (body === plain) {
+    return null; // 无 MCP: 前缀且非 compact 形状 → 非本插件帧
+  }
+  const connecting = /^connecting to (\d+) servers?\.\.\.$/.exec(body);
+  if (connecting) {
+    return { state: "connecting", enabled: Number(connecting[1]), connected: 0 };
+  }
+  const full = /^(\d+) servers? enabled(?: \((\d+) connected\))?(?: \((\d+) disabled\))?$/.exec(body);
+  if (!full) {
+    return null;
+  }
+  const status: McpStatus = {
+    state: "ready",
+    enabled: Number(full[1]),
+    connected: full[2] !== undefined ? Number(full[2]) : 0,
+  };
+  if (full[3] !== undefined) {
+    status.disabled = Number(full[3]);
+  }
+  return status;
+}
+
+// ---------------------------------------------------------------------------
 // pinel.workflow / pinel.workflows（rpiv-workflow 生命周期推送）
 // ---------------------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "mocha";
-import { parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus } from "../chat/pinel-payload";
+import { parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, parseMcpStatus } from "../chat/pinel-payload";
 
 describe("pinel-payload 防御解析", () => {
   describe("parsePinelState", () => {
@@ -218,6 +218,43 @@ describe("pinel-payload 防御解析", () => {
       assert.strictEqual(parsePonytailStatus("● 🐴 ponytail: ⚡"), null);
       assert.strictEqual(parsePonytailStatus(42), null);
       assert.strictEqual(parsePonytailStatus(undefined), null);
+    });
+  });
+
+  describe("parseMcpStatus", () => {
+    it("解析 full 模式：N servers enabled (C connected) (D disabled)", () => {
+      assert.deepStrictEqual(parseMcpStatus("🔌 MCP: 3 servers enabled (2 connected) (1 disabled)"), {
+        state: "ready", enabled: 3, connected: 2, disabled: 1,
+      });
+    });
+
+    it("full 模式单数 + 括号段缺席 + 无图标前缀", () => {
+      assert.deepStrictEqual(parseMcpStatus("MCP: 1 server enabled"), {
+        state: "ready", enabled: 1, connected: 0,
+      });
+    });
+
+    it("解析 compact 模式 MCP C/N", () => {
+      assert.deepStrictEqual(parseMcpStatus("MCP 2/3"), {
+        state: "ready", enabled: 3, connected: 2,
+      });
+    });
+
+    it("解析 connecting 状态（含 ANSI 色码）", () => {
+      assert.deepStrictEqual(parseMcpStatus("\u001b[36m🔌 MCP: connecting to 3 servers...\u001b[0m"), {
+        state: "connecting", enabled: 3, connected: 0,
+      });
+    });
+
+    it("空文本 = 清除信号（enabled 0）", () => {
+      assert.deepStrictEqual(parseMcpStatus(""), { state: "ready", enabled: 0, connected: 0 });
+      assert.deepStrictEqual(parseMcpStatus(undefined), { state: "ready", enabled: 0, connected: 0 });
+    });
+
+    it("未知形状返回 null（整帧忽略）", () => {
+      assert.strictEqual(parseMcpStatus("hello world"), null);
+      assert.strictEqual(parseMcpStatus("MCP: weird"), null);
+      assert.strictEqual(parseMcpStatus(42), null);
     });
   });
 });
