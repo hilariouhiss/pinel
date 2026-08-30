@@ -269,16 +269,27 @@ export interface PonytailStatus {
   mode: string;
 }
 
-/** MCP 服务器摘要（宿主 parseMcpStatus 产物镜像；statusKey "mcp" 帧）。 */
-export interface McpStatus {
-  /** connecting = 适配器启动连接中；ready = 稳态（含 0 服务器清除信号）。 */
-  state: "connecting" | "ready";
-  /** 启用服务器数（分母）。 */
-  enabled: number;
-  /** 已连接服务器数（分子）。 */
-  connected: number;
-  /** 禁用服务器数（仅 full 模式帧携带）。 */
-  disabled?: number;
+/** pinel.mcp 服务器行（插件快照 + 配置 scope；statusKey "pinel.mcp" 帧）。 */
+export interface PinelMcpServer {
+  name: string;
+  status:
+    | "connected"
+    | "disabled"
+    | "needs-auth"
+    | "failed"
+    | "cached"
+    | "not-connected"
+    | "unknown";
+  /** global = 全局配置；project = 项目配置（.mcp.json / .pi/mcp.json）。 */
+  scope: "global" | "project";
+  toolCount?: number;
+  disabled?: boolean;
+}
+
+/** pinel.mcp 载荷（MCP 服务器明细；chip 计数 + 弹层明细数据源）。 */
+export interface PinelMcp {
+  v: 1;
+  servers: PinelMcpServer[];
 }
 
 /** pinel.state 快照（插件推送 → 宿主防御解析 → 广播）。 */
@@ -331,7 +342,7 @@ export interface PinelPrompt {
 }
 
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelWorkflow: PinelWorkflow | null; pinelPrompt: PinelPrompt | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; mcpStatus: McpStatus | null }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelWorkflow: PinelWorkflow | null; pinelPrompt: PinelPrompt | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; pinelMcp: PinelMcp | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "bash"; message: ChatMessage }
@@ -365,7 +376,7 @@ export type HostMessage =
   | { type: "pinelPrompt"; prompt: PinelPrompt | null }
   | { type: "pinelPluginState"; state: PinelPluginState }
   | { type: "ponytailStatus"; status: PonytailStatus }
-  | { type: "mcpStatus"; status: McpStatus | null }
+  | { type: "pinelMcp"; mcp: PinelMcp | null }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {

@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { McpStatus, PinelPrompt, PinelPromptFile, SlashCommand } from "../types";
+import type { PinelMcp, PinelMcpServer, PinelPrompt, PinelPromptFile, SlashCommand } from "../types";
 
 interface Props {
   /** 斜杠命令列表（宿主 get_commands 镜像；prompt/skill chip 计数与弹层明细数据源）。 */
   commands: SlashCommand[];
-  /** MCP 服务器摘要（宿主 statusKey "mcp" 帧；null=未收到帧 → MCP chip 隐藏）。 */
-  mcpStatus: McpStatus | null;
-  /** 提示词组成（宿主 statusKey "pinel.prompt" 帧；null=未收到 → Sys chip 隐藏）。 */
+  /** MCP 服务器明细（宿主 statusKey "pinel.mcp" 帧；null=未收到帧 → MCP chip 隐藏）。 */
+  pinelMcp: PinelMcp | null;
+  /** 提示词组成（宿主 statusKey "pinel.prompt" 帧；null=未收到 → Sys chip 占位态）。 */
   pinelPrompt: PinelPrompt | null;
 }
 
@@ -20,18 +20,19 @@ function compactChars(n: number): string {
 
 /**
  * 输入卡顶部上下文状态条：Sys(提示词组成)/Prompt/Skill/MCP 计数 chip 行 + 锚定明细弹层（纯展示）：
- * - 可见性：Sys（收到 pinel.prompt 帧）、Prompt N / Skill N（N>0 才显示）、
- *   MCP C/N（enabled>0 才显示；connecting 态显示 "MCP …"）；全空 → 整条隐藏（null）
+ * - 可见性：Sys 常驻（未收到 pinel.prompt 帧显示 "Sys –" 占位，弹层说明等待首轮推送）、
+ *   Prompt N / Skill N（N>0 才显示）、MCP n/m（收到 pinel.mcp 帧且服务器非空才显示）
  * - Sys 弹层 = 提示词组成四段（系统提示词/用户级/项目级/插件注入）：
  *   段行点击展开预览文本（插件侧截断 2000 字符）；插件注入不可按插件拆分
  *   （pi API 只给链式合并结果），合并段 + 注脚说明
+ * - MCP 弹层 = 服务器明细行：连接状态 + 全局/项目范围 + 工具数
  * - 弹层：chip 上方 bottom 锚定，定位/Esc/焦点三 effect 逐段移植 ModelPopover
  *   （左对齐 + 超右缘右对齐回退 + resize 重算；Esc window capture 拦截
  *   stopPropagation 让位 Composer 的中断/清空分支；打开焦点入弹层、关闭还原触发 chip）
  * - rows 为信息展示（非 listbox 选项），弹层开关是组件内局部 state，
  *   不触碰 App 的弹层枚举
  */
-export function ContextBar({ commands, mcpStatus, pinelPrompt }: Props) {
+export function ContextBar({ commands, pinelMcp, pinelPrompt }: Props) {
   const prompts = commands.filter((c) => c.source === "prompt");
   const skills = commands.filter((c) => c.source === "skill");
   const [open, setOpen] = useState<CtxKind | null>(null);
@@ -43,15 +44,20 @@ export function ContextBar({ commands, mcpStatus, pinelPrompt }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ bottom?: number; left?: number; right?: number }>({});
 
-  // MCP chip 可见 = 收到帧且启用数 > 0（ready 态 0 服务器为清除信号，隐藏）
-  const mcpVisible = mcpStatus !== null && mcpStatus.enabled > 0;
+  // MCP chip 可见 = 收到帧且服务器列表非空（空列表为适配器关闭清除信号，隐藏）
+  const mcpVisible = pinelMcp !== null && pinelMcp.servers.length > 0;
+  // MCP 计数：n=已连接，m=启用（非禁用）
+  const connectedCount = pinelMcp
+    ? pinelMcp.servers.filter((s) => s.status === "connected").length
+    : 0;
+  const enabledCount = pinelMcp
+    ? pinelMcp.servers.filter((s) => s.status !== "disabled").length
+    : 0;
 
   // 当前弹层锚点；种类数据消失（chip 卸载）时按 null 关闭，防重挂载幽灵弹层
   const anchor =
     open === "sys"
-      ? pinelPrompt
-        ? sysChipRef.current
-        : null
+      ? sysChipRef.current
       : open === "prompt"
         ? prompts.length > 0
           ? promptChipRef.current
@@ -129,10 +135,6 @@ export function ContextBar({ commands, mcpStatus, pinelPrompt }: Props) {
     };
   }, [anchor]);
 
-  if (!pinelPrompt && prompts.length === 0 && skills.length === 0 && !mcpVisible) {
-    return null;
-  }
-
   const close = () => {
     setOpen(null);
     setExpanded(null);
@@ -186,9 +188,16 @@ export function ContextBar({ commands, mcpStatus, pinelPrompt }: Props) {
     </div>
   );
 
-  /** Sys 弹层：提示词组成四段 + 计数脚注。 */
+  /** Sys 弹层：提示词组成四段 + 计数脚注；未收到帧时占位说明。 */
   const renderComposition = () => {
-    const p = pinelPrompt!;
+    if (!pinelPrompt) {
+      return (
+        <div className="ctx-popover-row">
+          <span className="ctx-popover-desc">等待首轮推送：首条消息发出后（agent_start）由插件推送提示词组成</span>
+        </div>
+      );
+    }
+    const p = pinelPrompt;
     const userFiles = p.files.filter((f) => f.level === "user");
     const projectFiles = p.files.filter((f) => f.level === "project");
     const fileRow = (f: PinelPromptFile) =>
@@ -239,25 +248,45 @@ export function ContextBar({ commands, mcpStatus, pinelPrompt }: Props) {
     );
   };
 
-  // 弹层行（纯展示）：prompt/skill = `/name` + 截断描述（title 全文）；mcp = 计数摘要
+  // MCP 服务器行状态/范围标签（host 解析产物与 plugin status 枚举对齐）
+  const MCP_STATUS_LABELS: Record<PinelMcpServer["status"], string> = {
+    connected: "已连接",
+    disabled: "已禁用",
+    "needs-auth": "需认证",
+    failed: "连接失败",
+    cached: "缓存",
+    "not-connected": "未连接",
+    unknown: "未知",
+  };
+
+  // 弹层行（纯展示）：prompt/skill = `/name` + 截断描述（title 全文）；mcp = 服务器明细
   const renderRows = () => {
     if (open === "sys") {
       return renderComposition();
     }
     if (open === "mcp") {
-      if (!mcpStatus) {
+      if (!pinelMcp) {
         return null;
       }
-      const disabledSuffix = (mcpStatus.disabled ?? 0) > 0 ? ` · ${mcpStatus.disabled} disabled` : "";
-      return (
-        <div className="ctx-popover-row">
-          <span className="ctx-popover-desc">
-            {mcpStatus.state === "connecting"
-              ? `Connecting to ${mcpStatus.enabled} servers…`
-              : `${mcpStatus.enabled} enabled · ${mcpStatus.connected} connected${disabledSuffix}`}
-          </span>
-        </div>
-      );
+      return pinelMcp.servers.map((s) => {
+        const status = s.status;
+        return (
+          <div
+            key={s.name}
+            className="ctx-popover-row ctx-mcp-row"
+            title={`${s.name} · ${MCP_STATUS_LABELS[status]} · ${s.scope === "project" ? "项目级" : "全局"}${
+              s.toolCount !== undefined ? ` · ${s.toolCount} tools` : ""
+            }`}
+          >
+            <span className="ctx-popover-name ctx-mcp-name">{s.name}</span>
+            {s.toolCount !== undefined && (
+              <span className="ctx-popover-desc">{s.toolCount} tools</span>
+            )}
+            <span className={`ctx-mcp-status ${status}`}>{MCP_STATUS_LABELS[status]}</span>
+            <span className="ctx-mcp-scope">{s.scope === "project" ? "项目" : "全局"}</span>
+          </div>
+        );
+      });
     }
     const list = open === "prompt" ? prompts : skills;
     return list.map((c) => (
@@ -280,21 +309,20 @@ export function ContextBar({ commands, mcpStatus, pinelPrompt }: Props) {
   return (
     <>
       <div className={`context-bar${open !== null ? " lifted" : ""}`}>
-        {pinelPrompt &&
-          renderChip(
-            "sys",
-            `Sys ${compactChars(pinelPrompt.finalChars)}`,
-            "Prompt composition（系统提示词 / 用户级 / 项目级 / 插件注入）",
-          )}
+        {renderChip(
+          "sys",
+          pinelPrompt ? `Sys ${compactChars(pinelPrompt.finalChars)}` : "Sys –",
+          "Prompt composition（系统提示词 / 用户级 / 项目级 / 插件注入）",
+        )}
         {prompts.length > 0 && renderChip("prompt", `Prompt ${prompts.length}`, "Prompt commands")}
         {skills.length > 0 && renderChip("skill", `Skill ${skills.length}`, "Skills")}
-        {mcpStatus && mcpStatus.enabled > 0 && (
+        {pinelMcp &&
+          pinelMcp.servers.length > 0 &&
           renderChip(
             "mcp",
-            mcpStatus.state === "connecting" ? "MCP …" : `MCP ${mcpStatus.connected}/${mcpStatus.enabled}`,
-            mcpStatus.state === "connecting" ? "Connecting to MCP servers…" : "MCP servers",
-          )
-        )}
+            `MCP ${connectedCount}/${enabledCount}`,
+            "MCP servers（连接状态 / 全局 / 项目）",
+          )}
       </div>
       {anchor && (
         <>

@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "mocha";
-import { parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, parseMcpStatus, parsePinelPrompt } from "../chat/pinel-payload";
+import { parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, parseMcpStatus, parsePinelMcp, parsePinelPrompt } from "../chat/pinel-payload";
 
 describe("pinel-payload 防御解析", () => {
   describe("parsePinelState", () => {
@@ -255,6 +255,59 @@ describe("pinel-payload 防御解析", () => {
       assert.strictEqual(parseMcpStatus("hello world"), null);
       assert.strictEqual(parseMcpStatus("MCP: weird"), null);
       assert.strictEqual(parseMcpStatus(42), null);
+    });
+  });
+
+  describe("parsePinelMcp", () => {
+    it("解析完整服务器列表（状态/scope/工具数/禁用位）", () => {
+      const parsed = parsePinelMcp(
+        JSON.stringify({
+          v: 1,
+          servers: [
+            { name: "github", status: "connected", scope: "global", toolCount: 12 },
+            { name: "local", status: "failed", scope: "project" },
+            { name: "legacy", status: "disabled", scope: "project", disabled: true },
+            { name: "mystery", status: "unknown", scope: "global" },
+          ],
+        }),
+      );
+      assert.ok(parsed);
+      assert.deepStrictEqual(parsed.servers, [
+        { name: "github", status: "connected", scope: "global", toolCount: 12 },
+        { name: "local", status: "failed", scope: "project" },
+        { name: "legacy", status: "disabled", scope: "project", disabled: true },
+        { name: "mystery", status: "unknown", scope: "global" },
+      ]);
+    });
+
+    it("逐行容缺：非法行丢弃，好行保留；空列表合法", () => {
+      const parsed = parsePinelMcp(
+        JSON.stringify({
+          v: 1,
+          servers: [
+            { name: "ok", status: "connected", scope: "global" },
+            { status: "connected", scope: "global" }, // 缺名
+            { name: "", status: "connected", scope: "global" }, // 空名
+            { name: "bad-status", status: "weird", scope: "global" }, // 非法状态
+            { name: "bad-scope", status: "connected", scope: "local" }, // 非法 scope
+            "garbage",
+            null,
+          ],
+        }),
+      );
+      assert.ok(parsed);
+      assert.deepStrictEqual(parsed.servers, [{ name: "ok", status: "connected", scope: "global" }]);
+      const empty = parsePinelMcp(JSON.stringify({ v: 1, servers: [] }));
+      assert.ok(empty);
+      assert.deepStrictEqual(empty.servers, []);
+    });
+
+    it("非 JSON / 非对象 / 版本不符 / servers 缺失 → null", () => {
+      assert.strictEqual(parsePinelMcp("not-json"), null);
+      assert.strictEqual(parsePinelMcp(undefined), null);
+      assert.strictEqual(parsePinelMcp(JSON.stringify({ v: 2, servers: [] })), null);
+      assert.strictEqual(parsePinelMcp(JSON.stringify({ v: 1, servers: "x" })), null);
+      assert.strictEqual(parsePinelMcp(JSON.stringify({ v: 1 })), null);
     });
   });
 

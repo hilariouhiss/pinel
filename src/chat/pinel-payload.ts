@@ -236,6 +236,84 @@ export function parseMcpStatus(text: unknown): McpStatus | null {
 }
 
 // ---------------------------------------------------------------------------
+// pinel.mcp（MCP 服务器状态；插件 mcp-status.ts 推送）
+// ---------------------------------------------------------------------------
+
+/** pinel.mcp 服务器行（statusKey "pinel.mcp" 载荷解析产物）。 */
+export interface PinelMcpServer {
+  name: string;
+  status:
+    | "connected"
+    | "disabled"
+    | "needs-auth"
+    | "failed"
+    | "cached"
+    | "not-connected"
+    | "unknown";
+  /** global = 全局配置（agentDir/mcp.json 或共享源）；project = 项目配置。 */
+  scope: "global" | "project";
+  toolCount?: number;
+  disabled?: boolean;
+}
+
+/** pinel.mcp 载荷（插件 pi.events 快照 + 配置 scope → setStatus 推送）。 */
+export interface PinelMcpPayload {
+  v: 1;
+  servers: PinelMcpServer[];
+}
+
+const MCP_SERVER_STATUSES = new Set([
+  "connected",
+  "disabled",
+  "needs-auth",
+  "failed",
+  "cached",
+  "not-connected",
+  "unknown",
+]);
+
+/**
+ * 防御解析 pinel.mcp JSON（v:1 + servers 数组；逐行容缺：
+ * name/status/scope 缺一或非法即丢弃该行，不产出半可信数据；
+ * 无 servers/形状不符 → null 整帧丢弃）。
+ */
+export function parsePinelMcp(text: unknown): PinelMcpPayload | null {
+  const raw = parseJsonObject(text);
+  if (!raw || raw.v !== 1 || !Array.isArray(raw.servers)) {
+    return null;
+  }
+  const servers: PinelMcpServer[] = [];
+  for (const entry of raw.servers) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const e = entry as Record<string, unknown>;
+    if (typeof e.name !== "string" || e.name.length === 0) {
+      continue;
+    }
+    if (typeof e.status !== "string" || !MCP_SERVER_STATUSES.has(e.status)) {
+      continue;
+    }
+    if (e.scope !== "global" && e.scope !== "project") {
+      continue;
+    }
+    const row: PinelMcpServer = {
+      name: e.name,
+      status: e.status as PinelMcpServer["status"],
+      scope: e.scope,
+    };
+    if (typeof e.toolCount === "number") {
+      row.toolCount = e.toolCount;
+    }
+    if (e.disabled === true) {
+      row.disabled = true;
+    }
+    servers.push(row);
+  }
+  return { v: 1, servers };
+}
+
+// ---------------------------------------------------------------------------
 // pinel.prompt（提示词组成；插件 prompt-composition.ts 推送）
 // ---------------------------------------------------------------------------
 

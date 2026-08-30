@@ -1056,6 +1056,29 @@ async function handleCommand(record) {
           statusKey: "mcp",
           statusText: "garbage",
         });
+        // pinel.mcp 帧（pinel 插件 MCP 服务器明细：适配器快照 + 配置 scope）
+        out({
+          type: "extension_ui_request",
+          id: "pinel-mcp-1",
+          method: "setStatus",
+          statusKey: "pinel.mcp",
+          statusText: JSON.stringify({
+            v: 1,
+            servers: [
+              { name: "github", status: "connected", scope: "global", toolCount: 12 },
+              { name: "local", status: "connected", scope: "project" },
+              { name: "legacy", status: "disabled", scope: "global", disabled: true },
+            ],
+          }),
+        });
+        // pinel.mcp 坏帧：形状不符必须丢弃（好缓存保留）
+        out({
+          type: "extension_ui_request",
+          id: "pinel-mcp-bad",
+          method: "setStatus",
+          statusKey: "pinel.mcp",
+          statusText: "garbage",
+        });
         out({
           type: "extension_ui_request",
           id: "bad-status-1",

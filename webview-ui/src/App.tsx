@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, McpStatus, ModelInfo, PinelPluginState, PinelPrompt, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelMcp, PinelPluginState, PinelPrompt, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
@@ -89,8 +89,8 @@ export default function App() {
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   /** ponytail 状态（ponytail 插件自推帧解析；null=未收到/未装，信息条隐藏）。 */
   const [ponytailStatus, setPonytailStatus] = useState<PonytailStatus | null>(null);
-  /** MCP 服务器摘要（宿主 statusKey "mcp" 帧；null=未收到帧 → chip 隐藏）。 */
-  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
+  /** MCP 服务器明细（宿主 statusKey "pinel.mcp" 帧；null=未收到帧 → MCP chip 隐藏）。 */
+  const [pinelMcp, setPinelMcp] = useState<PinelMcp | null>(null);
   /** pinel.workflow 工作流运行状态（rpiv-workflow 生命周期推送；null=无运行/会话已切）。 */
   const [pinelWorkflow, setPinelWorkflow] = useState<PinelWorkflow | null>(null);
   /** pinel.prompt 提示词组成（插件 agent_start 推送；null=未收到 → 组成 chip 隐藏）。 */
@@ -257,7 +257,7 @@ export default function App() {
         setPinelPrompt(msg.pinelPrompt ?? null);
         setPinelPluginState(msg.pinelPluginState);
         setPonytailStatus(msg.ponytailStatus);
-        setMcpStatus(msg.mcpStatus);
+        setPinelMcp(msg.pinelMcp ?? null);
         setPendingUi(msg.pendingUi ?? []);
         setTodos(msg.todos ?? []);
         setCommands(msg.commands ?? []);
@@ -370,8 +370,8 @@ export default function App() {
       case "ponytailStatus":
         setPonytailStatus(msg.status);
         break;
-      case "mcpStatus":
-        setMcpStatus(msg.status);
+      case "pinelMcp":
+        setPinelMcp(msg.mcp);
         break;
       case "pinelWorkflow":
         setPinelWorkflow(msg.workflow);
@@ -775,8 +775,8 @@ export default function App() {
       {todos.length > 0 && <TodoPanel todos={todos} />}
       {banner}
       <div className="composer-stack">
-        {/* 上下文状态条（Prompt/Skill/MCP 计数 chip）：全空时自隐藏，不占位 */}
-        <ContextBar commands={commands} mcpStatus={mcpStatus} pinelPrompt={pinelPrompt} />
+        {/* 上下文状态条（Sys 常驻 / Prompt / Skill / MCP 计数 chip）：Sys 占位态不隐藏 */}
+        <ContextBar commands={commands} pinelMcp={pinelMcp} pinelPrompt={pinelPrompt} />
         <Composer
           status={status}
           commands={commands}

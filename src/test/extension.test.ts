@@ -360,6 +360,18 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.ok(mcp, "mcp 状态帧必须被解析并缓存");
     assert.deepStrictEqual(mcp, { state: "ready", enabled: 2, connected: 2 }, "mcp 好帧解析 + 坏帧不污染");
 
+    // pinel.mcp 帧：好帧缓存（3 服务器明细），坏帧 "garbage" 丢弃不得覆盖好缓存
+    const pinelMcp = api.getPinelMcp();
+    assert.ok(pinelMcp, "pinel.mcp 帧必须被解析并缓存");
+    assert.strictEqual(pinelMcp.servers.length, 3);
+    assert.deepStrictEqual(
+      pinelMcp.servers[0],
+      { name: "github", status: "connected", scope: "global", toolCount: 12 },
+      "pinel.mcp 好帧解析 + 坏帧不污染",
+    );
+    assert.deepStrictEqual(pinelMcp.servers[1], { name: "local", status: "connected", scope: "project" });
+    assert.deepStrictEqual(pinelMcp.servers[2], { name: "legacy", status: "disabled", scope: "global", disabled: true });
+
     // 工作流帧：status 好帧 → widget 好帧（覆盖）→ 空 widget（结束清空，不覆盖）→ 坏 JSON（不污染）
     const workflow = api.getPinelWorkflowCache();
     assert.ok(workflow, "pinel.workflow 必须被解析并缓存");
@@ -382,6 +394,7 @@ suite("Pinel 集成测试（假 pi）", () => {
       "重启后恢复",
     );
     assert.strictEqual(api.getMcpStatus(), null, "重启/退出后 mcp 缓存必须清空");
+    assert.strictEqual(api.getPinelMcp(), null, "重启/退出后 pinel.mcp 缓存必须清空");
   });
 
   test("提示词组成 pinel.prompt 帧：解析缓存 + 重启清空", async function () {

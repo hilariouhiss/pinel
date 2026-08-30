@@ -3024,6 +3024,37 @@ body {
   font-size: 11px;
 }
 
+/* ── MCP 服务器明细弹层（MCP chip）───────────────────────── */
+
+.ctx-mcp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ctx-mcp-status {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.ctx-mcp-status.connected {
+  color: var(--vscode-charts-green);
+  opacity: 1;
+}
+
+.ctx-mcp-status.failed,
+.ctx-mcp-status.needs-auth {
+  color: var(--vscode-charts-red);
+  opacity: 1;
+}
+
+.ctx-mcp-scope {
+  white-space: nowrap;
+  font-size: 10px;
+  opacity: 0.55;
+}
+
 /* ── 提示词组成弹层（Sys chip）────────────────────────────── */
 
 /* 段组：标题行 + 可选展开区 */

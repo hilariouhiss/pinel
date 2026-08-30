@@ -42,7 +42,7 @@ import { KeyedFlushThrottle, StreamFlushThrottle } from "./stream-flush";
 import { parseBashInput } from "./bash";
 import { DEFAULT_RESERVE_TOKENS, parseSessionStats, percentToReserveTokens, reserveTokensToPercent } from "./session-stats";
 import { isDuplicateNotice } from "./notice-dedup";
-import { parseMcpStatus, parsePinelPrompt, parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, type McpStatus, type PinelPromptPayload, type PinelStatePayload, type PinelTreePayload, type PinelWorkflowPayload, type PonytailStatus } from "./pinel-payload";
+import { parseMcpStatus, parsePinelMcp, parsePinelPrompt, parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, type McpStatus, type PinelMcpPayload, type PinelPromptPayload, type PinelStatePayload, type PinelTreePayload, type PinelWorkflowPayload, type PonytailStatus } from "./pinel-payload";
 import {
   PINEL_PACKAGE_SOURCE,
   agentSettingsPath,
@@ -135,7 +135,7 @@ export interface SessionEnv {
 }
 
 export type OutMessage =
-  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null; sessionEnv: SessionEnv; pinelState: PinelStatePayload | null; pinelTree: PinelTreePayload | null; pinelWorkflow: PinelWorkflowPayload | null; pinelPrompt: PinelPromptPayload | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; mcpStatus: McpStatus | null }
+  | { type: "snapshot"; messages: AgentMessage[]; status: ChatStatus; pendingUi: ExtensionUiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStatsData | null; sessionEnv: SessionEnv; pinelState: PinelStatePayload | null; pinelTree: PinelTreePayload | null; pinelWorkflow: PinelWorkflowPayload | null; pinelPrompt: PinelPromptPayload | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; mcpStatus: McpStatus | null; pinelMcp: PinelMcpPayload | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; tool: ToolCard }
@@ -169,6 +169,7 @@ export type OutMessage =
   | { type: "pinelPluginState"; state: PinelPluginState }
   | { type: "ponytailStatus"; status: PonytailStatus }
   | { type: "mcpStatus"; status: McpStatus | null }
+  | { type: "pinelMcp"; mcp: PinelMcpPayload | null }
   | { type: "bash"; message: BashCardMessage }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
@@ -334,6 +335,8 @@ export class ChatController {
   private ponytailStatusCache: PonytailStatus | null = null;
   /** MCP 状态缓存（statusKey "mcp" 帧；null = 未收到/插件未装）；pi 进程重启时清空。 */
   private mcpStatusCache: McpStatus | null = null;
+  /** MCP 服务器明细缓存（statusKey "pinel.mcp" 帧；null = 未收到）；pi 进程重启时清空。 */
+  private pinelMcpCache: PinelMcpPayload | null = null;
   /** 曾安装标记存储：vscode globalState 或内存兑底（无 globalState 时，测试）。 */
   private readonly pluginStateStore: { get(key: string): unknown; update(key: string, value: unknown): Thenable<void> };
   /** 最后会话存储：vscode workspaceState 或内存兑底（无 workspaceState 时，测试）。 */
@@ -640,6 +643,7 @@ export class ChatController {
       this.todos = [];
       this.commands = [];
       this.mcpStatusCache = null; // MCP 状态归属旧 pi 进程：重启即失效
+      this.pinelMcpCache = null; // MCP 服务器明细归属旧 pi 进程：重启即失效
       this.pinelPromptCache = null; // 提示词组成归属旧 pi 进程：重启即失效
       const staleQuestionnaire = this.questionnaire;
       this.questionnaire = null;
@@ -652,6 +656,7 @@ export class ChatController {
       this.fire({ type: "commands", commands: this.commands });
       this.fire({ type: "questionnaireCleared" });
       this.fire({ type: "mcpStatus", status: null });
+      this.fire({ type: "pinelMcp", mcp: null });
       this.fire({ type: "pinelPrompt", prompt: null });
       // 问卷缓冲帧随旧进程死亡前主动补 cancelled（HIGH-2：与 settled 清理同理由，
       // 插件问卷无 timeout，pi 侧不会自动解锁；进程此刻仍存活，回复有意义）
@@ -1818,6 +1823,16 @@ export class ChatController {
       this.fire({ type: "mcpStatus", status: parsed });
       return;
     }
+    if (req.statusKey === "pinel.mcp") {
+      // pinel 插件 MCP 服务器明细帧（适配器快照 + 配置 scope）；解析失败静默丢帧
+      const parsed = parsePinelMcp(req.statusText);
+      if (!parsed) {
+        return;
+      }
+      this.pinelMcpCache = parsed;
+      this.fire({ type: "pinelMcp", mcp: parsed });
+      return;
+    }
     // 其余 statusKey（colgrep 等生态插件）忽略：不白名单过滤会涌入 webview
   }
 
@@ -2485,6 +2500,8 @@ export class ChatController {
     // MCP 状态同为"进程能力描述"：进程已死，旧连接计数失效，清空待新进程重推
     this.mcpStatusCache = null;
     this.fire({ type: "mcpStatus", status: null });
+    this.pinelMcpCache = null;
+    this.fire({ type: "pinelMcp", mcp: null });
     this.fire({ type: "status", status: this.status });
     this.broadcastStream([]);
   }
@@ -2783,6 +2800,7 @@ export class ChatController {
       pinelPluginState: this.pinelPluginStateCache,
       ponytailStatus: this.ponytailStatusCache,
       mcpStatus: this.mcpStatusCache,
+      pinelMcp: this.pinelMcpCache,
     });
     // 会话文件变化（首次/切换/新建/重启后恢复）→ 异步解析标题；重放去重不重复解析
     if (this.status.sessionFile !== this.lastTitleSessionFile) {
@@ -2891,6 +2909,11 @@ export class ChatController {
   /** 最近一次 MCP 状态（statusKey "mcp" 帧解析缓存；null=未收到）。 */
   getMcpStatus(): McpStatus | null {
     return this.mcpStatusCache;
+  }
+
+  /** 最近一次 MCP 服务器明细（statusKey "pinel.mcp" 帧解析缓存；null=未收到/重启已清空）。 */
+  getPinelMcp(): PinelMcpPayload | null {
+    return this.pinelMcpCache;
   }
 
   getMessages(): AgentMessage[] {
