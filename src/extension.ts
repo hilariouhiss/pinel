@@ -9,7 +9,7 @@ import type { ExtensionItem, ExtensionKind, ExtensionScope, ExtensionView } from
 import type { AgentMessage, ExtensionUiRequest, ForkMessage, Model, SlashCommand } from "./rpc/protocol";
 import type { TodoTask } from "./chat/todos";
 import type { QuestionnaireView } from "./chat/questionnaire";
-import type { PinelStatePayload, PinelTreePayload, PinelWorkflowPayload, PonytailStatus } from "./chat/pinel-payload";
+import type { McpStatus, PinelStatePayload, PinelTreePayload, PinelWorkflowPayload, PonytailStatus } from "./chat/pinel-payload";
 import type { PinelPluginState } from "./chat/pinel-install";
 
 /** 事件记录（测试断言用）：notice / models / thinkingLevels / sessionSwitching / fillPrompt / sessionTitle。 */
@@ -107,6 +107,8 @@ export interface PinelTestApi {
   getPinelWorkflowCache(): PinelWorkflowPayload | null;
   /** 最近一次 ponytail 状态（statusKey "ponytail" 帧解析缓存；null=未收到/未装）。 */
   getPonytailStatusCache(): PonytailStatus | null;
+  /** 最近一次 MCP 状态（statusKey "mcp" 帧解析缓存；null=未收到/进程退出已清空）。 */
+  getMcpStatus(): McpStatus | null;
   /** Pinel 插件安装态缓存（null=未检测）。 */
   getPinelPluginState(): PinelPluginState | null;  /** 当前会话文件路径（get_state.sessionFile；切换/新建断言用）。 */
   getCurrentSessionFile(): string | undefined;
@@ -280,6 +282,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     getPinelTreeCache: () => ctrl.getPinelTreeCache(),
     getPinelWorkflowCache: () => ctrl.getPinelWorkflowCache(),
     getPonytailStatusCache: () => ctrl.getPonytailStatusCache(),
+    getMcpStatus: () => ctrl.getMcpStatus(),
     getPinelPluginState: () => ctrl.getPinelPluginState(),
     getCurrentSessionFile: () => ctrl.getStatus().sessionFile,
     getSessionList: () => historyProvider.getLastList(),

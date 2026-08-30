@@ -1545,8 +1545,8 @@ export class ChatController {
   }
 
   /**
-   * pinel.* setStatus 帧：防御解析 → 缓存 → 广播。
-   * 非 pinel.statusKey 忽略（生态插件 ponytail/colgrep 等也发 setStatus，
+   * 白名单 statusKey 帧（pinel.*、ponytail、mcp）：防御解析 → 缓存 → 广播。
+   * 非白名单 statusKey 忽略（生态插件 colgrep 等也发 setStatus，
    * 不白名单过滤会涌入 webview）。
    */
   private handlePinelStatus(req: ExtensionUiRequest): void {

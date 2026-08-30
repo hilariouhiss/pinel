@@ -85,6 +85,13 @@ export function ContextBar({ commands, mcpStatus }: Props) {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [anchor]);
 
+  // 数据消失（如 pi 重启清空命令）时收回弹层，防数据回填后弹层无操作复活抢焦点
+  useEffect(() => {
+    if (open !== null && anchor === null) {
+      setOpen(null);
+    }
+  }, [open, anchor]);
+
   // 打开时焦点移入弹层；关闭（anchor 变 null 触发 cleanup）时焦点还原到触发 chip
   //（anchor 即当前种类 chip 元素，切换弹层时还原到最新触发 chip）
   useEffect(() => {
@@ -149,7 +156,7 @@ export function ContextBar({ commands, mcpStatus }: Props) {
 
   return (
     <>
-      <div className="context-bar">
+      <div className={`context-bar${open !== null ? " lifted" : ""}`}>
         {prompts.length > 0 && renderChip("prompt", `Prompt ${prompts.length}`, "Prompt commands")}
         {skills.length > 0 && renderChip("skill", `Skill ${skills.length}`, "Skills")}
         {mcpStatus && mcpStatus.enabled > 0 && (

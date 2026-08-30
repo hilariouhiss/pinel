@@ -994,6 +994,22 @@ async function handleCommand(record) {
           statusKey: "ponytail",
           statusText: "\u001b[36m●\u001b[0m 🐴 \u001b[2mponytail: \u001b[0m\u001b[39m⚡ FULL\u001b[0m",
         });
+        // mcp 状态帧（真实形态：🔌 图标 + 计数摘要）
+        out({
+          type: "extension_ui_request",
+          id: "mcp-status-1",
+          method: "setStatus",
+          statusKey: "mcp",
+          statusText: "🔌 MCP: 2 servers enabled (2 connected)",
+        });
+        // mcp 坏帧：形状不符必须丢弃（好缓存保留）
+        out({
+          type: "extension_ui_request",
+          id: "mcp-status-bad",
+          method: "setStatus",
+          statusKey: "mcp",
+          statusText: "garbage",
+        });
         out({
           type: "extension_ui_request",
           id: "bad-status-1",

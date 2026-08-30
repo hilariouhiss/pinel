@@ -2762,13 +2762,17 @@ body {
 /* 输入卡（.composer-stack）顶部状态条（ContextBar）：Prompt/Skill/MCP 计数 chip 行；
    次要信息层级——小字号 + 降透明度，hover/展开恢复；弹层容器复用 .model-popover 定位 */
 .context-bar {
-  /* 弹层开启时抬升到 overlay(90) 之上：chip 可直接点击切换弹层（popover 自身 z=100 更高） */
   position: relative;
-  z-index: 95;
   display: flex;
   gap: 4px;
   align-items: center;
   padding: 6px 10px 0; /* 与 footer-card 8px 内边距对齐，视觉贴卡片顶 */
+}
+
+/* 弹层开启时抬升到 overlay(90) 之上：chip 可直接点击切换弹层（popover 自身 z=100 更高）；
+   仅 open 态加 lifted，避免常态盖过 App 弹层（config/session/model，同为 z=90） */
+.context-bar.lifted {
+  z-index: 95;
 }
 
 /* composer-chip 变体：仅覆盖尺寸/透明度（次要信息层级），不改动基类避免牵动 footer chip */

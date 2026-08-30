@@ -355,6 +355,11 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.ok(ponytail, "ponytail 状态帧必须被解析并缓存");
     assert.deepStrictEqual(ponytail, { active: true, mode: "full" }, "ANSI 剥离 + 实心点 + 档位解析");
 
+    // mcp 状态帧：好帧缓存（2/2），坏帧 "garbage" 丢弃不得覆盖好缓存
+    const mcp = api.getMcpStatus();
+    assert.ok(mcp, "mcp 状态帧必须被解析并缓存");
+    assert.deepStrictEqual(mcp, { state: "ready", enabled: 2, connected: 2 }, "mcp 好帧解析 + 坏帧不污染");
+
     // 工作流帧：status 好帧 → widget 好帧（覆盖）→ 空 widget（结束清空，不覆盖）→ 坏 JSON（不污染）
     const workflow = api.getPinelWorkflowCache();
     assert.ok(workflow, "pinel.workflow 必须被解析并缓存");
@@ -368,6 +373,15 @@ suite("Pinel 集成测试（假 pi）", () => {
       "run-2",
       "空 widget 清空帧与坏 JSON 帧不得覆盖好缓存",
     );
+
+    // 重启（含旧进程 exit）清空 mcp 缓存：同 commands reset 路径（断言复用既有 restart 恢复模式）
+    await api.restart();
+    await waitFor(
+      () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+      20000,
+      "重启后恢复",
+    );
+    assert.strictEqual(api.getMcpStatus(), null, "重启/退出后 mcp 缓存必须清空");
   });
 
   test("compact 原生命令：响应后 notice + 假 pi 收到命令", async () => {
