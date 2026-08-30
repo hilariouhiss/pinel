@@ -35,6 +35,8 @@ interface Props {
   mainModelName: string | null;
   /** 主会话思考等级（subagent 继承主会话时的兕底显示）。 */
   mainThinkingLevel: string | null;
+  /** 旧消息标记（App 计算，末尾 40 条豁免）：content-visibility 跳过离屏布局/绘制。 */
+  stale?: boolean;
 }
 
 /** 提取用户消息的纯文本（导出：App 悬浮状态条复用提取最近输入）。 */
@@ -77,6 +79,9 @@ function extractCardText(el: HTMLElement): string {
   clone.style.position = "fixed";
   clone.style.left = "-9999px";
   clone.style.top = "0";
+  // 旧消息带 .msg-stale（content-visibility: auto），离屏 clone 被跳过渲染时
+  // innerText 返回空串（与 visibility:hidden 同机制）：强制可见再提取
+  clone.style.contentVisibility = "visible";
   document.body.appendChild(clone);
   const text = clone.innerText.trim();
   clone.remove();
@@ -189,7 +194,7 @@ function assistantBlocks(content: ChatMessage["content"]): ContentBlock[] {
   return Array.isArray(content) ? (content as ContentBlock[]) : [];
 }
 
-export function MessageView({ message, tools, toolResults, streamBlocks, msgIndex, mainModelName, mainThinkingLevel }: Props) {
+export function MessageView({ message, tools, toolResults, streamBlocks, msgIndex, mainModelName, mainThinkingLevel, stale }: Props) {
   const userRef = useRef<HTMLDivElement>(null);
   const toolResultRef = useRef<HTMLDivElement>(null);
   /** 右键复制菜单位置（null=关闭）；每卡片实例独立（仅 user 卡片级使用）。 */
@@ -199,7 +204,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
     const images = userImages(message.content);
     return (
       <div
-        className="msg msg-user"
+        className={`msg msg-user${stale ? " msg-stale" : ""}`}
         ref={userRef}
         data-msg-index={msgIndex}
         onContextMenu={text ? (e) => setMenuPos(openCardMenu(e)) : undefined}
@@ -228,7 +233,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
     if (id && toolResults.matched.has(id)) {
       return null;
     }
-    return <ToolResultView message={message} tools={tools} targetRef={toolResultRef} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} />;
+    return <ToolResultView message={message} tools={tools} targetRef={toolResultRef} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} stale={stale} />;
   }
 
   // assistant（含流式占位）
@@ -248,7 +253,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
   // 各区块（正文/思考/工具卡）自带复制入口，不再提供整个 Pi 块级复制——
   // 块级复制会把上方思考全文一并拷走（评审：复制正文不应携带思考内容）
   return (
-    <div className="msg msg-assistant">
+    <div className={`msg msg-assistant${stale ? " msg-stale" : ""}`}>
       <div className="msg-role">Pi</div>
       {blocks.map((block, i) => (
         <BlockView
@@ -594,12 +599,14 @@ function ToolResultView({
   targetRef,
   mainModelName,
   mainThinkingLevel,
+  stale,
 }: {
   message: ChatMessage;
   tools: Record<string, ToolCard>;
   targetRef: React.RefObject<HTMLDivElement | null>;
   mainModelName: string | null;
   mainThinkingLevel: string | null;
+  stale?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -608,7 +615,7 @@ function ToolResultView({
   // 结果已原位渲染在 assistant 消息内）；保留作防御兕底
   if (toolCard?.subagent) {
     return (
-      <div className="msg msg-toolresult" ref={targetRef} onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
+      <div className={`msg msg-toolresult${stale ? " msg-stale" : ""}`} ref={targetRef} onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
         <SubagentCard
           card={toolCard.subagent}
           output={toolCard.output || ""}
@@ -628,7 +635,7 @@ function ToolResultView({
     .join("\n");
 
   return (
-    <div className="msg msg-toolresult" ref={targetRef} onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
+    <div className={`msg msg-toolresult${stale ? " msg-stale" : ""}`} ref={targetRef} onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
       <div className={`toolresult status-${status}`}>
       <button className="toolresult-head" onClick={() => setOpen(!open)}>
         <span className={`toolstatus status-${status}`}>

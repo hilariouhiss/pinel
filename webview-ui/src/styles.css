@@ -112,6 +112,14 @@ body {
   margin-bottom: 14px;
 }
 
+/* 长会话渲染优化：旧消息（App 计算 stale，末尾 40 条豁免）跳过离屏布局/绘制。
+   contain-intrinsic-size auto 记忆渲染过的真实高度，滚过即位置精确；
+   320px 为从未渲染消息的兜底估算（跳转深处首次近似，渲染后自校正） */
+.msg-stale {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
+
 /* 最近回合悬浮状态条：经 .recent-round-anchor（高 0 sticky）钉在滚动视口顶部，
    不随内容滚走；宽度 = 滚动内容区宽，与消息卡片结构级严格同宽（滚动条出现
    自动让位，无需测量补偿） */

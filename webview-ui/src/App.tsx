@@ -481,6 +481,10 @@ export default function App() {
 
   const hasConversation = messages.length > 0 || streamBlocks.length > 0;
 
+  /** 旧消息延迟渲染阈值：末尾 40 条保持完整渲染（回底/流式跟随落点精确），
+   *  更早的消息套 .msg-stale（content-visibility 跳过离屏布局/绘制）。 */
+  const staleCutoff = messages.length - 40;
+
   // 问卷提交后收起为一行状态条：插入消息流原位（最后一条已完成消息之后、
   // 流式气泡之上），后续消息（toolResult/流式回复）落在其下方随流上移——
   // 行为如正常消息。越界兜底（消息列表被重建且更短）：状态条回落末尾。
@@ -720,13 +724,13 @@ export default function App() {
           </div>
         )}
         {messages.slice(0, qnaMid).map((m, i) => (
-          <MessageView key={`m-${i}`} message={m} tools={tools} toolResults={toolResults} msgIndex={i} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} />
+          <MessageView key={`m-${i}`} message={m} tools={tools} toolResults={toolResults} msgIndex={i} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} stale={i < staleCutoff} />
         ))}
         {qnaCollapsed && questionnaire && (
           <Questionnaire questionnaire={questionnaire} focusVersion={qnaFocusVersion} />
         )}
         {messages.slice(qnaMid).map((m, i) => (
-          <MessageView key={`m-${qnaMid + i}`} message={m} tools={tools} toolResults={toolResults} msgIndex={qnaMid + i} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} />
+          <MessageView key={`m-${qnaMid + i}`} message={m} tools={tools} toolResults={toolResults} msgIndex={qnaMid + i} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} stale={qnaMid + i < staleCutoff} />
         ))}
         {streamBlocks.length > 0 && (
           <MessageView

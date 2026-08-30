@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -9,7 +10,11 @@ import remarkGfm from "remark-gfm";
  * 链接在 v0.1 渲染为纯文本（CSP 禁止导航，暂不接 vscode.open 命令）。
  * GFM：表格/删除线/任务列表等（remark-gfm 打进 webview bundle）。
  */
-export function Markdown({ content }: { content: string }) {
+/**
+ * memo：完成态消息的 content 字符串不变，流式期间每次 flush 全量重渲染时
+ * 跳过子树 diff——react-markdown 解析是逐 flush 卡顿的最大 O(N) 开销源。
+ */
+export const Markdown = memo(function Markdown({ content }: { content: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -34,4 +39,4 @@ export function Markdown({ content }: { content: string }) {
       {content}
     </ReactMarkdown>
   );
-}
+});
