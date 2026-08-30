@@ -1322,6 +1322,9 @@ body {
 
 .composer-input-wrap {
   position: relative;
+  /* 结构性护栏：任何子层（含渲染层）都不允许画出输入区——粘贴大量文本时
+     渲染层/文字层无论高度如何都被裁剪在 wrap（= textarea 高度）内 */
+  overflow: hidden;
 }
 
 /* 输入框 WYSIWYG 渲染层：与 textarea 完全同构的字体度量（等宽字体 → 像素级对齐），
@@ -1398,6 +1401,11 @@ body {
   color: transparent;
   caret-color: var(--vscode-input-foreground);
   position: relative;
+  /* CSS 级高度上限兑底：即使 JS 自适应 effect 未运行，输入框也不超过面板 60%
+     （与 defaultMaxH = window.innerHeight * 0.6 同值）；overflow-y 由 JS
+     inline 控制（auto/hidden），此处 auto 作失效兑底 */
+  max-height: 60vh;
+  overflow-y: auto;
   font-family: var(--pinel-font-family);
   font-size: var(--vscode-font-size);
   line-height: 1.5;
