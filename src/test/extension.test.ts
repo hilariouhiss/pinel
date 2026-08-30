@@ -2516,7 +2516,8 @@ suite("Pinel 集成测试（假 pi）", () => {
 
       await closeTabFor(pendingPath);
       await waitFor(() => api.getPendingPromptUriPath() === undefined, 10000, "关闭后清理 pending");
-      assert.ok(!fs.existsSync(pendingPath), "临时文件必须删除");
+      // 文件删除为异步 fire-and-forget（与上方 disposeForSend 同路径），须轮询而非裸断言（镜像 L2506 兄弟测试）
+      await waitFor(() => !fs.existsSync(pendingPath), 10000, "临时文件删除");
       assert.strictEqual(api.getTestEventLog().lastFillPrompt, before, "未保存不得回填（广播不变）");
     });
 
