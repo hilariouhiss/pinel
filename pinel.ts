@@ -23,6 +23,7 @@
 import { PushScheduler, FULL_PUSH_EVENTS, SNAPSHOT_ONLY_EVENTS } from "./extensions/push.js";
 import { getPinelCtx, setPinelCtx } from "./extensions/push-target.js";
 import { registerPromptComposition } from "./extensions/prompt-composition.js";
+import { flushMcpStatus, registerMcpStatus } from "./extensions/mcp-status.js";
 
 const VERSION = "0.1.0";
 
@@ -36,10 +37,14 @@ export default function (pi: any) {
   // 提示词组成采集（pinel.prompt 推送；首轮 before_agent_start 后的 agent_start 首发帧）
   registerPromptComposition(pi);
 
+  // MCP 服务器状态采集（pinel.mcp 推送；适配器快照事件 + 配置基线）
+  registerMcpStatus(pi);
+
   for (const name of FULL_PUSH_EVENTS) {
     pi.on(name, (_ev: any, ctx: any) => {
       if (ctx?.mode !== "rpc") return;
       setPinelCtx(ctx); // 供 pinel-workflows 生命周期推送复用
+      flushMcpStatus(); // ctx 可用即补发 MCP 基线/最新快照
       scheduler.schedule(true);
     });
   }
@@ -47,6 +52,7 @@ export default function (pi: any) {
     pi.on(name, (_ev: any, ctx: any) => {
       if (ctx?.mode !== "rpc") return;
       setPinelCtx(ctx);
+      flushMcpStatus();
       scheduler.schedule(false);
     });
   }
