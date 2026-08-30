@@ -85,7 +85,8 @@ body {
 .pinel-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 10px;
+  /* 顶部 4px：与 header 间距收紧（最近回合条贴合）；左右 10px 对齐卡片 */
+  padding: 4px 10px;
 }
 
 .pinel-empty {
@@ -160,7 +161,7 @@ body {
    自动让位，无需测量补偿） */
 .recent-round-anchor {
   position: sticky;
-  top: 3px;
+  top: 0; /* 贴顶（与 header 底部边框紧邻） */
   height: 0; /* 占位 0：不推挤消息流；悬浮条作为溢出子元素向下覆盖 */
   z-index: 20; /* 盖消息（无 z-index）、低于 notices 30——通知横幅短暂压条可接受 */
 }
@@ -172,10 +173,18 @@ body {
   padding: 8px 10px;
   border: 1px solid var(--vscode-input-border);
   border-radius: 6px;
-  /* 与用户消息卡片样式一致（.msg-user .msg-text）：同背景/同字号/同 padding/无阴影 */
-  background: var(--vscode-input-background);
+  /* 与用户消息卡片同源（.msg-user .msg-text）：同背景（略深）/同字号/同 padding；
+     基础阴影 + hover 加深营造悬浮感（条覆盖滚动内容之上） */
+  background: color-mix(in srgb, var(--vscode-input-background) 88%, #000);
   font-size: var(--vscode-font-size);
   cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  transition: box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.recent-round-bar:hover {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--vscode-input-background) 96%, #000);
 }
 
 .recent-round-bar-text {
@@ -306,7 +315,8 @@ body {
 }
 
 .msg-user .msg-text {
-  background: var(--vscode-input-background);
+  /* 略深于输入背景（color-mix 向黑混合，明暗主题均生效） */
+  background: color-mix(in srgb, var(--vscode-input-background) 88%, #000);
   border: 1px solid var(--vscode-input-border);
   border-radius: 6px;
   padding: 8px 10px;
@@ -379,6 +389,21 @@ body {
   height: 6px;
   border-radius: 50%;
   background: var(--vscode-descriptionForeground);
+}
+
+/* 流式中（thinking-live）指示点闪烁：呼吸式明暗脉冲；完成后恢复静态点 */
+.thinking-live .thinking-dot {
+  animation: thinking-dot-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes thinking-dot-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
 }
 
 .thinking-preview {

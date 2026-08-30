@@ -441,7 +441,7 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
     followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   };
   return (
-    <details className="thinking" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)} onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
+    <details className={`thinking${live ? " thinking-live" : ""}`} open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)} onContextMenu={(e) => setMenuPos(openCardMenu(e))}>
       <summary className="thinking-summary">
         <span className="thinking-dot" />
         Thinking{live ? "…" : ""}
