@@ -13,7 +13,7 @@ import {
 import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
 import { parseAtRefs, matchAtToken } from "../at-refs";
-import { sliceLiMarker, stripLeadingNewline } from "../composer-md";
+import { sliceLiMarker, stripLeadingNewline, supportEmptyListItems } from "../composer-md";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
@@ -102,11 +102,15 @@ let attachmentSeq = 0;
  * 输入框 WYSIWYG 渲染层：块元素全部折叠为行内，与 textarea 原始文本像素级对齐。
  * 对齐前提：等宽字体（--pinel-font-family），仅颜色/字重/斜体/背景等不改变
  * 字形宽度的样式；markdown 语法字符（**、#、- 等）以同宽标记符/样式替换。
- * 列表标记按 node.position 从原文切出（无序 -、*、+ → • ，有序 1. /3) 原样，
- * 宽度忠实）；表格分隔符不渲染、图片 🖼 占位。
+ * 列表标记按 node.position 从原文切出（无序 -、*、+ → •，有序 1. /3) 原样，
+ * 裸标记 "1." 同样灰显标记，行首缩进原样保留，宽度忠实）；表格分隔符不渲染、
+ * 图片 🖼 占位。渲染输入对裸标记行补零宽字符（空列表项可打断段落解析）。
  * 复制/发送仍是 textarea 的原始 markdown 源码（本层纯视觉，aria-hidden）。
  */
 function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObject<HTMLDivElement | null> }) {
+  // 渲染层输入：裸标记行（"1."/"-"）行尾补零宽字符，使空列表项在换行后
+  // 也能解析成列表（发送/复制仍是原文）；后续 code/li 的位置切片以本串为准
+  const mdContent = supportEmptyListItems(content);
   const h = (marker: string) =>
     ({ children }: { children?: ReactNode }) => (
       <span className="composer-md-h">
@@ -129,7 +133,7 @@ function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObjec
             const pos = node?.position;
             const raw =
               pos?.start?.offset != null && pos?.end?.offset != null
-                ? content.slice(pos.start.offset, pos.end.offset)
+                ? mdContent.slice(pos.start.offset, pos.end.offset)
                 : text;
             return <code className={raw.includes("\n") ? "composer-md-block" : "composer-md-inline-code"}>{raw}</code>;
           },
@@ -144,7 +148,7 @@ function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObjec
           ol: ({ children }) => <>{stripLeadingNewline(children)}</>,
           li: ({ children, node }) => (
             <span className="composer-md-li">
-              <span className="composer-md-marker">{sliceLiMarker(content, node?.position)}</span>
+              <span className="composer-md-marker">{sliceLiMarker(mdContent, node?.position)}</span>
               {stripLeadingNewline(children)}
             </span>
           ),
@@ -161,7 +165,7 @@ function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObjec
           img: () => <span className="composer-md-img">🖼</span>,
         }}
       >
-        {content}
+        {mdContent}
       </ReactMarkdown>
     </div>
   );
