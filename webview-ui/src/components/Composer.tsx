@@ -208,11 +208,11 @@ export function Composer({
   // 防越界夹取（列表变化瞬间 highlight 可能超出新长度）
   const activeIndex = Math.min(highlight, Math.max(0, candidates.length - 1));
 
-  // @ 文件引用触发：当前词（空格分隔的末 token）以 @ 开头（含仅输入 @）；
-  // 与命令补全弹窗互斥（isCommandQuery 为 false 时才可能触发）
+  // @ 文件引用触发：当前词（空格分隔的末 token）以 @ 开头（含仅输入 @）或
+  // 反引号包裹的手打形式 `@（列表选择后的规范形态）；与命令补全弹窗互斥
   const lastToken = text.split(/\s+/).pop() ?? "";
-  const atTrigger = lastToken.startsWith("@");
-  const atQuery = atTrigger ? lastToken.slice(1) : "";
+  const atTrigger = lastToken.startsWith("@") || lastToken.startsWith("`@");
+  const atQuery = atTrigger ? lastToken.slice(lastToken.startsWith("`") ? 2 : 1) : "";
   const fileCandidates = useMemo(() => {
     if (!atQuery) {
       return fileList;
@@ -334,14 +334,15 @@ export function Composer({
     caretAtEnd.current = true;
   };
 
-  /** @ 文件选中：末 @token 替换为完整引用文本（含空格路径引号包裹）+ 尾空格收尾。
-   *  尾空格让 lastToken 不再以 @ 开头（防下次击键复位 fileDismissed 后弹窗重开），
+  /** @ 文件选中：末 @token 替换为反引号包裹的规范引用（`@path / `@"含空格"`）+ 尾空格收尾。
+   *  仅反引号包裹的 @file 才在发送时解析为文件引用（parseAtRefs 语法）；
+   *  尾空格让 lastToken 不再以 @/`@ 开头（防下次击键复位 fileDismissed 后弹窗重开），
    *  fileDismissed 置位双保险；发送时统一从文本解析 @token（手打/粘贴/fill 同链路）。 */
   const acceptFile = (file: FileItem) => {
     const token = text.split(/\s+/).pop() ?? "";
     const prefix = text.slice(0, Math.max(0, text.length - token.length));
     const ref = /\s/.test(file.path) ? `@"${file.path}"` : `@${file.path}`;
-    setText(`${prefix}${ref} `);
+    setText(`${prefix}\`${ref}\` `);
     setFileDismissed(true);
     caretAtEnd.current = true;
   };

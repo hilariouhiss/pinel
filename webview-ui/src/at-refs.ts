@@ -30,11 +30,12 @@ function stripAndMatch(token: string, paths: Map<string, string>): string {
 
 /**
  * 从发送文本解析 @ 文件引用（纯函数）。
- * - 语法：`@path` 或 `@"path with spaces"`（业界先例 Kiro/cline/oh-my-pi）
- * - @ 前须行首或空白（邮箱等普通 @ 提及不误伤）
+ * - 语法：`@path` 或 `@"path with spaces"`——仅反引号包裹的 @file 才被解析，
+ *   未包裹的 @ 提及视为普通文本（邮箱/聊天 @ 不误伤）；列表选择由 acceptFile
+ *   统一以反引号插入，手打需带反引号才生效
  * - 与 fileList path 匹配（Windows 大小写不敏感，返回原始 path）；去重保序
- * - 未匹配的 @token 保留为普通文本（不返回、不报错）
- * - 未闭合引号（`@"foo bar`）退化捕获非空白 token，匹配失败即保留文本
+ * - 未匹配的 `@token 保留为普通文本（不返回、不报错）
+ * - 未闭合反引号（`@foo）无闭合定界符，不解析，视为普通文本
  */
 export function parseAtRefs(text: string, fileList: FileItem[]): string[] {
   if (!text || fileList.length === 0) {
@@ -49,10 +50,10 @@ export function parseAtRefs(text: string, fileList: FileItem[]): string[] {
   }
   const refs: string[] = [];
   const seen = new Set<string>();
-  const re = /(^|[\s(（[])(@)(?:"([^"]+)"|([^\s@]+))/g;
+  const re = /`(@)(?:"([^"]+)"|([^`\s]+))`/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
-    const raw = m[3] ?? m[4] ?? "";
+    const raw = m[2] ?? m[3] ?? "";
     const hit = stripAndMatch(raw, paths);
     if (hit && !seen.has(hit)) {
       seen.add(hit);
