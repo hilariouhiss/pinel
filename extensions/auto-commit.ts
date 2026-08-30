@@ -17,7 +17,7 @@ export const AUTO_COMMIT_HEADER = "## Auto Commit (Pinel)";
 
 const AUTO_COMMIT_SECTION = `${AUTO_COMMIT_HEADER}
 
-After finishing a working unit of change, commit it with git: stage the relevant files and write a short commit message describing the change. Skip committing while work is incomplete or tests fail, and do not commit changes the user has staged or is actively editing.
+After finishing a working unit of change, commit it with git immediately and proactively — do not wait for the user to ask. Stage the relevant files and write a short commit message describing the change. Skip committing while work is incomplete or tests fail, and do not commit changes the user has staged or is actively editing.
 `;
 
 /** 防御解析 settings.json：pinel.autoCommit 严格 === true 才开启（其余形状视为关）。 */
