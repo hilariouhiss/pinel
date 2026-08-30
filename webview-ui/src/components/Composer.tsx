@@ -13,6 +13,7 @@ import {
 import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
 import { parseAtRefs, matchAtToken } from "../at-refs";
+import { sliceLiMarker } from "../composer-md";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
@@ -101,7 +102,8 @@ let attachmentSeq = 0;
  * 输入框 WYSIWYG 渲染层：块元素全部折叠为行内，与 textarea 原始文本像素级对齐。
  * 对齐前提：等宽字体（--pinel-font-family），仅颜色/字重/斜体/背景等不改变
  * 字形宽度的样式；markdown 语法字符（**、#、- 等）以同宽标记符/样式替换。
- * 接受位移的降级：有序列表标记以 • 代替（1 字符差）、表格分隔符不渲染、图片 🖼 占位。
+ * 列表标记按 node.position 从原文切出（无序 -、*、+ → • ，有序 1. /3) 原样，
+ * 宽度忠实）；表格分隔符不渲染、图片 🖼 占位。
  * 复制/发送仍是 textarea 的原始 markdown 源码（本层纯视觉，aria-hidden）。
  */
 function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObject<HTMLDivElement | null> }) {
@@ -140,9 +142,9 @@ function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObjec
           h6: h("###### "),
           ul: ({ children }) => <>{children}</>,
           ol: ({ children }) => <>{children}</>,
-          li: ({ children }) => (
+          li: ({ children, node }) => (
             <span className="composer-md-li">
-              <span className="composer-md-marker">• </span>
+              <span className="composer-md-marker">{sliceLiMarker(content, node?.position)}</span>
               {children}
             </span>
           ),
@@ -338,15 +340,15 @@ export function Composer({
     caretAtEnd.current = true;
   };
 
-  /** @ 文件选中：末 @token 替换为反引号包裹的规范引用（`@path / `@"含空格"`）。
+  /** @ 文件选中：末 @token 替换为反引号包裹的规范引用（`@path / `@"含空格"`）+ 尾空格。
    *  仅反引号包裹的 @file 才在发送时解析为文件引用（parseAtRefs 语法）；
-   *  不插入真实尾空格（闭合态 token 不再触发弹窗，见 matchAtToken），
-   *  渲染层与原文保持 1:1 对齐；发送时统一从文本解析 @token（手打/粘贴/fill 同链路）。 */
+   *  尾空格方便直接继续输入，闭合态 token + 尾空格不会重新触发弹窗（matchAtToken），
+   *  且 acceptFile 置 fileDismissed 双保险；发送时统一从文本解析 @token（同链路）。 */
   const acceptFile = (file: FileItem) => {
     const token = text.split(/\s+/).pop() ?? "";
     const prefix = text.slice(0, Math.max(0, text.length - token.length));
     const ref = /\s/.test(file.path) ? `@"${file.path}"` : `@${file.path}`;
-    setText(`${prefix}\`${ref}\``);
+    setText(`${prefix}\`${ref}\` `);
     setFileDismissed(true);
     caretAtEnd.current = true;
   };

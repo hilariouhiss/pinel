@@ -1381,6 +1381,18 @@ body {
   outline: none;
 }
 
+/* 选区不暴露 markdown 源码：UA 默认 ::selection 的 color（HighlightText）会覆盖
+   color: transparent，拖选时原始 **bold**/`code` 等源码浮在渲染层上；强制选区
+   文字透明，仅保留高亮背景（渲染层透出）。组合输入态原文可见，选区色恢复 */
+.composer-input::selection {
+  color: transparent;
+  background: var(--vscode-editor-selectionBackground);
+}
+
+.composer-input-wrap.composing .composer-input::selection {
+  color: inherit;
+}
+
 .composer-send,
 .composer-stop {
   /* 正方形，边长随 VS Code 字号自适应（紧凑档：紧凑 = 首行盒高 + 8px）；
