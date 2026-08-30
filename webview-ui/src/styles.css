@@ -147,8 +147,11 @@ body {
   .toolchip,
   .toolresult,
   .toolcard-body,
-  .toolresult-body {
+  .toolresult-body,
+  .todopanel-collapse,
+  .todopanel-body {
     animation: none;
+    transition: none;
   }
 }
 
@@ -985,9 +988,32 @@ body {
   font-size: 11px;
 }
 
+/* 展开收起动画：grid 0fr↔1fr（插值到精确内容高度，无 JS 测量；
+   Chromium 107+ 原生支持，VSCode webview 环境满足）。
+   min-height:0 两层链路：面板 flex 子项可收缩（30vh 封顶时约束网格行）
+   → grid 行内 body 可收缩，超出时 body 内部滚动 */
+.todopanel-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  min-height: 0;
+  transition: grid-template-rows 0.15s ease;
+}
+
+.todopanel-collapse:not(.open) {
+  grid-template-rows: 0fr;
+}
+
 .todopanel-body {
-  border-top: 1px solid var(--vscode-input-border);
+  min-height: 0;
   padding: 4px 8px;
+  /* 折叠态 border 随色过渡隐去（否则 0 高时残留 1px 线）+ 裁剪内容不显滚动条 */
+  border-top: 1px solid transparent;
+  transition: border-top-color 0.15s ease;
+  overflow: hidden;
+}
+
+.todopanel-collapse.open .todopanel-body {
+  border-top-color: var(--vscode-input-border);
   overflow-y: auto;
 }
 

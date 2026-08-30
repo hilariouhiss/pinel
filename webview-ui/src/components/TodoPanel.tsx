@@ -48,7 +48,9 @@ export function TodoPanel({ todos }: Props) {
           </>
         )}
       </button>
-      {open && (
+      {/* 常驻渲染 + grid 0fr↔1fr 过渡（精确到内容高度，无 JS 测量）：
+          收起后 border 随色过渡隐去，任务行被裁剪；aria-hidden 同步折叠态 */}
+      <div className={`todopanel-collapse${open ? " open" : ""}`} aria-hidden={!open}>
         <div className="todopanel-body">
           {visible.map((task) => (
             <div
@@ -70,7 +72,7 @@ export function TodoPanel({ todos }: Props) {
             </div>
           ))}
         </div>
-      )}
+      </div>
     </div>
   );
 }
