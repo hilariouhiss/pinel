@@ -8,10 +8,13 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type RefObject,
+  type ReactNode,
 } from "react";
 import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
 import { parseAtRefs } from "../at-refs";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import sendIcon from "lucide-static/icons/send.svg";
@@ -94,6 +97,67 @@ async function compressImage(
 
 let attachmentSeq = 0;
 
+/**
+ * 输入框 WYSIWYG 渲染层：块元素全部折叠为行内，与 textarea 原始文本像素级对齐。
+ * 对齐前提：等宽字体（--pinel-font-family），仅颜色/字重/斜体/背景等不改变
+ * 字形宽度的样式；markdown 语法字符（**、#、- 等）以同宽标记符/样式替换。
+ * 接受位移的降级：有序列表标记以 • 代替（1 字符差）、表格分隔符不渲染、图片 🖼 占位。
+ * 复制/发送仍是 textarea 的原始 markdown 源码（本层纯视觉，aria-hidden）。
+ */
+function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObject<HTMLDivElement | null> }) {
+  const h = (marker: string) =>
+    ({ children }: { children?: ReactNode }) => (
+      <span className="composer-md-h">
+        <span className="composer-md-marker">{marker}</span>
+        {children}
+      </span>
+    );
+  return (
+    <div className="composer-md" aria-hidden="true" ref={mdRef}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <>{children}</>,
+          a: ({ children }) => <span className="md-link">{children}</span>,
+          code: ({ children, className }) => {
+            const text = String(children).replace(/\n$/, "");
+            if (className || text.includes("\n")) {
+              return <span className="composer-md-block">{text}</span>;
+            }
+            return <code className="composer-md-inline-code">{text}</code>;
+          },
+          pre: ({ children }) => <>{children}</>,
+          h1: h("# "),
+          h2: h("## "),
+          h3: h("### "),
+          h4: h("#### "),
+          h5: h("##### "),
+          h6: h("###### "),
+          ul: ({ children }) => <>{children}</>,
+          ol: ({ children }) => <>{children}</>,
+          li: ({ children }) => (
+            <span className="composer-md-li">
+              <span className="composer-md-marker">• </span>
+              {children}
+            </span>
+          ),
+          blockquote: ({ children }) => <span className="composer-md-quote">{children}</span>,
+          hr: () => <span className="composer-md-hr">---</span>,
+          table: ({ children }) => <>{children}</>,
+          thead: ({ children }) => <>{children}</>,
+          tbody: ({ children }) => <>{children}</>,
+          tr: ({ children }) => <>{children}</>,
+          th: ({ children }) => <>{children}</>,
+          td: ({ children }) => <>{children}</>,
+          img: () => <span className="composer-md-img">🖼</span>,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 export function Composer({
   status,
   commands,
@@ -125,6 +189,10 @@ export function Composer({
   // 窗口 resize 触发输入框高度自适应重算（默认上限随面板高变化）
   const [viewportTick, setViewportTick] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** 渲染层容器（滚动同步：textarea 内部滚动时 backdrop 同步 scrollTop）。 */
+  const mdRef = useRef<HTMLDivElement>(null);
+  /** IME 组合输入期间：临时恢复原文（透明文字下组合候选不可见），隐藏渲染层。 */
+  const [isComposing, setIsComposing] = useState(false);
   /** 当前输入文本引用（Ctrl+G 触发 effect 需最新值，避免绑定 text 依赖重复触发）。 */
   const textRef = useRef("");
   /** 候选弹窗容器（滚动同步用）。 */
@@ -481,24 +549,34 @@ export function Composer({
           ))}
         </div>
       )}
-      <textarea
-        ref={inputRef}
-        className="composer-input"
-        placeholder={
-          busy ? "Streaming — sending will be queued (steer)" : "Type a message, Ctrl+G to edit in editor"
-        }
-        rows={rows}
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          setSuggestDismissed(false); // 文本变化复位 Esc 关闭标记，继续输入重新触发补全
-          setFileDismissed(false); // 同上：@ 文件弹窗关闭标记（修复：直接 @ 选择后 atQuery 不变导致不复位）
-        }}
-        onKeyDown={onKeyDown}
-        onPaste={onPaste}
-        onFocus={() => vscode.postMessage({ type: "inputFocus", focused: true })}
-        onBlur={() => vscode.postMessage({ type: "inputFocus", focused: false })}
-      />
+      <div className={`composer-input-wrap${isComposing ? " composing" : ""}`}>
+        <ComposerMarkdown content={text} mdRef={mdRef} />
+        <textarea
+          ref={inputRef}
+          className="composer-input"
+          placeholder={
+            busy ? "Streaming — sending will be queued (steer)" : "Type a message, Ctrl+G to edit in editor"
+          }
+          rows={rows}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setSuggestDismissed(false); // 文本变化复位 Esc 关闭标记，继续输入重新触发补全
+            setFileDismissed(false); // 同上：@ 文件弹窗关闭标记（修复：直接 @ 选择后 atQuery 不变导致不复位）
+          }}
+          onKeyDown={onKeyDown}
+          onPaste={onPaste}
+          onCompositionStart={() => setIsComposing(true)}
+          onCompositionEnd={() => setIsComposing(false)}
+          onScroll={(e) => {
+            if (mdRef.current) {
+              mdRef.current.scrollTop = e.currentTarget.scrollTop;
+            }
+          }}
+          onFocus={() => vscode.postMessage({ type: "inputFocus", focused: true })}
+          onBlur={() => vscode.postMessage({ type: "inputFocus", focused: false })}
+        />
+      </div>
       <div className="footer-actions">
         <button
           className="status-settings-btn"
