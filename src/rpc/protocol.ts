@@ -249,6 +249,18 @@ export interface CompactCommand {
   customInstructions?: string;
 }
 
+/** 终端命令执行（! / !!）：excludeFromContext=true 对应 !!（不进 LLM 上下文）。 */
+export interface BashCommand {
+  type: "bash";
+  command: string;
+  excludeFromContext?: boolean;
+}
+
+/** 中止正在执行的 bash（Stop 按钮联动）。 */
+export interface AbortBashCommand {
+  type: "abort_bash";
+}
+
 /** compact 响应 data（容缺防御；usage 可能被自定义压缩处理器省略）。 */
 export interface CompactData {
   summary?: string;
@@ -319,7 +331,9 @@ export type ClientCommand =
   | CloneCommand
   | SetSessionNameCommand
   | GetSessionStatsCommand
-  | CompactCommand;
+  | CompactCommand
+  | BashCommand
+  | AbortBashCommand;
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -468,6 +482,13 @@ export interface QueueUpdateEvent {
   followUp: string[];
 }
 
+/** bash 执行增量输出（pi 实时推送；id = 发起 bash 的 RPC 请求 id）。 */
+export interface BashExecutionUpdateEvent {
+  type: "bash_execution_update";
+  id?: string;
+  delta: string;
+}
+
 export interface CompactionEvent {
   type: "compaction_start" | "compaction_end";
 }
@@ -530,6 +551,7 @@ export type RpcEvent =
   | ToolExecutionUpdateEvent
   | ToolExecutionEndEvent
   | QueueUpdateEvent
+  | BashExecutionUpdateEvent
   | CompactionEvent
   | AutoRetryEvent
   | ExtensionErrorEvent

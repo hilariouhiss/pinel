@@ -8,18 +8,18 @@ import type { StreamBlock } from "./stream-assembly";
  * 语义：push 只记录最新块引用（装配就地累加，引用内容持续增长），
  * 定时器触发时 flush 最新内容；同期间内多次 push 只 flush 一次（尾部）。
  */
-export class StreamFlushThrottle {
+export class StreamFlushThrottle<T = StreamBlock[]> {
   private timer: NodeJS.Timeout | null = null;
-  private latest: StreamBlock[] | null = null;
+  private latest: T | null = null;
 
   constructor(
     private readonly intervalMs: number,
-    private readonly flush: (blocks: StreamBlock[]) => void,
+    private readonly flush: (value: T) => void,
   ) {}
 
-  /** 记录最新块并调度刷新（已有待决定时器时仅更新内容，不叠加定时器）。 */
-  push(blocks: StreamBlock[]): void {
-    this.latest = blocks;
+  /** 记录最新值并调度刷新（已有待决定时器时仅更新内容，不叠加定时器）。 */
+  push(value: T): void {
+    this.latest = value;
     if (this.timer) {
       return;
     }

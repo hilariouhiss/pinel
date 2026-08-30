@@ -35,9 +35,11 @@ import {
   type ToolExecutionEndEvent,
   type ToolExecutionStartEvent,
   type ToolExecutionUpdateEvent,
+  type BashExecutionUpdateEvent,
 } from "../rpc/protocol";
 import { applyDelta, createAssembly, type StreamBlock } from "./stream-assembly";
 import { KeyedFlushThrottle, StreamFlushThrottle } from "./stream-flush";
+import { parseBashInput } from "./bash";
 import { DEFAULT_RESERVE_TOKENS, parseSessionStats, percentToReserveTokens, reserveTokensToPercent } from "./session-stats";
 import { isDuplicateNotice } from "./notice-dedup";
 import { parseMcpStatus, parsePinelState, parsePinelTree, parsePinelWorkflow, parsePonytailStatus, type McpStatus, type PinelStatePayload, type PinelTreePayload, type PinelWorkflowPayload, type PonytailStatus } from "./pinel-payload";
@@ -164,6 +166,7 @@ export type OutMessage =
   | { type: "pinelPluginState"; state: PinelPluginState }
   | { type: "ponytailStatus"; status: PonytailStatus }
   | { type: "mcpStatus"; status: McpStatus | null }
+  | { type: "bash"; message: BashCardMessage }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 interface PromptInput {
@@ -173,6 +176,19 @@ interface PromptInput {
   fileRefs?: string[];
   /** 控制消息（/pinel-* 扩展命令）：不乐观渲染用户消息（实测不写会话条目）。 */
   control?: boolean;
+}
+
+/** ! / !! 终端命令卡片消息：形状对齐 pi 落盘的 bashExecution 消息（快照替换无缝），
+ *  pinelBashId 为乐观卡的本地键（pi 权威消息无此字段）；exitCode null = 运行中。 */
+export interface BashCardMessage {
+  role: "bashExecution";
+  command: string;
+  output: string;
+  exitCode: number | null;
+  cancelled?: boolean;
+  excludeFromContext?: boolean;
+  timestamp: number;
+  pinelBashId?: string;
 }
 
 /**
@@ -243,6 +259,12 @@ export class ChatController {
   /** 流式广播节流：增量合并为固定节奏刷新（视觉平滑，见 stream-flush.ts）。 */
   private readonly streamFlush = new StreamFlushThrottle(40, (blocks) => {
     this.fire({ type: "stream", blocks });
+  });
+  /** 当前执行中的终端命令卡片（id = RPC 请求 id，关联 bash_execution_update 增量）。 */
+  private activeBash: { id: string; message: BashCardMessage } | null = null;
+  /** bash 增量广播节流：与流式消息同节奏（40ms）。 */
+  private readonly bashFlush = new StreamFlushThrottle<BashCardMessage>(40, (message) => {
+    this.fire({ type: "bash", message });
   });
   /** 工具卡广播节流：tool_execution_update 高频大载荷，按 toolCallId 合并为固定节奏广播。
    *  tools map 本身即时更新（getTools 权威），节流的只是 webview 广播。 */
@@ -600,6 +622,8 @@ export class ChatController {
       this.partialBlocks = [];
       this.streamFlush.cancel(); // 旧进程待决节流不得在重启后迟到广播
       this.toolFlush.cancel();
+      this.bashFlush.cancel();
+      this.activeBash = null; // 旧进程 bash 卡片随进程终止作废（send reject 不再迟到）
       this.status = { ...initialStatus };
       this.sessionStats = null; // 统计归属新进程会话：清空，start 首拉后填充
       this.pendingUi.clear();
@@ -653,6 +677,7 @@ export class ChatController {
     this.promptEditor.dispose();
     this.streamFlush.cancel();
     this.toolFlush.cancel();
+    this.bashFlush.cancel();
     this.onChange.dispose();
   }
 
@@ -670,6 +695,14 @@ export class ChatController {
     await this.ensureStarted();
     if (!this.client) {
       this.notice("error", "pi process unavailable, click Restart on the banner");
+      return;
+    }
+
+    // ! / !! 终端命令：本地前缀拦截，改走 RPC bash（pi 原生命令，excludeFromContext
+    // 区分 !! 只执行 / ! 输出进 LLM 上下文）；带图片/@引用时按普通消息处理
+    const bash = parseBashInput(input.text);
+    if (bash && !input.images?.length && !input.fileRefs?.length) {
+      await this.sendBash(bash.command, bash.excludeFromContext);
       return;
     }
 
@@ -723,10 +756,75 @@ export class ChatController {
     }
   }
 
+  /** ! / !! 终端命令：乐观卡片 → bash_execution_update 增量流式更新 → 完成态落定。
+   *  pi 同时把 bashExecution 消息写入会话（! 输出进 LLM 上下文），下次快照无缝替换乐观卡。 */
+  private bashSeq = 0;
+
+  private async sendBash(command: string, excludeFromContext: boolean): Promise<void> {
+    const client = this.client;
+    if (!client?.isRunning) {
+      this.notice("warning", "pi process unavailable");
+      return;
+    }
+    if (this.activeBash) {
+      this.notice("warning", "A command is still running (press Stop to cancel first)");
+      return;
+    }
+    const message: BashCardMessage = {
+      role: "bashExecution",
+      command,
+      output: "",
+      exitCode: null,
+      excludeFromContext,
+      timestamp: Date.now(),
+      pinelBashId: `local-${++this.bashSeq}`,
+    };
+    // 乐观卡 + 请求 id 关联（send() 返回前事件流即开始到达）
+    try {
+      const pending = client.send<{ output: string; exitCode: number; cancelled?: boolean }>(
+        { type: "bash", command, excludeFromContext },
+        10 * 60_000, // 长命令（构建/安装）远超过默认 30s
+      );
+      this.activeBash = { id: client.lastId, message };
+      this.fire({ type: "bash", message });
+      const result = await pending;
+      if (this.activeBash?.message !== message) {
+        return; // 卡片已作废（重启/切会话清理）：响应迟到，不广播
+      }
+      const done: BashCardMessage = {
+        ...message,
+        output: typeof result.output === "string" ? result.output : "",
+        exitCode: typeof result.exitCode === "number" ? result.exitCode : 0,
+        cancelled: result.cancelled,
+      };
+      this.activeBash = null;
+      this.bashFlush.cancel();
+      this.fire({ type: "bash", message: done });
+    } catch (err) {
+      if (this.activeBash?.message !== message) {
+        return; // 卡片已作废（重启/切会话清理）：拒绝迟到，不广播
+      }
+      // RPC 失败/中止：输出区附加错误说明，exitCode -1 显示为 error 态
+      const failed: BashCardMessage = {
+        ...message,
+        output: `${message.output}${message.output ? "\n" : ""}[error] ${(err as Error).message}`.trimEnd(),
+        exitCode: -1,
+      };
+      this.activeBash = null;
+      this.bashFlush.cancel();
+      this.fire({ type: "bash", message: failed });
+      this.notice("error", `Command failed: ${(err as Error).message}`);
+    }
+  }
+
   async abort(): Promise<void> {
     const client = this.client;
     if (!client?.isRunning) {
       return;
+    }
+    // 终端命令执行中：同时中止 bash（pi 的 abort 不取消 bash 子进程）
+    if (this.activeBash) {
+      client.writeRaw({ type: "abort_bash" });
     }
     try {
       await client.send({ type: "abort" });
@@ -1190,6 +1288,8 @@ export class ChatController {
     this.partialBlocks = [];
     this.streamFlush.cancel(); // 切换会话：旧会话待决节流不得迟到广播
     this.toolFlush.cancel();
+    this.bashFlush.cancel();
+    this.activeBash = null; // 旧会话 bash 卡片作废（快照整体替换后不残留）
     this.tools.clear();
     this.todos = []; // 新会话待办从零开始（restart 同语义，fireSnapshot 携带空列表）
     // 工作流运行态属于旧会话：清空并广播（插件不会为新会话重推，等下一次运行开始）
@@ -2121,6 +2221,21 @@ export class ChatController {
           followUp: Array.isArray(e.followUp) ? e.followUp : [],
         };
         this.fire({ type: "status", status: this.status });
+        break;
+      }
+
+      case "bash_execution_update": {
+        // 终端命令增量输出：仅接受当前活跃请求的增量（id 关联），
+        // 完成态由 sendBash 的响应落定（pi 事件先于响应到达，无覆盖竞态）
+        const e = event as BashExecutionUpdateEvent;
+        const active = this.activeBash;
+        if (!active || (e.id !== undefined && e.id !== active.id)) {
+          break;
+        }
+        if (typeof e.delta === "string") {
+          active.message.output += e.delta;
+        }
+        this.bashFlush.push({ ...active.message });
         break;
       }
 

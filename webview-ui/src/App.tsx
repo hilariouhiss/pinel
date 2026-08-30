@@ -270,6 +270,23 @@ export default function App() {
         }
         setMessages((prev) => [...prev, msg.message]);
         break;
+      case "bash":
+        // 终端命令卡：本地键（pinelBashId）替换更新流式输出；新卡插入时强制回底
+        //（更新不碰 stickToBottom——长输出期间用户上滚查看历史不受打扰）
+        setMessages((prev) => {
+          const id = msg.message.pinelBashId;
+          if (id) {
+            const idx = prev.findIndex((m) => m.pinelBashId === id);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = msg.message;
+              return next;
+            }
+          }
+          stickToBottom.current = true;
+          return [...prev, msg.message];
+        });
+        break;
       case "tool":
         setTools((prev) => ({ ...prev, [msg.tool.toolCallId]: msg.tool }));
         break;

@@ -199,6 +199,9 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
   const toolResultRef = useRef<HTMLDivElement>(null);
   /** 右键复制菜单位置（null=关闭）；每卡片实例独立（仅 user 卡片级使用）。 */
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  if (message.role === "bashExecution") {
+    return <BashCard message={message} stale={stale} />;
+  }
   if (message.role === "user") {
     const text = userText(message.content);
     const images = userImages(message.content);
@@ -275,6 +278,52 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
           mainThinkingLevel={mainThinkingLevel}
         />
       ))}
+    </div>
+  );
+}
+
+/** 终端命令卡（! / !!）：命令 + 流式输出 + 状态（复用 toolresult 样式）。
+ *  运行中输出区自动滚到底（对齐 thinking 体跟随机制）；完成后可复制。 */
+function BashCard({ message, stale }: { message: ChatMessage; stale?: boolean }) {
+  const [open, setOpen] = useState(true);
+  const bodyRef = useRef<HTMLPreElement>(null);
+  const command = typeof message.command === "string" ? message.command : "";
+  const output = typeof message.output === "string" ? message.output : "";
+  const exitCode = typeof message.exitCode === "number" ? message.exitCode : null;
+  const running = exitCode === null;
+  const failed = exitCode !== null && exitCode !== 0;
+  // 流式增长时输出区滚到最新（到 max-height 后卡片不再增高，新内容在内部滚动区）
+  useLayoutEffect(() => {
+    if (running && open && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [output, running, open]);
+  const copyText = () => [command, output].filter((s) => s.length > 0).join("\n\n");
+  return (
+    <div className={`msg msg-bash${stale ? " msg-stale" : ""}`}>
+      <div className={`toolresult${failed ? " status-error" : ""}`}>
+        <button className="toolresult-head" onClick={() => setOpen(!open)}>
+          <span className={`toolstatus ${running ? "status-running" : failed ? "status-error" : "status-done"}`}>
+            {running ? (
+              <span className="spinner" />
+            ) : failed ? (
+              <span className="toolstatus-icon" dangerouslySetInnerHTML={{ __html: xIcon }} />
+            ) : (
+              <span className="toolstatus-icon" dangerouslySetInnerHTML={{ __html: checkIcon }} />
+            )}
+          </span>
+          <span className="toolresult-title">
+            {message.excludeFromContext ? "!!" : "!"} {command}
+          </span>
+          <span className="toolresult-len">
+            {running ? "running…" : `exit ${exitCode}`}
+          </span>
+        </button>
+        {open && output && (
+          <pre className="toolresult-body" ref={bodyRef}>{output}</pre>
+        )}
+      </div>
+      {!running && <CopyButton getText={copyText} />}
     </div>
   );
 }

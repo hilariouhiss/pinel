@@ -173,6 +173,11 @@ export class RpcClient extends EventEmitter {
   private nextId = 1;
   private stoppedIntentionally = false;
 
+  /** 最近一次 send() 使用的请求 id（bash 等事件流需按 id 关联——见 bash_execution_update）。 */
+  get lastId(): string {
+    return String(this.nextId - 1);
+  }
+
   override on<K extends keyof RpcClientEvents>(event: K, listener: RpcClientEvents[K]): this {
     return super.on(event, listener);
   }

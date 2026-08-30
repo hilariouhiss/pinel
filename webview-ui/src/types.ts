@@ -91,6 +91,14 @@ export interface ChatMessage {
   isError?: boolean;
   toolCallId?: string;
   timestamp?: number;
+  /** bashExecution 消息（! / !! 终端命令卡片）字段；exitCode null = 运行中。 */
+  command?: string;
+  output?: string;
+  exitCode?: number | null;
+  cancelled?: boolean;
+  excludeFromContext?: boolean;
+  /** 乐观卡本地键（pi 权威消息无此字段；快照替换后自然消失）。 */
+  pinelBashId?: string;
   [key: string]: unknown;
 }
 
@@ -297,6 +305,7 @@ export type HostMessage =
   | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelWorkflow: PinelWorkflow | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; mcpStatus: McpStatus | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
+  | { type: "bash"; message: ChatMessage }
   | { type: "tool"; tool: ToolCard }
   | { type: "status"; status: ChatStatus }
   | { type: "uiRequest"; request: UiRequest }
