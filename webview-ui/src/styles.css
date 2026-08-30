@@ -1331,6 +1331,11 @@ body {
   top: 7px; /* 与 .composer-input padding 对齐 */
   left: 2px;
   right: 2px;
+  /* bottom 约束：渲染层盒子 = textarea 内容区（上下 padding 镜像 7px）。
+     大量文本时 textarea 被高度上限截住内部滚动，渲染层不约束会随内容
+     长高、画到输入框下面；约束后 overflow 裁剪生效且 onScroll 的
+     scrollTop 同步可用（overflow:hidden 盒可程序化滚动） */
+  bottom: 7px;
   overflow: hidden;
   pointer-events: none;
   font-family: var(--pinel-font-family);
