@@ -12,7 +12,7 @@ import {
 } from "react";
 import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
-import { parseAtRefs } from "../at-refs";
+import { parseAtRefs, matchAtToken } from "../at-refs";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
@@ -119,12 +119,17 @@ function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObjec
         components={{
           p: ({ children }) => <>{children}</>,
           a: ({ children }) => <span className="md-link">{children}</span>,
-          code: ({ children, className }) => {
+          code: ({ children, node }) => {
+            // 宽度忠实渲染：用 node.position 源偏移切出含反引号/围栏的原始
+            // 切片（等宽字体下与 textarea 原文 1:1 对齐，任意反引号数皆准）；
+            // position 缺失（异常路径）退回纯内容。围栏含 \n → block 样式
             const text = String(children).replace(/\n$/, "");
-            if (className || text.includes("\n")) {
-              return <span className="composer-md-block">{text}</span>;
-            }
-            return <code className="composer-md-inline-code">{text}</code>;
+            const pos = node?.position;
+            const raw =
+              pos?.start?.offset != null && pos?.end?.offset != null
+                ? content.slice(pos.start.offset, pos.end.offset)
+                : text;
+            return <code className={raw.includes("\n") ? "composer-md-block" : "composer-md-inline-code"}>{raw}</code>;
           },
           pre: ({ children }) => <>{children}</>,
           h1: h("# "),
@@ -208,11 +213,10 @@ export function Composer({
   // 防越界夹取（列表变化瞬间 highlight 可能超出新长度）
   const activeIndex = Math.min(highlight, Math.max(0, candidates.length - 1));
 
-  // @ 文件引用触发：当前词（空格分隔的末 token）以 @ 开头（含仅输入 @）或
-  // 反引号包裹的手打形式 `@（列表选择后的规范形态）；与命令补全弹窗互斥
+  // @ 文件引用触发：当前词（空格分隔的末 token）为进行中的 @ 引用
+  // （裸 @…或未闭合的 `@…，判定纯函数见 matchAtToken）；与命令补全弹窗互斥
   const lastToken = text.split(/\s+/).pop() ?? "";
-  const atTrigger = lastToken.startsWith("@") || lastToken.startsWith("`@");
-  const atQuery = atTrigger ? lastToken.slice(lastToken.startsWith("`") ? 2 : 1) : "";
+  const { trigger: atTrigger, query: atQuery } = matchAtToken(lastToken);
   const fileCandidates = useMemo(() => {
     if (!atQuery) {
       return fileList;
@@ -334,15 +338,15 @@ export function Composer({
     caretAtEnd.current = true;
   };
 
-  /** @ 文件选中：末 @token 替换为反引号包裹的规范引用（`@path / `@"含空格"`）+ 尾空格收尾。
+  /** @ 文件选中：末 @token 替换为反引号包裹的规范引用（`@path / `@"含空格"`）。
    *  仅反引号包裹的 @file 才在发送时解析为文件引用（parseAtRefs 语法）；
-   *  尾空格让 lastToken 不再以 @/`@ 开头（防下次击键复位 fileDismissed 后弹窗重开），
-   *  fileDismissed 置位双保险；发送时统一从文本解析 @token（手打/粘贴/fill 同链路）。 */
+   *  不插入真实尾空格（闭合态 token 不再触发弹窗，见 matchAtToken），
+   *  渲染层与原文保持 1:1 对齐；发送时统一从文本解析 @token（手打/粘贴/fill 同链路）。 */
   const acceptFile = (file: FileItem) => {
     const token = text.split(/\s+/).pop() ?? "";
     const prefix = text.slice(0, Math.max(0, text.length - token.length));
     const ref = /\s/.test(file.path) ? `@"${file.path}"` : `@${file.path}`;
-    setText(`${prefix}\`${ref}\` `);
+    setText(`${prefix}\`${ref}\``);
     setFileDismissed(true);
     caretAtEnd.current = true;
   };

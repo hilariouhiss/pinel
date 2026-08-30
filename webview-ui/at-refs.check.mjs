@@ -3,7 +3,7 @@
  * 挂入 npm run compile 门：@ 文件引用解析规则坏掉时编译即红。
  */
 import assert from "node:assert";
-import { parseAtRefs } from "./src/at-refs.ts";
+import { parseAtRefs, matchAtToken } from "./src/at-refs.ts";
 
 const fileList = [
   { path: "src/a.ts" },
@@ -46,5 +46,25 @@ assert.deepStrictEqual(parseAtRefs("`code` and `@src/a.ts`", fileList), ["src/a.
 // 空列表 / 空文本
 assert.deepStrictEqual(parseAtRefs("`@src/a.ts`", []), []);
 assert.deepStrictEqual(parseAtRefs("", fileList), []);
+
+// 末尾无尾空格也能解析（acceptFile 不再插入真实尾空格）
+assert.deepStrictEqual(parseAtRefs("看 `@src/a.ts`", fileList), ["src/a.ts"]);
+
+// matchAtToken：弹窗触发判定
+// 裸 @（含仅 @）：触发
+assert.deepStrictEqual(matchAtToken("@"), { trigger: true, query: "" });
+assert.deepStrictEqual(matchAtToken("@src/ma"), { trigger: true, query: "src/ma" });
+// 未闭合反引号形式：触发（手打进行中）
+assert.deepStrictEqual(matchAtToken("`@src/ma"), { trigger: true, query: "src/ma" });
+// 闭合态（列表选中后的规范形态）：不触发（后续击键不重开弹窗）
+assert.deepStrictEqual(matchAtToken("`@src/a.ts`"), { trigger: false, query: "" });
+assert.deepStrictEqual(matchAtToken("`@\"src/a b.ts\"`"), { trigger: false, query: "" });
+// 闭合态后追加文本：不触发
+assert.deepStrictEqual(matchAtToken("`@src/a.ts`x"), { trigger: false, query: "" });
+// 删掉闭合反引号回到未闭合：重新触发
+assert.deepStrictEqual(matchAtToken("`@src/a.ts"), { trigger: true, query: "src/a.ts" });
+// 非 @ 开头：不触发
+assert.deepStrictEqual(matchAtToken("hello"), { trigger: false, query: "" });
+assert.deepStrictEqual(matchAtToken(""), { trigger: false, query: "" });
 
 console.log("at-refs check OK");
