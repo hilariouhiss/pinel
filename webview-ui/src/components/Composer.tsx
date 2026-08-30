@@ -13,7 +13,7 @@ import {
 import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
 import { parseAtRefs, matchAtToken } from "../at-refs";
-import { sliceLiMarker } from "../composer-md";
+import { sliceLiMarker, stripLeadingNewline } from "../composer-md";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
@@ -140,15 +140,17 @@ function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObjec
           h4: h("#### "),
           h5: h("##### "),
           h6: h("###### "),
-          ul: ({ children }) => <>{children}</>,
-          ol: ({ children }) => <>{children}</>,
+          ul: ({ children }) => <>{stripLeadingNewline(children)}</>,
+          ol: ({ children }) => <>{stripLeadingNewline(children)}</>,
           li: ({ children, node }) => (
             <span className="composer-md-li">
               <span className="composer-md-marker">{sliceLiMarker(content, node?.position)}</span>
-              {children}
+              {stripLeadingNewline(children)}
             </span>
           ),
-          blockquote: ({ children }) => <span className="composer-md-quote">{children}</span>,
+          blockquote: ({ children }) => (
+            <span className="composer-md-quote">{stripLeadingNewline(children)}</span>
+          ),
           hr: () => <span className="composer-md-hr">---</span>,
           table: ({ children }) => <>{children}</>,
           thead: ({ children }) => <>{children}</>,

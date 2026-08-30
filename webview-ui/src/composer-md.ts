@@ -24,3 +24,13 @@ export function sliceLiMarker(content: string, position: MdPosition | null | und
   }
   return /^[-+*]$/.test(m[1]) ? "• " : `${m[1]} `;
 }
+
+/**
+ * 去掉块容器子节点开头的合成换行（mdast-util-to-hast 为块子元素添加的格式
+ * "\n"）：块间换行已由父级分隔文本承担，保留会使容器首块多渲染一个空行、
+ * 整个渲染层相对原文下移（光标停在空行、文本显示在下一行的错位）。
+ * 纯数组操作（ReactNode 数组的文本子为字符串，"\n" 即合成换行）。
+ */
+export function stripLeadingNewline<T>(children: readonly T[] | T): readonly T[] | T {
+  return Array.isArray(children) && children[0] === "\n" ? children.slice(1) : children;
+}

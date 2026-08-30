@@ -3,7 +3,7 @@
  * 挂入 npm run compile 门：列表标记切片规则坏掉时编译即红。
  */
 import assert from "node:assert";
-import { sliceLiMarker } from "./src/composer-md.ts";
+import { sliceLiMarker, stripLeadingNewline } from "./src/composer-md.ts";
 
 const pos = (start, end) => ({ start: { offset: start }, end: { offset: end } });
 
@@ -23,4 +23,13 @@ assert.strictEqual(sliceLiMarker("1. a\n   b", pos(0, 8)), "1. ");
 // position 缺失 / 无 offset：退回 •
 assert.strictEqual(sliceLiMarker("x", null), "• ");
 assert.strictEqual(sliceLiMarker("x", { start: {}, end: {} }), "• ");
+
+// 块容器合成换行剥离：首子为 "\n" 时去掉（ol/ul/li/blockquote 对齐修复）
+assert.deepStrictEqual(stripLeadingNewline(["\n", "a", "\n"]), ["a", "\n"]);
+// 首子非换行：原样返回（紧凑 li / 内容开头的文本）
+assert.deepStrictEqual(stripLeadingNewline(["a", "\n", "b"]), ["a", "\n", "b"]);
+// 非数组（单文本子）原样返回
+assert.strictEqual(stripLeadingNewline("abc"), "abc");
+// 空数组原样返回
+assert.deepStrictEqual(stripLeadingNewline([]), []);
 console.log("composer-md check OK");
