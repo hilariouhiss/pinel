@@ -22,6 +22,7 @@
  */
 import { PushScheduler, FULL_PUSH_EVENTS, SNAPSHOT_ONLY_EVENTS } from "./extensions/push.js";
 import { getPinelCtx, setPinelCtx } from "./extensions/push-target.js";
+import { registerPromptComposition } from "./extensions/prompt-composition.js";
 
 const VERSION = "0.1.0";
 
@@ -31,6 +32,9 @@ export default function (pi: any) {
   }
 
   const scheduler = new PushScheduler(() => getPinelCtx());
+
+  // 提示词组成采集（pinel.prompt 推送；首轮 before_agent_start 后的 agent_start 首发帧）
+  registerPromptComposition(pi);
 
   for (const name of FULL_PUSH_EVENTS) {
     pi.on(name, (_ev: any, ctx: any) => {
