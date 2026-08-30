@@ -61,6 +61,8 @@ export interface PinelTestApi {
   setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void>;
   /** 设置自动压缩（set_auto_compaction）。 */
   setAutoCompaction(enabled: boolean): Promise<void>;
+  /** 设置自动提交（写 settings.json pinel.autoCommit；插件按轮注入提示词）。 */
+  setAutoCommit(enabled: boolean): Promise<void>;
   /** 设置自动压缩阈值（百分比；写全局 settings.json compaction.reserveTokens）。 */
   setCompactionThreshold(percent: number): Promise<void>;
   /** 重启 pi 进程（触发 ChatController.restart）。 */
@@ -261,6 +263,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     setSteeringMode: (mode) => ctrl.setSteeringMode(mode),
     setFollowUpMode: (mode) => ctrl.setFollowUpMode(mode),
     setAutoCompaction: (enabled) => ctrl.setAutoCompaction(enabled),
+    setAutoCommit: (enabled) => ctrl.setAutoCommit(enabled),
     setCompactionThreshold: (percent: number) => ctrl.setCompactionThreshold(percent),
     restart: () => ctrl.restart(),
     editPrompt: (text: string) => ctrl.editPrompt(text),

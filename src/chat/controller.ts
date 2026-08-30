@@ -105,6 +105,8 @@ export interface ChatStatus {
   autoCompactionEnabled: boolean;
   /** 自动压缩阈值回显（百分比；null = 尚未换算/读取失败，webview 占位）。 */
   autoCompactPercent: number | null;
+  /** 自动提交（pinel.autoCommit 设置镜像；写入 pi settings.json，插件按轮注入提示词）。 */
+  autoCommitEnabled: boolean;
   /** 会话信息条开关（pinel.showSessionStats 配置镜像；UI 偏好不依赖 pi 运行）。 */
   showSessionStats?: boolean;
   /** 当前会话文件路径（get_state.sessionFile；会话历史列表高亮用）。 */
@@ -213,6 +215,7 @@ const initialStatus: ChatStatus = {
   followUpMode: "one-at-a-time",
   autoCompactionEnabled: true,
   autoCompactPercent: null,
+  autoCommitEnabled: false,
   showSessionStats: false,
   steering: [],
   followUp: [],
@@ -413,6 +416,8 @@ export class ChatController {
       void this.refreshSessionStats();
       void this.refreshSessionEnv();
     }
+    // 自动提交开关：每次启动回读 settings.json（restart 重置 status 后恢复）
+    void this.refreshAutoCommit();
 
     const client = this.client;
     if (!client) {
@@ -1585,6 +1590,50 @@ export class ChatController {
     const pct = reserveTokensToPercent(reserveTokens, contextWindow);
     if (this.status.autoCompactPercent !== pct) {
       this.status = { ...this.status, autoCompactPercent: pct };
+      this.fire({ type: "status", status: this.status });
+    }
+  }
+
+  /**
+   * 自动提交开关（设置面板「Auto commit」）。
+   * 写 pi 全局 settings.json 的 pinel.autoCommit（合并写，保留其余键），
+   * pi 侧 auto-commit 扩展每轮 before_agent_start 现读并注入简短提示词；
+   * 纯设置写不依赖 pi 运行，开关即时生效（下一轮起）。
+   */
+  async setAutoCommit(enabled: boolean): Promise<void> {
+    try {
+      const settings = await readSettings(agentSettingsPath(os.homedir()));
+      const raw = settings.pinel;
+      const pinel =
+        typeof raw === "object" && raw !== null && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
+      pinel.autoCommit = enabled;
+      settings.pinel = pinel;
+      await writeSettings(agentSettingsPath(os.homedir()), settings);
+    } catch (err) {
+      this.notice("error", `Save auto commit setting failed: ${(err as Error).message}`);
+      return;
+    }
+    if (this.status.autoCommitEnabled !== enabled) {
+      this.status = { ...this.status, autoCommitEnabled: enabled };
+      this.fire({ type: "status", status: this.status });
+    }
+    this.notice("info", `Auto commit ${enabled ? "enabled" : "disabled"}`);
+  }
+
+  /** 回读 settings.json 的 pinel.autoCommit 同步 status（start 时调用；失败保持默认）。 */
+  private async refreshAutoCommit(): Promise<void> {
+    let enabled = false;
+    try {
+      const settings = await readSettings(agentSettingsPath(os.homedir()));
+      const raw = settings.pinel;
+      enabled =
+        typeof raw === "object" && raw !== null && !Array.isArray(raw) &&
+        (raw as Record<string, unknown>).autoCommit === true;
+    } catch {
+      return; // 读失败：保持默认关
+    }
+    if (this.status.autoCommitEnabled !== enabled) {
+      this.status = { ...this.status, autoCommitEnabled: enabled };
       this.fire({ type: "status", status: this.status });
     }
   }

@@ -23,6 +23,8 @@ export interface ChatStatus {
   autoCompactionEnabled: boolean;
   /** 自动压缩阈值回显（百分比；null = 尚未换算/读取失败，输入框占位）。 */
   autoCompactPercent: number | null;
+  /** 自动提交（pi settings.json pinel.autoCommit 镜像；开启时插件注入提示词）。 */
+  autoCommitEnabled: boolean;
   /** 当前会话文件路径（get_state.sessionFile；会话历史高亮用）。 */
   sessionFile?: string;
   /** 会话信息条开关（pinel.showSessionStats 配置镜像；UI 偏好不依赖 pi 运行）。 */

@@ -33,6 +33,7 @@ const initialStatus: ChatStatus = {
   followUpMode: "one-at-a-time",
   autoCompactionEnabled: true,
   autoCompactPercent: null,
+  autoCommitEnabled: false,
   showSessionStats: false,
   steering: [],
   followUp: [],

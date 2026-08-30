@@ -2916,4 +2916,67 @@ suite("Pinel 集成测试（假 pi）", () => {
       assert.deepStrictEqual(settings.packages, ["npm:a"], "packages 键保留");
     });
   });
+
+  // 自动提交开关（写全局 settings.json pinel.autoCommit；pi 侧 auto-commit 扩展按轮注入提示词）
+  // -------------------------------------------------------------------------
+
+  suite("自动提交开关", () => {
+    let agentDir: string;
+
+    suiteSetup(async () => {
+      // 隔离：防写真实 ~/.pi/agent/settings.json（对齐扩展管理套件模式）
+      agentDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pinel-autocommit-"));
+      process.env.PI_CODING_AGENT_DIR = agentDir;
+    });
+
+    suiteTeardown(async () => {
+      delete process.env.PI_CODING_AGENT_DIR;
+      await fs.promises.rm(agentDir, { recursive: true, force: true });
+    });
+
+    test("setAutoCommit(true)：写 settings.json + status 回显 + notice", async function () {
+      this.timeout(30000);
+      await api.setAutoCommit(true);
+
+      const settings = JSON.parse(await fs.promises.readFile(path.join(agentDir, "settings.json"), "utf8"));
+      assert.strictEqual(settings.pinel.autoCommit, true, "settings.json 必须写入 pinel.autoCommit=true");
+      assert.strictEqual(api.getStatus().autoCommitEnabled, true, "status 回显开启");
+      await waitFor(
+        () => api.getTestEventLog().notices.some((n) => n.text === "Auto commit enabled"),
+        10000,
+        "开启 notice",
+      );
+    });
+
+    test("setAutoCommit(false) + 合并写：其余键保留", async function () {
+      this.timeout(30000);
+      await fs.promises.writeFile(
+        path.join(agentDir, "settings.json"),
+        JSON.stringify({ packages: ["npm:a"], compaction: { reserveTokens: 16384 }, pinel: { other: 1 } }),
+      );
+      await api.setAutoCommit(false);
+      const settings = JSON.parse(await fs.promises.readFile(path.join(agentDir, "settings.json"), "utf8"));
+      assert.strictEqual(settings.pinel.autoCommit, false, "pinel.autoCommit=false 写入");
+      assert.strictEqual(settings.pinel.other, 1, "pinel 其他键保留");
+      assert.deepStrictEqual(settings.packages, ["npm:a"], "packages 键保留");
+      assert.strictEqual(settings.compaction.reserveTokens, 16384, "compaction 键保留");
+      assert.strictEqual(api.getStatus().autoCommitEnabled, false, "status 回显关闭");
+    });
+
+    test("损坏 settings.json：error notice 且不覆盖", async function () {
+      this.timeout(30000);
+      const p = path.join(agentDir, "settings.json");
+      await fs.promises.writeFile(p, "not-json");
+      await api.setAutoCommit(true);
+      await waitFor(
+        () =>
+          api.getTestEventLog().notices.some(
+            (n) => n.level === "error" && n.text.includes("Save auto commit setting failed"),
+          ),
+        10000,
+        "损坏 settings error notice",
+      );
+      assert.strictEqual(await fs.promises.readFile(p, "utf8"), "not-json", "损坏文件不得被覆盖");
+    });
+  });
 });

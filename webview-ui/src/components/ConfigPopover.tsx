@@ -193,6 +193,26 @@ export function ConfigPopover({ status, open, onClose }: Props) {
           </div>
         </div>
         <div className="config-popover-section">
+          <div className="config-popover-title">Auto commit</div>
+          <div className="config-popover-row">
+            {/* 纯设置写（pi settings.json）：不设 running 门控，下一轮起生效 */}
+            <span className="config-popover-value">Commit finished work automatically</span>
+            <button
+              role="switch"
+              aria-checked={status.autoCommitEnabled}
+              aria-label="Commit finished work automatically"
+              title={status.autoCommitEnabled ? "On" : "Off"}
+              className={`config-popover-switch${status.autoCommitEnabled ? " on" : ""}`}
+              disabled={busyKeys.has("autoCommit")}
+              onClick={() =>
+                withCooldown("autoCommit", () =>
+                  vscode.postMessage({ type: "setAutoCommit", enabled: !status.autoCommitEnabled }),
+                )
+              }
+            />
+          </div>
+        </div>
+        <div className="config-popover-section">
           <div className="config-popover-title">Session info</div>
           <div className="config-popover-row">
             {/* UI 偏好开关：不设 running 门控（不依赖 pi 进程，开启时首拉失败静默） */}

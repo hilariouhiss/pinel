@@ -95,6 +95,11 @@ interface WebviewSetAutoCompactionMessage {
   enabled: boolean;
 }
 
+interface WebviewSetAutoCommitMessage {
+  type: "setAutoCommit";
+  enabled: boolean;
+}
+
 interface WebviewEditPromptMessage {
   type: "editPrompt";
   text: string;
@@ -226,6 +231,7 @@ type WebviewInMessage =
   | WebviewSetSteeringModeMessage
   | WebviewSetFollowUpModeMessage
   | WebviewSetAutoCompactionMessage
+  | WebviewSetAutoCommitMessage
   | WebviewEditPromptMessage
   | WebviewInputFocusMessage
   | WebviewGetSessionListMessage
@@ -366,6 +372,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "setAutoCompaction":
         void this.controller.setAutoCompaction(msg.enabled);
+        break;
+      case "setAutoCommit":
+        void this.controller.setAutoCommit(msg.enabled);
         break;
       case "editPrompt":
         void this.controller.editPrompt(msg.text);
