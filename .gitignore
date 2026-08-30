@@ -26,3 +26,5 @@ Thumbs.db
 *.tsbuildinfo
 
 .mcp.json
+# git worktrees (isolated feature workspaces)
+.worktrees/
