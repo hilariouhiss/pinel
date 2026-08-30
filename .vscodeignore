@@ -4,6 +4,7 @@ out/**
 node_modules/**
 src/**
 webview-ui/**
+.superpowers/**
 .gitignore
 .yarnrc
 esbuild.js
