@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelPluginState, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, McpStatus, ModelInfo, PinelPluginState, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
@@ -87,6 +87,8 @@ export default function App() {
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   /** ponytail 状态（ponytail 插件自推帧解析；null=未收到/未装，信息条隐藏）。 */
   const [ponytailStatus, setPonytailStatus] = useState<PonytailStatus | null>(null);
+  /** MCP 服务器摘要（宿主 statusKey "mcp" 帧；null=未收到帧 → chip 隐藏）。 */
+  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
   /** pinel.workflow 工作流运行状态（rpiv-workflow 生命周期推送；null=无运行/会话已切）。 */
   const [pinelWorkflow, setPinelWorkflow] = useState<PinelWorkflow | null>(null);
   /** Pinel 插件安装态（扩展管理弹层安装区数据）。 */
@@ -250,6 +252,7 @@ export default function App() {
         setPinelWorkflow(msg.pinelWorkflow);
         setPinelPluginState(msg.pinelPluginState);
         setPonytailStatus(msg.ponytailStatus);
+        setMcpStatus(msg.mcpStatus);
         setPendingUi(msg.pendingUi ?? []);
         setTodos(msg.todos ?? []);
         setCommands(msg.commands ?? []);
@@ -344,6 +347,9 @@ export default function App() {
         break;
       case "ponytailStatus":
         setPonytailStatus(msg.status);
+        break;
+      case "mcpStatus":
+        setMcpStatus(msg.status);
         break;
       case "pinelWorkflow":
         setPinelWorkflow(msg.workflow);

@@ -259,6 +259,18 @@ export interface PonytailStatus {
   mode: string;
 }
 
+/** MCP 服务器摘要（宿主 parseMcpStatus 产物镜像；statusKey "mcp" 帧）。 */
+export interface McpStatus {
+  /** connecting = 适配器启动连接中；ready = 稳态（含 0 服务器清除信号）。 */
+  state: "connecting" | "ready";
+  /** 启用服务器数（分母）。 */
+  enabled: number;
+  /** 已连接服务器数（分子）。 */
+  connected: number;
+  /** 禁用服务器数（仅 full 模式帧携带）。 */
+  disabled?: number;
+}
+
 /** pinel.state 快照（插件推送 → 宿主防御解析 → 广播）。 */
 export interface PinelState {
   v: 1;
@@ -282,7 +294,7 @@ export interface PinelWorkflow {
 }
 
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelWorkflow: PinelWorkflow | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelWorkflow: PinelWorkflow | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; mcpStatus: McpStatus | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "tool"; tool: ToolCard }
@@ -314,6 +326,7 @@ export type HostMessage =
   | { type: "pinelWorkflow"; workflow: PinelWorkflow | null }
   | { type: "pinelPluginState"; state: PinelPluginState }
   | { type: "ponytailStatus"; status: PonytailStatus }
+  | { type: "mcpStatus"; status: McpStatus | null }
   | { type: "notice"; level: "info" | "warning" | "error"; text: string };
 
 export interface Attachment {
