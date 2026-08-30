@@ -2314,6 +2314,39 @@ suite("Pinel 集成测试（假 pi）", () => {
       );
     });
 
+    test("流式中实时刷新：回合内信息条随条目落盘变动（STATS-LIVE）", async function () {
+      this.timeout(60000);
+      await api.setShowSessionStats(true);
+      const before = api.getTestEventLog().lastSessionStats?.stats;
+      assert.ok(before, "已有基线统计");
+      const beforeInput = before!.tokens.input;
+      const marker = `STATS-LIVE-${Date.now()}`;
+      const baseline = api.getSettledCount();
+      await api.sendPrompt(marker);
+      // fake-pi 在 tool_execution_end 后暂停 2s（仍流式中）；控制器节流拉取
+      //（1s 间隔）在窗口内广播 sessionStats，且到达时 isStreaming=true。
+      // 旧缺陷：流中从不拉取，信息条到 settle 才变——本断言捕获该回归
+      await waitFor(
+        () => api.getTestEventLog().lastSessionStats?.streaming === true,
+        20000,
+        "流式中收到 sessionStats 广播",
+      );
+      const mid = api.getTestEventLog().lastSessionStats?.stats;
+      assert.ok(mid, "流中广播携带 stats");
+      assert.ok(
+        mid!.tokens.input > beforeInput,
+        "流中统计已含新回合条目（用户消息落盘 → input 增长）",
+      );
+      await api.waitForSettled(30000, baseline);
+      // settle 后最终值不小于流中值（assistant/toolResult 条目继续累积）
+      await waitFor(
+        () =>
+          (api.getTestEventLog().lastSessionStats?.stats?.tokens.input ?? 0) >= mid!.tokens.input,
+        15000,
+        "settle 后最终统计",
+      );
+    });
+
     test("切换会话后：统计归属新会话（sessionFile 更新 + 数值变化）", async function () {
       this.timeout(60000);
       const target = "/fake/switch-stats-target.jsonl";

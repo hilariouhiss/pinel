@@ -394,6 +394,9 @@ async function streamSequence(promptText, slow) {
   // 镜像真实 pi：用户消息也发 message_start/message_end（pinel 侧必须门控
   // 不重复推送——webview 已有乐观渲染的用户消息）
   const userMessage = { role: "user", content: [{ type: "text", text: promptText }] };
+  // 镜像真实 pi：用户消息在 prompt 受理时即落盘（get_session_stats 流中
+  // 拉取已含新回合条目；assistant/toolResult 在序列尾部补齐）
+  messages.push({ role: "user", content: promptText });
   out({ type: "message_start", message: userMessage });
   out({ type: "message_end", message: userMessage });
   const assistantContent = [
@@ -457,6 +460,15 @@ async function streamSequence(promptText, slow) {
   });
   out({ type: "message_update", assistantMessageEvent: { type: "toolcall_end", contentIndex: 2, toolCall: { id: "call_1", name: "read", arguments: { path: "README.md" } } } });
 
+  // STATS-LIVE：tool_execution_end 后暂停 2s（仍流式中）——控制器流中节流
+  // 拉取（1s 间隔）在窗口内广播统计，集成测试断言「流中实时变动」
+  if (promptText.includes("STATS-LIVE")) {
+    await delay(2000);
+    if (abortGeneration !== gen) {
+      return;
+    }
+  }
+
   await delay(step);
   if (abortGeneration !== gen) {
     return;
@@ -473,7 +485,6 @@ async function streamSequence(promptText, slow) {
     return;
   }
   messages.push(
-    { role: "user", content: promptText },
     { role: "assistant", content: assistantContent },
     {
       role: "toolResult",

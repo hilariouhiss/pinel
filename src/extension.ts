@@ -25,8 +25,9 @@ export interface TestEventLog {
   lastSessionTitle: { title: string | undefined } | undefined;
   /** 重命名/删除后的立即刷新信号计数（sessionListRefresh 广播断言）。 */
   sessionListRefreshCount: number;
-  /** 最近一次会话统计广播（对象包裹区分「未广播」与「广播 null」）。 */
-  lastSessionStats: { stats: SessionStatsData | null } | undefined;
+  /** 最近一次会话统计广播（对象包裹区分「未广播」与「广播 null」；
+   *  streaming = 广播到达时是否流式中，供「流中实时变动」断言）。 */
+  lastSessionStats: { stats: SessionStatsData | null; streaming: boolean } | undefined;
   /** 最近一次环境段广播（folderName + git；对象包裹区分「未广播」与「广播」）。 */
   lastSessionEnv: { env: SessionEnv } | undefined;
   /** 最近一次可 fork 消息广播（forkMessages；fork 选择器数据源）。 */
@@ -216,7 +217,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
   let lastFillPrompt: string | undefined;
   let lastSessionTitle: { title: string | undefined } | undefined;
   let sessionListRefreshCount = 0;
-  let lastSessionStats: { stats: SessionStatsData | null } | undefined;
+  let lastSessionStats: { stats: SessionStatsData | null; streaming: boolean } | undefined;
   let lastSessionEnv: { env: SessionEnv } | undefined;
   let lastForkMessages: ForkMessage[] | undefined;
   ctrl.onChange.event((msg) => {
@@ -238,7 +239,7 @@ export function activate(context: vscode.ExtensionContext): PinelTestApi {
     } else if (msg.type === "sessionListRefresh") {
       sessionListRefreshCount++;
     } else if (msg.type === "sessionStats") {
-      lastSessionStats = { stats: msg.stats };
+      lastSessionStats = { stats: msg.stats, streaming: ctrl.getStatus().isStreaming };
     } else if (msg.type === "sessionEnv") {
       lastSessionEnv = { env: msg.env };
     } else if (msg.type === "forkMessages") {

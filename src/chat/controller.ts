@@ -257,6 +257,8 @@ export class ChatController {
   private sessionEnv: SessionEnv = { folderName: null, git: null };
   /** git 状态刷新去抖定时器（保存文件后合并短时间多次触发）。 */
   private gitRefreshTimer: NodeJS.Timeout | null = null;
+  /** 流式中统计拉取节流定时器（见 scheduleStreamingStatsRefresh）。 */
+  private statsRefreshTimer: NodeJS.Timeout | null = null;
   private messages: AgentMessage[] = [];
   private partialBlocks: StreamBlock[] = [];
   /** 流式广播节流：增量合并为固定节奏刷新（视觉平滑，见 stream-flush.ts）。 */
@@ -679,6 +681,7 @@ export class ChatController {
       clearTimeout(this.gitRefreshTimer);
       this.gitRefreshTimer = null;
     }
+    this.cancelStreamingStatsRefresh();
     this.promptEditor.dispose();
     this.streamFlush.cancel();
     this.toolFlush.cancel();
@@ -1722,6 +1725,38 @@ export class ChatController {
   }
 
   /**
+   * 流式中统计拉取节流间隔（毫秒）。
+   */
+  private static readonly STREAMING_STATS_REFRESH_MS = 1000;
+
+  /**
+   * 流式中节流拉取会话统计：信息条随回合推进实时变动。
+   *
+   * pi 协议纯拉取（get_session_stats 无推送事件），统计条目落盘点 =
+   * assistant/toolResult 的 message_end 与 tool_execution_end——这些事件
+   * 到达时调度尾沿节流拉取（工具密集回合至多每秒一次 RPC）；settle/
+   * 压缩/切换路径仍无条件直刷兜底最终值。开关关闭时 refreshSessionStats
+   * 内部短路，定时器空转一跳即静默。
+   */
+  private scheduleStreamingStatsRefresh(): void {
+    if (this.statsRefreshTimer) {
+      return;
+    }
+    this.statsRefreshTimer = setTimeout(() => {
+      this.statsRefreshTimer = null;
+      void this.refreshSessionStats();
+    }, ChatController.STREAMING_STATS_REFRESH_MS);
+  }
+
+  /** 取消待决的流式统计拉取（settle 直刷已覆盖；dispose 防迟到回调）。 */
+  private cancelStreamingStatsRefresh(): void {
+    if (this.statsRefreshTimer) {
+      clearTimeout(this.statsRefreshTimer);
+      this.statsRefreshTimer = null;
+    }
+  }
+
+  /**
    * 白名单 statusKey 帧（pinel.*、ponytail、mcp）：防御解析 → 缓存 → 广播。
    * 非白名单 statusKey 忽略（生态插件 colgrep 等也发 setStatus，
    * 不白名单过滤会涌入 webview）。
@@ -2160,7 +2195,9 @@ export class ChatController {
         //（扩展可能在运行中注册新命令）
         void this.syncMessages();
         void this.fetchCommands();
-        // 会话统计随回合结束刷新（token/成本/上下文占用变化）
+        // 会话统计随回合结束刷新（token/成本/上下文占用变化）；流中节流定时器
+        // 的待决拉取已无意义（此处直刷覆盖），取消防重复 RPC
+        this.cancelStreamingStatsRefresh();
         void this.refreshSessionStats();
         // git 状态随回合结束刷新（agent 可能经工具改动了文件）
         void this.refreshSessionEnv();
@@ -2210,6 +2247,8 @@ export class ChatController {
         this.messages.push(msg);
         this.fire({ type: "message", message: msg });
         this.broadcastStream([]);
+        // 统计条目已落盘：流式中节流拉取，信息条实时变动
+        this.scheduleStreamingStatsRefresh();
         break;
       }
 
@@ -2287,6 +2326,8 @@ export class ChatController {
         }
         this.tools.set(e.toolCallId, tool);
         this.toolFlush.push(e.toolCallId, { ...tool });
+        // toolResult 条目随工具完成落盘：流式中节流拉取，信息条实时变动
+        this.scheduleStreamingStatsRefresh();
         break;
       }
 
