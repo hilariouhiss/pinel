@@ -232,10 +232,14 @@ body {
   transition: opacity 0.1s ease;
 }
 
-.msg:hover .msg-copy-btn,
-.copy-target:hover .msg-copy-btn,
-.thinking:hover .msg-copy-btn,
-.toolchip:hover .msg-copy-btn,
+/* 仅悬停卡片自身时显示该卡片的复制按钮（> 直子选择器：Pi 输出区的多个卡片
+   在同一 .msg 内，不能用 .msg:hover 后代匹配——会把兄弟卡片的按钮一并点亮） */
+.msg-user:hover > .msg-copy-btn,
+.msg-bash:hover > .msg-copy-btn,
+.msg-toolresult:hover > .msg-copy-btn,
+.copy-target:hover > .msg-copy-btn,
+.thinking:hover > .msg-copy-btn,
+.toolchip:hover > .msg-copy-btn,
 .msg-copy-btn:focus-visible {
   opacity: 1;
 }
