@@ -2232,6 +2232,9 @@ export class ChatController {
     // 清空并广播，重启后由新启动流程重新拉取
     this.commands = [];
     this.fire({ type: "commands", commands: this.commands });
+    // MCP 状态同为"进程能力描述"：进程已死，旧连接计数失效，清空待新进程重推
+    this.mcpStatusCache = null;
+    this.fire({ type: "mcpStatus", status: null });
     this.fire({ type: "status", status: this.status });
     this.broadcastStream([]);
   }
