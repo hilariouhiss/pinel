@@ -1389,6 +1389,9 @@ body {
 }
 
 .composer-input {
+  /* block：避免 inline-block 基线间隙使 wrap 高出 textarea 4px（渲染层 bottom:7px
+     锚到 wrap 底部，滚动到底时与光标错位一行顶部） */
+  display: block;
   width: 100%;
   resize: none;
   /* 扁平化：无边框、透明背景，融入卡片（聚焦时卡片边框高亮 .composer-stack:focus-within） */

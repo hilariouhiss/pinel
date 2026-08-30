@@ -335,6 +335,22 @@ export function Composer({
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // 字体就绪后重跑高度自适应：webfont 慢加载时 textarea 可能以回退字体完成
+  // 首次布局（div 渲染层随字体就绪自动重排，textarea 不一定），强制重排后
+  // 光标与渲染层字符恢复对齐（IME 提交后重新对齐亦是同一机制：文本变化
+  // 触发本 effect 改高，textarea 以已就绪字体重排）
+  useEffect(() => {
+    let alive = true;
+    document.fonts.ready.then(() => {
+      if (alive) {
+        setViewportTick((v) => v + 1);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // Ctrl+G 命令触发（keybinding when: pinel.inputFocused 已限定输入框聚焦）：
   // 取当前输入内容发起编辑（宿主不维护输入状态，内容必须往返）
   useEffect(() => {
