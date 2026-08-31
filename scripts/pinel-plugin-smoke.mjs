@@ -8,8 +8,7 @@
  *    （插件加载 + 帧通道 + 两个采集器存活；pinel.state/tree 推送链已整体删除）
  * 4. 清理临时目录与子进程
  *
- * 覆盖：插件包 manifest 正确性（零资源加载会在此暴露）、守卫 env、帧通道、
- * RPC 扩展命令派发。失败时非零退出并打印诊断。
+ * 覆盖：插件包 manifest 正确性（零资源加载会在此暴露）、守卫 env、帧通道。失败时非零退出并打印诊断。
  */
 import { spawn, execSync } from "node:child_process";
 import { mkdtempSync, rmSync, readdirSync } from "node:fs";
