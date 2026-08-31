@@ -327,7 +327,7 @@ export class ChatController {
   private pinelTreeCache: PinelTreePayload | null = null;
   /** 工作流运行状态缓存（会话切换时清空；插件结束不重置——保留 done/failed 展示）。 */
   private pinelWorkflowCache: PinelWorkflowPayload | null = null;
-  /** 提示词组成缓存（statusKey "pinel.prompt" 帧；会话切换/重启清空，首轮 agent_start 重推）。 */
+  /** 提示词组成缓存（statusKey "pinel.prompt" 帧；会话切换预清空后由启动帧重推，重启清空）。 */
   private pinelPromptCache: PinelPromptPayload | null = null;
   /** Pinel 插件（npm 包）安装态缓存；null = 未检测。 */
   private pinelPluginStateCache: PinelPluginState | null = null;
@@ -1188,13 +1188,24 @@ export class ChatController {
     }
     this.sessionSwitching = true;
     this.fire({ type: "sessionSwitching", switching: true });
+    let prevPinelPrompt: PinelPromptPayload | null = null;
     try {
       await this.prepareForSessionChange(client);
+      // 预清空必须早于命令：pi 的 session_start 启动帧先于 RPC 成功响应到达
+      //（new_session/session_switch/fork 各发两次，均在 success 之前），若沿用
+      // afterSessionSwitch 清空，晚到的清空会覆盖命令期间已落地的启动帧，芯片
+      // 掉回「Context –」。先清空后发命令，命令期间的启动帧落在清空之后而存续。
+      prevPinelPrompt = this.pinelPromptCache;
+      this.pinelPromptCache = null;
+      this.fire({ type: "pinelPrompt", prompt: null });
       const data = await client.send<{ cancelled?: boolean; text?: string }>(command);
       if (this.client !== client) {
         return; // restart 竞态：丢弃迟到响应，不污染新进程状态
       }
       if (data?.cancelled) {
+        // 会话未变更：恢复旧组成并重播（启动帧只在变更成功后推送，无冲突）
+        this.pinelPromptCache = prevPinelPrompt;
+        this.fire({ type: "pinelPrompt", prompt: prevPinelPrompt });
         this.notice("info", opts.cancelledNotice);
         return;
       }
@@ -1202,6 +1213,9 @@ export class ChatController {
       await this.afterSessionSwitch(client);
     } catch (err) {
       if (this.client === client) {
+        // 命令失败：会话未变更，恢复旧组成并重播（与 cancelled 分支同语义）
+        this.pinelPromptCache = prevPinelPrompt;
+        this.fire({ type: "pinelPrompt", prompt: prevPinelPrompt });
         this.notice("error", opts.failedNotice(err as Error));
       }
     } finally {
@@ -1313,9 +1327,7 @@ export class ChatController {
     // 工作流运行态属于旧会话：清空并广播（插件不会为新会话重推，等下一次运行开始）
     this.pinelWorkflowCache = null;
     this.fire({ type: "pinelWorkflow", workflow: null });
-    // 提示词组成同样归属旧会话（项目文件/注入可能不同）：首轮 agent_start 重推
-    this.pinelPromptCache = null;
-    this.fire({ type: "pinelPrompt", prompt: null });
+    // 提示词组成已在 runSessionChange 发命令前预清空，切换后的启动帧随之重推
     try {
       const data = await client.send<GetMessagesData>({ type: "get_messages" });
       if (this.client !== client) {

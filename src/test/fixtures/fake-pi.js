@@ -60,6 +60,9 @@
  *   SWITCH-LATE-END：switch_session 正常响应后延迟 ~400ms 补发旧流的
  *     agent_end（携带切换前旧消息）——模拟真实 pi 的异步乱序，验证客户端
  *     settle 后迟到事件的代际防护（agent_end 在 isStreaming=false 时丢弃）
+ *   SWITCH-STARTUP：switch_session 在成功响应前先推 pinel.prompt 启动帧
+ *     （镜像真实 pi 的 session_start 顺序：启动帧先于 RPC success 到达），
+ *     供「切换后启动帧存续」回归测试
  *   FORK-FAIL：fork 回 success:false（fork 失败；客户端应 notice 且状态不变）
  *   FORK-CANCELLED：fork 回 data.cancelled:true（session_before_fork 扩展钩子取消）
  * - get_fork_messages / fork / clone：默认行为（真实 pi 镜像）——get_fork_messages
@@ -760,6 +763,25 @@ async function handleCommand(record) {
       // 拷贝而非引用：prompt 流式的 push 会污染共享的 sessionBMessages 常量
       //（实测：切换后消息数从 2 涨到 5，统计断言失败）
       messages = [...sessionBMessages];
+      if (SCENARIO === "SWITCH-STARTUP") {
+        // 镜像真实 pi 顺序：session_start 启动帧先于 RPC 成功响应到达
+        //（真实 pi 发两次同 JSON 帧；宿主缓存各覆盖一次，无差异）
+        const startup = {
+          type: "extension_ui_request",
+          id: "prompt-startup",
+          method: "setStatus",
+          statusKey: "pinel.prompt",
+          statusText: JSON.stringify({
+            v: 1,
+            startup: true,
+            files: [
+              { level: "project", name: "AGENTS.md", path: "/repo/AGENTS.md", chars: 5, preview: "PROJ" },
+            ],
+          }),
+        };
+        out(startup);
+        out(startup);
+      }
       respond(id, "switch_session", true, { cancelled: false });
       if (SCENARIO === "SWITCH-LATE-END") {
         // 模拟真实 pi 的异步乱序：切换响应后延迟补发旧流的 agent_end

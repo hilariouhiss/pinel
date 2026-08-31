@@ -27,6 +27,7 @@ assert.strictEqual(startup.system, undefined);
 assert.strictEqual(startup.counts, undefined);
 assert.strictEqual(startup.finalChars, undefined);
 assert.strictEqual(parsePinelPrompt(JSON.stringify({ v: 1, startup: true })), null, "启动帧无 files 数组必须丢弃");
+assert.strictEqual(parsePinelPrompt(JSON.stringify({ v: 1, startup: true, files: "x" })), null, "启动帧 files 非数组必须丢弃");
 
 // 恶意/畸形帧仍拒绝
 assert.strictEqual(parsePinelPrompt("{nope"), null, "畸形 JSON 必须丢弃");

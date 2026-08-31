@@ -1468,6 +1468,38 @@ suite("Pinel 集成测试（假 pi）", () => {
       assert.ok(switches.length >= 1, "switch_session 必须携带 sessionPath");
     });
 
+    test("切换会话：启动帧先于响应到达 → 切换后缓存存续（非 null）", async function () {
+      this.timeout(60000);
+      process.env.PINEL_FAKE_PI_SCENARIO = "SWITCH-STARTUP";
+      try {
+        await api.restart();
+        await waitFor(
+          () => api.getStatus().processState === "running" && api.getStatus().model?.name === "Fake Model",
+          20000,
+          "SWITCH-STARTUP 场景启动",
+        );
+        // 先建立旧会话组成缓存（全帧）：切换后必须被启动帧覆盖而非清空
+        const baseline = api.getSettledCount();
+        await api.sendPrompt(`PINELPROMPT-${Date.now()}`);
+        await api.waitForSettled(30000, baseline);
+        assert.ok(api.getPinelPromptCache()?.system, "切换前缓存旧组成全帧");
+
+        await api.switchSession(sessionA);
+        await waitFor(() => api.getCurrentSessionFile() === sessionA, 10000, "切换后 sessionFile 回显");
+        // 启动帧先于 RPC 成功响应到达：预清空后落地的帧不得被 afterSessionSwitch 覆盖
+        const prompt = api.getPinelPromptCache();
+        assert.ok(prompt, "切换完成后启动帧必须存续（缓存不得为 null）");
+        assert.strictEqual(prompt.startup, true, "缓存必须是启动帧");
+        assert.strictEqual(prompt.files.length, 1, "启动帧文件条数");
+        assert.strictEqual(prompt.files[0].name, "AGENTS.md", "启动帧文件名");
+        assert.strictEqual(prompt.system, undefined, "启动帧无 system 段");
+      } finally {
+        delete process.env.PINEL_FAKE_PI_SCENARIO;
+        await api.restart();
+        await waitFor(() => api.getStatus().processState === "running", 30000, "恢复默认场景");
+      }
+    });
+
     test("切换会话后旧待办清零", async function () {
       this.timeout(60000);
       // 制造当前会话待办（切换后必须清零而非残留显示）
