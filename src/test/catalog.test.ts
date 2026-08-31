@@ -45,6 +45,31 @@ describe("catalog 静态清单", () => {
     ]);
   });
 
+  it("推荐集 = 12 项（@gotgenes×9 + rpiv-args/ask-user-question/todo），rpiv-voice 排除", () => {
+    const recs = CATALOG.filter((e) => e.recommended);
+    assert.strictEqual(recs.length, 12);
+    assert.deepStrictEqual(
+      recs.map((e) => e.id).sort(),
+      [
+        "pi-autoformat", "pi-colgrep", "pi-github-tools", "pi-nocd",
+        "pi-permission-model-judge", "pi-permission-system", "pi-session-tools",
+        "pi-subagents", "pi-subagents-worktrees",
+        "rpiv-args", "rpiv-ask-user-question", "rpiv-todo",
+      ].sort(),
+    );
+    assert.ok(!recs.some((e) => e.id === "rpiv-voice"), "tui-only 的 rpiv-voice 不得在推荐集");
+    assert.ok(!recs.some((e) => e.compat === "tui-only"), "推荐集不得含 tui-only 项");
+  });
+
+  it("installSpecsForGroup：recommended = 推荐集 12 个 installSpec（目录顺序）", () => {
+    const specs = installSpecsForGroup("recommended");
+    assert.strictEqual(specs.length, 12);
+    assert.deepStrictEqual(specs, CATALOG.filter((e) => e.recommended).map((e) => e.installSpec));
+    for (const s of specs) {
+      assert.ok(s.startsWith("npm:"), `推荐集 spec 应为 npm 形式：${s}`);
+    }
+  });
+
   it("tui-only 项均有 compatNote；defaultSet 仅存在于 rpiv-mono", () => {
     for (const e of CATALOG) {
       if (e.compat !== "ok") {

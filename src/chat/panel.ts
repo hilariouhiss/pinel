@@ -194,10 +194,11 @@ interface WebviewInstallCatalogEntryMessage {
   spec: string;
 }
 
-/** 目录按组默认集安装（pi-packages = git 整仓；rpiv-mono = 默认集三包）。 */
+/** 目录按组默认集安装（pi-packages = git 整仓；rpiv-mono = 默认集三包；
+ *  recommended = 推荐集 12 项）。 */
 interface WebviewInstallCatalogGroupMessage {
   type: "installCatalogGroup";
-  group: "pi-packages" | "rpiv-mono";
+  group: "pi-packages" | "rpiv-mono" | "recommended";
 }
 
 /** 手动压缩会话（原生 RPC compact；customInstructions 可选）。 */

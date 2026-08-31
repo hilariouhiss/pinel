@@ -35,26 +35,28 @@ export interface CatalogEntry {
   compatNote?: string;
   /** 组默认安装集成员（rpiv 三包由用户指定；见计划 §1 澄清）。 */
   defaultSet?: boolean;
+  /** 推荐安装集成员（面板 Catalog → Recommended 分组；12 项，剔除 tui-only 的 rpiv-voice）。 */
+  recommended?: boolean;
 }
 
 /** 静态清单（顺序 = 目录展示顺序）。 */
 export const CATALOG: readonly CatalogEntry[] = [
   // ---- pi-packages（@gotgenes）----
-  { id: "pi-permission-system", name: "pi-permission-system", group: "pi-packages", installSpec: "npm:@gotgenes/pi-permission-system", compat: "ok", description: "Permission enforcement for the Pi coding agent" },
-  { id: "pi-permission-model-judge", name: "pi-permission-model-judge", group: "pi-packages", installSpec: "npm:@gotgenes/pi-permission-model-judge", compat: "ok", description: "Deny-first typo-path model judge for pi-permission-system" },
-  { id: "pi-subagents", name: "pi-subagents", group: "pi-packages", installSpec: "npm:@gotgenes/pi-subagents", compat: "ok", description: "Focused, in-process autonomous sub-agent core for Pi" },
-  { id: "pi-github-tools", name: "pi-github-tools", group: "pi-packages", installSpec: "npm:@gotgenes/pi-github-tools", compat: "ok", description: "Deterministic GitHub CI, release, and issue tools" },
-  { id: "pi-autoformat", name: "pi-autoformat", group: "pi-packages", installSpec: "npm:@gotgenes/pi-autoformat", compat: "ok", description: "Prompt-end auto-formatting (Biome, Prettier, etc.)" },
-  { id: "pi-colgrep", name: "pi-colgrep", group: "pi-packages", installSpec: "npm:@gotgenes/pi-colgrep", compat: "ok", description: "Semantic code search via ColGrep as an agent tool" },
-  { id: "pi-session-tools", name: "pi-session-tools", group: "pi-packages", installSpec: "npm:@gotgenes/pi-session-tools", compat: "ok", description: "Session naming and context bridge for multi-session workflows" },
-  { id: "pi-subagents-worktrees", name: "pi-subagents-worktrees", group: "pi-packages", installSpec: "npm:@gotgenes/pi-subagents-worktrees", compat: "ok", description: "Git worktree isolation WorkspaceProvider for pi-subagents" },
-  { id: "pi-nocd", name: "pi-nocd", group: "pi-packages", installSpec: "npm:@gotgenes/pi-nocd", compat: "ok", description: "System-prompt guard against cd-prefixing the working directory" },
+  { id: "pi-permission-system", name: "pi-permission-system", group: "pi-packages", installSpec: "npm:@gotgenes/pi-permission-system", compat: "ok", recommended: true, description: "Permission enforcement for the Pi coding agent" },
+  { id: "pi-permission-model-judge", name: "pi-permission-model-judge", group: "pi-packages", installSpec: "npm:@gotgenes/pi-permission-model-judge", compat: "ok", recommended: true, description: "Deny-first typo-path model judge for pi-permission-system" },
+  { id: "pi-subagents", name: "pi-subagents", group: "pi-packages", installSpec: "npm:@gotgenes/pi-subagents", compat: "ok", recommended: true, description: "Focused, in-process autonomous sub-agent core for Pi" },
+  { id: "pi-github-tools", name: "pi-github-tools", group: "pi-packages", installSpec: "npm:@gotgenes/pi-github-tools", compat: "ok", recommended: true, description: "Deterministic GitHub CI, release, and issue tools" },
+  { id: "pi-autoformat", name: "pi-autoformat", group: "pi-packages", installSpec: "npm:@gotgenes/pi-autoformat", compat: "ok", recommended: true, description: "Prompt-end auto-formatting (Biome, Prettier, etc.)" },
+  { id: "pi-colgrep", name: "pi-colgrep", group: "pi-packages", installSpec: "npm:@gotgenes/pi-colgrep", compat: "ok", recommended: true, description: "Semantic code search via ColGrep as an agent tool" },
+  { id: "pi-session-tools", name: "pi-session-tools", group: "pi-packages", installSpec: "npm:@gotgenes/pi-session-tools", compat: "ok", recommended: true, description: "Session naming and context bridge for multi-session workflows" },
+  { id: "pi-subagents-worktrees", name: "pi-subagents-worktrees", group: "pi-packages", installSpec: "npm:@gotgenes/pi-subagents-worktrees", compat: "ok", recommended: true, description: "Git worktree isolation WorkspaceProvider for pi-subagents" },
+  { id: "pi-nocd", name: "pi-nocd", group: "pi-packages", installSpec: "npm:@gotgenes/pi-nocd", compat: "ok", recommended: true, description: "System-prompt guard against cd-prefixing the working directory" },
   // ---- rpiv-mono（@juicesharp）——默认安装集在前（用户指定：todo/ask-user-question/voice）----
-  { id: "rpiv-todo", name: "rpiv-todo", group: "rpiv-mono", installSpec: "npm:@juicesharp/rpiv-todo", compat: "ok", defaultSet: true, description: "Live task overlay surviving /reload" },
-  { id: "rpiv-ask-user-question", name: "rpiv-ask-user-question", group: "rpiv-mono", installSpec: "npm:@juicesharp/rpiv-ask-user-question", compat: "ok", defaultSet: true, description: "Structured questionnaire to the user" },
+  { id: "rpiv-todo", name: "rpiv-todo", group: "rpiv-mono", installSpec: "npm:@juicesharp/rpiv-todo", compat: "ok", defaultSet: true, recommended: true, description: "Live task overlay surviving /reload" },
+  { id: "rpiv-ask-user-question", name: "rpiv-ask-user-question", group: "rpiv-mono", installSpec: "npm:@juicesharp/rpiv-ask-user-question", compat: "ok", defaultSet: true, recommended: true, description: "Structured questionnaire to the user" },
   { id: "rpiv-voice", name: "rpiv-voice", group: "rpiv-mono", installSpec: "npm:@juicesharp/rpiv-voice", compat: "tui-only", defaultSet: true, compatNote: "Dictation overlay is TUI-only — /voice has no effect in the panel", description: "Local voice dictation (/voice overlay, on-device Whisper)" },
   { id: "rpiv-pi", name: "rpiv-pi", group: "rpiv-mono", installSpec: "npm:@juicesharp/rpiv-pi", compat: "ok", description: "Pipeline (skills + subagents); ships /rpiv-setup" },
-  { id: "rpiv-args", name: "rpiv-args", group: "rpiv-mono", installSpec: "npm:@juicesharp/rpiv-args", compat: "ok", description: "$1 / $ARGUMENTS placeholders and command substitution in skills" },
+  { id: "rpiv-args", name: "rpiv-args", group: "rpiv-mono", installSpec: "npm:@juicesharp/rpiv-args", compat: "ok", recommended: true, description: "$1 / $ARGUMENTS placeholders and command substitution in skills" },
   { id: "rpiv-advisor", name: "rpiv-advisor", group: "rpiv-mono", installSpec: "npm:@juicesharp/rpiv-advisor", compat: "limited", compatNote: "/advisor config picker is TUI-only; escalation and notify work in the panel", description: "Escalate to a stronger reviewer model" },
   { id: "rpiv-web-tools", name: "rpiv-web-tools", group: "rpiv-mono", installSpec: "npm:@juicesharp/rpiv-web-tools", compat: "ok", description: "Web search + fetch with pluggable providers" },
   { id: "rpiv-i18n", name: "rpiv-i18n", group: "rpiv-mono", installSpec: "npm:@juicesharp/rpiv-i18n", compat: "limited", compatNote: "/languages picker is TUI-only; --set flag path works", description: "Localization SDK for sibling extensions" },
@@ -86,9 +88,16 @@ export function defaultInstallSpecs(group: CatalogGroup): string[] {
   return CATALOG.filter((e) => e.group === group && e.defaultSet).map((e) => e.installSpec);
 }
 
-/** 组批量安装 spec 列表：pi-packages = git 整仓 9 包；rpiv-mono = 默认集三包（用户指定）。 */
-export function installSpecsForGroup(group: CatalogGroup): string[] {
-  return group === "pi-packages" ? [PI_PACKAGES_ALL_SPEC] : defaultInstallSpecs("rpiv-mono");
+/** 组批量安装 spec 列表：pi-packages = git 整仓 9 包；rpiv-mono = 默认集三包（用户指定）；
+ *  recommended = 推荐集 12 项（跨两组，剔除 tui-only 的 rpiv-voice）。 */
+export function installSpecsForGroup(group: CatalogGroup | "recommended"): string[] {
+  if (group === "pi-packages") {
+    return [PI_PACKAGES_ALL_SPEC];
+  }
+  if (group === "rpiv-mono") {
+    return defaultInstallSpecs("rpiv-mono");
+  }
+  return CATALOG.filter((e) => e.recommended).map((e) => e.installSpec);
 }
 
 /**
