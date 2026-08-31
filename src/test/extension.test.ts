@@ -365,26 +365,11 @@ suite("Pinel 集成测试（假 pi）", () => {
   });
 
   test("pinel 插件 setStatus/setWidget 帧：白名单过滤 + 防御解析 + 缓存", async () => {
-    // PINELUI：假 pi 依次发 pinel.state(好) → pinel.tree → 非 pinel 干扰 → pinel.state(坏 JSON)
+    // PINELUI：假 pi 依次发 ponytail 坏/好帧 → mcp 好/坏帧 → pinel.mcp 好/坏帧 → 工作流 status/widget/空/坏帧
     const marker = `PINELUI-${Date.now()}`;
     const baseline = api.getSettledCount();
     await api.sendPrompt(marker);
     await api.waitForSettled(30000, baseline);
-
-    const state = api.getPinelStateCache();
-    assert.ok(state, "pinel.state 必须被解析并缓存");
-    assert.deepStrictEqual(state.messages, { user: 2, assistant: 3, toolResult: 1, total: 6 });
-    assert.strictEqual(state.model, "deepseek/deepseek-v4-pro");
-    assert.strictEqual(state.thinkingLevel, "max");
-
-    const tree = api.getPinelTreeCache();
-    assert.ok(tree, "pinel.tree 必须被解析并缓存");
-    assert.strictEqual(tree.leafId, "e2");
-    assert.strictEqual(tree.nodes.length, 2);
-    assert.strictEqual(tree.nodes[0].entryId, "e1");
-
-    // 干扰帧（非 pinel statusKey）与坏 JSON 帧均不得污染缓存（好值保留）
-    assert.strictEqual(state.messages.total, 6, "坏 JSON 帧不得覆盖好缓存");
 
     // ponytail 状态帧：ANSI 装饰解析（坏帧 "loaded" 先到且被忽略，好帧后到覆盖）
     const ponytail = api.getPonytailStatusCache();

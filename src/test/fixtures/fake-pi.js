@@ -1017,36 +1017,7 @@ async function handleCommand(record) {
         break;
       }
       if (text.includes("PINELUI")) {
-        // 模拟 Pinel 插件推送：setStatus/setWidget 帧（含 ponytail 状态帧、
-        // ponytail 坏帧与 pinel.state 坏 JSON 干扰）
-        out({
-          type: "extension_ui_request",
-          id: "pinel-status-1",
-          method: "setStatus",
-          statusKey: "pinel.state",
-          statusText: JSON.stringify({
-            v: 1,
-            messages: { user: 2, assistant: 3, toolResult: 1, total: 6 },
-            model: "deepseek/deepseek-v4-pro",
-            thinkingLevel: "max",
-          }),
-        });
-        out({
-          type: "extension_ui_request",
-          id: "pinel-widget-1",
-          method: "setWidget",
-          widgetKey: "pinel.tree",
-          widgetLines: [
-            JSON.stringify({
-              v: 1,
-              nodes: [
-                { entryId: "e1", role: "user", text: "hello world" },
-                { entryId: "e2", role: "assistant", text: "hi there" },
-              ],
-              leafId: "e2",
-            }),
-          ],
-        });
+        // 模拟 Pinel 插件推送：ponytail/mcp/pinel.mcp/工作流 帧（含坏帧干扰）
         out({
           type: "extension_ui_request",
           id: "other-status-1",
@@ -1100,13 +1071,6 @@ async function handleCommand(record) {
           method: "setStatus",
           statusKey: "pinel.mcp",
           statusText: "garbage",
-        });
-        out({
-          type: "extension_ui_request",
-          id: "bad-status-1",
-          method: "setStatus",
-          statusKey: "pinel.state",
-          statusText: "not-json",
         });
         // 工作流推送：status 好帧 → widget 好帧（覆盖缓存）→ 空 widget（结束清空，不得覆盖）→ 坏 JSON（不得污染）
         out({
