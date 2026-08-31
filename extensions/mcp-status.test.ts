@@ -115,6 +115,23 @@ describe("registerMcpStatus", () => {
 		expect(JSON.parse(pushes[1].json).servers).toEqual([]);
 	});
 
+	it("事件循环高频路径：载荷未变（同引用）时不重新序列化也不重推", () => {
+		writeJson(join(agentRoot, "mcp.json"), { mcpServers: { a: {} } });
+		const { pi } = makePi();
+		const { pushes, ctx } = makeCtx();
+		setPinelCtx(ctx);
+		registerMcpStatus(pi, cwd);
+		flushMcpStatus();
+		expect(pushes.length).toBe(1);
+
+		const spy = vi.spyOn(JSON, "stringify");
+		flushMcpStatus(); // pinel.ts 事件循环每事件一次：同引用直跳
+		flushMcpStatus();
+		expect(spy).not.toHaveBeenCalled();
+		expect(pushes.length).toBe(1);
+		spy.mockRestore();
+	});
+
 	it("坏 JSON 配置源忽略；无任何配置时基线为空", () => {
 		writeFileSync(join(agentRoot, "mcp.json"), "{ not json");
 		const { pi } = makePi();

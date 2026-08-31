@@ -73,8 +73,12 @@ function readServerDefs(path: string): Map<string, boolean> {
 
 let latest: Record<string, unknown> | null = null;
 let lastPushed: string | null = null;
+/** 上次已推送的载荷对象引用：同引用（事件循环高频路径）免序列化直跳。 */
+let lastPushedRef: Record<string, unknown> | null = null;
 
-/** 补发最新载荷（pinel.ts 在每次会话事件写入 ctx 后调用；未变不重发）。 */
+/** 补发最新载荷（pinel.ts 在每次会话事件写入 ctx 后调用；未变不重发）。
+ *  同引用直跳：latest 仅在注册基线/适配器快照时重建，事件循环高频调用
+ *  不触发 JSON.stringify；新对象仍走 JSON 去重（同内容不重发）。 */
 export function flushMcpStatus(): void {
 	if (!latest) {
 		return;
@@ -85,11 +89,16 @@ export function flushMcpStatus(): void {
 	if (!ctx?.ui?.setStatus) {
 		return; // ctx 未就绪：保留待推（不记 lastPushed，就绪后仍会补发）
 	}
+	if (latest === lastPushedRef) {
+		return; // 同引用已推过：免序列化（事件循环高频路径）
+	}
 	const json = JSON.stringify(latest);
 	if (json === lastPushed) {
+		lastPushedRef = latest; // 同内容（新对象）：引用前进，免后续重复序列化
 		return;
 	}
 	lastPushed = json;
+	lastPushedRef = latest;
 	ctx.ui.setStatus("pinel.mcp", json);
 }
 
@@ -101,6 +110,7 @@ export function registerMcpStatus(pi: {
 	events?: { on?: (name: string, handler: (data: unknown) => void) => void };
 }, cwd: string = process.cwd()): void {
 	lastPushed = null; // 新注册（新进程/测试隔离）：重推即使内容相同
+	lastPushedRef = null;
 	const projectNames = new Set<string>();
 	for (const p of [join(cwd, ".mcp.json"), join(cwd, ".pi", "mcp.json")]) {
 		for (const name of readServerDefs(p).keys()) {
