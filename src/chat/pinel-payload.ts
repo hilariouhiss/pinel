@@ -335,20 +335,22 @@ export interface PinelPromptFile {
 /** pinel.prompt 载荷（statusKey "pinel.prompt" 解析产物）。 */
 export interface PinelPromptPayload {
   v: 1;
+  /** true = 启动帧（session_start 预估扫描，无 system/counts/finalChars；首轮全帧覆盖）。 */
+  startup?: true;
   /** 基础系统提示词（默认 pi 内置或自定义替换，含文件/技能/工具拼装）。 */
-  system: PinelPromptSection & { kind: "default" | "custom" };
+  system?: PinelPromptSection & { kind: "default" | "custom" };
   /** 用户级 + 项目级上下文文件。 */
   files: PinelPromptFile[];
   /** settings appendSystemPrompt（拼接文本）。 */
   append?: PinelPromptSection;
   /** 计数：追加准则 / 技能 / 工具。 */
-  counts: { guidelines: number; skills: number; tools: number };
+  counts?: { guidelines: number; skills: number; tools: number };
   /** 插件链注入段（前缀差分成功且非 0）；与 injectedUnknown 互斥。 */
   injected?: PinelPromptSection;
   /** true = 插件是替换型注入，无法差分（仅 finalChars 可信）。 */
   injectedUnknown?: true;
   /** 最终系统提示词总字符（基础 + 注入）。 */
-  finalChars: number;
+  finalChars?: number;
 }
 
 function toSection(v: unknown): PinelPromptSection | null {
@@ -365,11 +367,50 @@ function toSection(v: unknown): PinelPromptSection | null {
   return { chars: s.chars, preview: s.preview };
 }
 
-/** 防御解析 pinel.prompt JSON 字符串（system/counts/finalChars 缺一即整帧丢弃）。 */
+/** files 数组 → 组成文件列表（逐行容缺：坏条目跳过；非数组 → []）。 */
+function toFiles(raw: Record<string, unknown>): PinelPromptFile[] {
+  const files: PinelPromptFile[] = [];
+  if (Array.isArray(raw.files)) {
+    for (const item of raw.files) {
+      if (typeof item !== "object" || item === null) {
+        continue;
+      }
+      const f = item as Record<string, unknown>;
+      if (f.level !== "user" && f.level !== "project") {
+        continue;
+      }
+      if (typeof f.name !== "string" || f.name.length === 0) {
+        continue;
+      }
+      if (typeof f.path !== "string" || f.path.length === 0) {
+        continue;
+      }
+      const fs = toSection(f);
+      if (!fs) {
+        continue;
+      }
+      files.push({ level: f.level, name: f.name, path: f.path, chars: fs.chars, preview: fs.preview });
+    }
+  }
+  return files;
+}
+
+/**
+ * 防御解析 pinel.prompt JSON 字符串：启动帧仅验 v/files（session_start 预估扫描），
+ * 全帧 system/counts/finalChars 缺一即整帧丢弃。
+ */
 export function parsePinelPrompt(text: unknown): PinelPromptPayload | null {
   const raw = parseJsonObject(text);
   if (!raw || raw.v !== 1) {
     return null;
+  }
+  const files = toFiles(raw);
+  // 启动帧宽松分支：v + files 数组必需，system/counts/finalChars 由首轮全帧补齐
+  if (raw.startup === true) {
+    if (!Array.isArray(raw.files)) {
+      return null;
+    }
+    return { v: 1, startup: true, files };
   }
   const systemRaw = raw.system;
   if (typeof systemRaw !== "object" || systemRaw === null) {
@@ -396,29 +437,6 @@ export function parsePinelPrompt(text: unknown): PinelPromptPayload | null {
   const finalChars = raw.finalChars;
   if (typeof finalChars !== "number" || !Number.isFinite(finalChars) || finalChars < 0) {
     return null;
-  }
-  const files: PinelPromptFile[] = [];
-  if (Array.isArray(raw.files)) {
-    for (const item of raw.files) {
-      if (typeof item !== "object" || item === null) {
-        continue;
-      }
-      const f = item as Record<string, unknown>;
-      if (f.level !== "user" && f.level !== "project") {
-        continue;
-      }
-      if (typeof f.name !== "string" || f.name.length === 0) {
-        continue;
-      }
-      if (typeof f.path !== "string" || f.path.length === 0) {
-        continue;
-      }
-      const fs = toSection(f);
-      if (!fs) {
-        continue;
-      }
-      files.push({ level: f.level, name: f.name, path: f.path, chars: fs.chars, preview: fs.preview });
-    }
   }
   const payload: PinelPromptPayload = {
     v: 1,

@@ -327,8 +327,8 @@ describe("pinel-payload 防御解析", () => {
 
     it("全字段解析", () => {
       const parsed = parsePinelPrompt(full)!;
-      assert.strictEqual(parsed.system.kind, "default");
-      assert.strictEqual(parsed.system.chars, 100);
+      assert.strictEqual(parsed.system!.kind, "default");
+      assert.strictEqual(parsed.system!.chars, 100);
       assert.strictEqual(parsed.files.length, 2);
       assert.strictEqual(parsed.files[0].level, "user");
       assert.strictEqual(parsed.files[1].name, "AGENTS.md");

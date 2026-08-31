@@ -407,8 +407,8 @@ suite("Pinel 集成测试（假 pi）", () => {
 
     const prompt = api.getPinelPromptCache();
     assert.ok(prompt, "pinel.prompt 必须被解析并缓存");
-    assert.strictEqual(prompt.system.kind, "default");
-    assert.strictEqual(prompt.system.chars, 32400);
+    assert.strictEqual(prompt.system!.kind, "default");
+    assert.strictEqual(prompt.system!.chars, 32400);
     assert.strictEqual(prompt.files.length, 2);
     assert.strictEqual(prompt.files[0].level, "user");
     assert.strictEqual(prompt.files[0].name, "AGENT.md");
