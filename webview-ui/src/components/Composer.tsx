@@ -13,7 +13,7 @@ import {
 import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
 import { parseAtRefs, matchAtToken } from "../at-refs";
-import { sliceLiMarker, stripLeadingNewline, supportEmptyListItems } from "../composer-md";
+import { composerGapAlign, sliceLiMarker, strictListSyntax, supportEmptyListItems } from "../composer-md";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
@@ -101,9 +101,9 @@ let attachmentSeq = 0;
  * 复制/发送仍是 textarea 的原始 markdown 源码（本层纯视觉，aria-hidden）。
  */
 function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObject<HTMLDivElement | null> }) {
-  // 渲染层输入：裸标记行（"1."/"-"）行尾补零宽字符，使空列表项在换行后
-  // 也能解析成列表（发送/复制仍是原文）；后续 code/li 的位置切片以本串为准
-  const mdContent = supportEmptyListItems(content);
+  // 渲染层输入流水线：严格列表转义（* + N) → 字面文本）→ 裸标记行补零宽
+  // 字符；后续 code/li 的位置切片与间隙对齐插件均以本串为准
+  const mdContent = strictListSyntax(supportEmptyListItems(content));
   const h = (marker: string) =>
     ({ children }: { children?: ReactNode }) => (
       <span className="composer-md-h">
@@ -115,6 +115,7 @@ function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObjec
     <div className="composer-md" aria-hidden="true" ref={mdRef}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[composerGapAlign, mdContent]]}
         components={{
           p: ({ children }) => <>{children}</>,
           a: ({ children }) => <span className="md-link">{children}</span>,
@@ -137,24 +138,28 @@ function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObjec
           h4: h("#### "),
           h5: h("##### "),
           h6: h("###### "),
-          ul: ({ children }) => <>{stripLeadingNewline(children)}</>,
-          ol: ({ children }) => <>{stripLeadingNewline(children)}</>,
+          ul: ({ children }) => <>{children}</>,
+          ol: ({ children }) => <>{children}</>,
           li: ({ children, node }) => (
             <span className="composer-md-li">
               <span className="composer-md-marker">{sliceLiMarker(mdContent, node?.position)}</span>
-              {stripLeadingNewline(children)}
+              {children}
             </span>
           ),
           blockquote: ({ children }) => (
-            <span className="composer-md-quote">{stripLeadingNewline(children)}</span>
+            <span className="composer-md-quote">{children}</span>
           ),
           hr: () => <span className="composer-md-hr">---</span>,
-          table: ({ children }) => <>{children}</>,
-          thead: ({ children }) => <>{children}</>,
-          tbody: ({ children }) => <>{children}</>,
-          tr: ({ children }) => <>{children}</>,
-          th: ({ children }) => <>{children}</>,
-          td: ({ children }) => <>{children}</>,
+          table: ({ node }) => {
+            // 表格按源码原文渲染：单元格文本在 mdast 中不含管道，逐格渲染
+            // 必然丢管道/分隔行 → 整段按 position 切片（多行单元格亦字面可见）
+            const pos = node?.position;
+            const raw =
+              pos?.start?.offset != null && pos?.end?.offset != null
+                ? mdContent.slice(pos.start.offset, pos.end.offset)
+                : "";
+            return <span>{raw}</span>;
+          },
           img: () => <span className="composer-md-img">🖼</span>,
         }}
       >
