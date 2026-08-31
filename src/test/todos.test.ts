@@ -1,5 +1,5 @@
 import * as assert from "assert";
-import { parseTodoTasks } from "../chat/todos";
+import { parseTodoNextId, parseTodoTasks, selectRoundTasks, resolveRoundBaseline } from "../chat/todos";
 
 suite("parseTodoTasks 单元测试", () => {
   test("create 快照：解析全量任务列表", () => {
@@ -85,5 +85,36 @@ suite("parseTodoTasks 单元测试", () => {
     };
     const tasks = parseTodoTasks(result);
     assert.deepStrictEqual(tasks, [{ id: 1, subject: "有效", status: "pending" }]);
+  });
+});
+
+suite("parseTodoNextId / selectRoundTasks / resolveRoundBaseline", () => {
+  test("nextId 防御解析：合法数字、缺字段、非法值", () => {
+    const result = (nextId: unknown) => ({ details: { tasks: [], nextId } });
+    assert.strictEqual(parseTodoNextId(result(3)), 3);
+    assert.strictEqual(parseTodoNextId({ details: {} }), null);
+    assert.strictEqual(parseTodoNextId({ details: { nextId: "x" } }), null);
+    assert.strictEqual(parseTodoNextId({ details: { nextId: 0 } }), null);
+    assert.strictEqual(parseTodoNextId(null), null);
+  });
+
+  test("回合过滤：只保留 id > 基线（旧任务不回显）", () => {
+    const tasks = [
+      { id: 1, subject: "旧一", status: "completed" as const },
+      { id: 2, subject: "旧二", status: "completed" as const },
+      { id: 3, subject: "旧三", status: "pending" as const },
+      { id: 4, subject: "新一", status: "pending" as const },
+    ];
+    assert.deepStrictEqual(selectRoundTasks(tasks, 3), [
+      { id: 4, subject: "新一", status: "pending" as const },
+    ]);
+    assert.deepStrictEqual(selectRoundTasks(tasks, 0), tasks);
+  });
+
+  test("基线解析：nextId ≤ 基线 → 归零（clear 计数器重置）；否则保持", () => {
+    assert.strictEqual(resolveRoundBaseline(3, 5), 3, "单调递增保持");
+    assert.strictEqual(resolveRoundBaseline(3, 1), 0, "clear 后归 1 → 基线归零");
+    assert.strictEqual(resolveRoundBaseline(0, 1), 0, "首回合基线保持 0");
+    assert.strictEqual(resolveRoundBaseline(3, null), 3, "nextId 缺失保持基线");
   });
 });
