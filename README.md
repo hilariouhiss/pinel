@@ -4,7 +4,7 @@
 
 两部分：
 
-1. Pinel VS Code 面板桥（原有）：PINEL_PLUGIN=1 的 rpc 会话里推送会话状态/消息树。
+1. Pinel VS Code 面板桥（原有）：PINEL_PLUGIN=1 的 rpc 会话里推送 pinel.prompt 提示词组成 / pinel.mcp 服务器状态 / pinel.workflow 工作流状态帧。
 2. superpowers × rpiv-workflow 集成（新增）：三条内置 /wf 工作流，把 superpowers
    技能编排成可停靠、可恢复的多阶段流水线；运行状态推送到 Pinel 面板。
 
