@@ -242,13 +242,46 @@ export function ContextBar({
     const projectFiles = p.files.filter((f) => f.level === "project");
     const fileRow = (f: PinelPromptFile) =>
       renderCompRow(`file:${f.path}`, f.name, compactChars(f.chars), f.preview);
+    /** 启动帧/降级弹层体：仅文件列表 + 说明（首轮权威全帧到达后覆盖）。 */
+    const renderStartupBody = () => (
+      <>
+        <div className="ctx-comp-row">
+          <span className="ctx-comp-desc">启动帧：首条消息发出后补充系统提示词/注入段明细</span>
+        </div>
+        {userFiles.length > 0 && (
+          <>
+            <div className="ctx-comp-heading">用户级</div>
+            {userFiles.map(fileRow)}
+          </>
+        )}
+        {projectFiles.length > 0 && (
+          <>
+            <div className="ctx-comp-heading">项目级</div>
+            {projectFiles.map(fileRow)}
+          </>
+        )}
+        {userFiles.length === 0 && projectFiles.length === 0 && (
+          <div className="ctx-comp-row">
+            <span className="ctx-comp-desc">未发现上下文文件（~/.pi/agent/AGENTS.md 或项目 AGENTS.md/CLAUDE.md）</span>
+          </div>
+        )}
+      </>
+    );
+    if (p.startup) {
+      return renderStartupBody();
+    }
+    // 全帧渲染路径：system/counts/finalChars 缺一即降级启动帧同款（宿主解析保证全帧完整，纯防御）
+    const system = p.system;
+    if (!system || !p.counts || p.finalChars === undefined) {
+      return renderStartupBody();
+    }
     return (
       <>
         {renderCompRow(
           "system",
           "系统提示词",
-          `${compactChars(p.system.chars)} · ${p.system.kind === "custom" ? "自定义" : "pi 内置"}`,
-          p.system.preview,
+          `${compactChars(system.chars)} · ${system.kind === "custom" ? "自定义" : "pi 内置"}`,
+          system.preview,
         )}
         {userFiles.length > 0 && (
           <>
@@ -340,13 +373,13 @@ export function ContextBar({
   // Context 计数/hover 名单：加载的上下文文件（自定义系统提示词 + 用户/项目级 + 追加段）
   const contextCount = pinelPrompt
     ? pinelPrompt.files.length +
-      (pinelPrompt.system.kind === "custom" ? 1 : 0) +
+      (pinelPrompt.system?.kind === "custom" ? 1 : 0) +
       (pinelPrompt.append ? 1 : 0)
     : 0;
   const contextHover = !pinelPrompt
     ? "等待首轮推送：首条消息发出后显示上下文组成"
     : [
-        pinelPrompt.system.kind === "custom" ? "系统提示词" : null,
+        pinelPrompt.system?.kind === "custom" ? "系统提示词" : null,
         ...pinelPrompt.files.map((f) => f.name),
         pinelPrompt.append ? "追加段" : null,
       ]

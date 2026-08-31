@@ -329,16 +329,19 @@ export interface PinelPromptFile {
   preview: string;
 }
 
-/** pinel.prompt 载荷（提示词组成；插件 agent_start 推送 → 宿主解析广播）。 */
+/** pinel.prompt 载荷（提示词组成；插件推送 → 宿主解析广播）。
+ *  startup=true 为启动帧：仅 files（session_start 预估扫描），
+ *  system/counts/finalChars 缺省，首轮权威全帧到达后覆盖。 */
 export interface PinelPrompt {
   v: 1;
-  system: PinelPromptSection & { kind: "default" | "custom" };
+  startup?: true;
+  system?: PinelPromptSection & { kind: "default" | "custom" };
   files: PinelPromptFile[];
   append?: PinelPromptSection;
-  counts: { guidelines: number; skills: number; tools: number };
+  counts?: { guidelines: number; skills: number; tools: number };
   injected?: PinelPromptSection;
   injectedUnknown?: true;
-  finalChars: number;
+  finalChars?: number;
 }
 
 export type HostMessage =
