@@ -328,6 +328,42 @@ suite("Pinel 集成测试（假 pi）", () => {
     assert.deepStrictEqual(api.getTodos(), todos, "settled 后待办快照必须保留");
   });
 
+  test("每回合清空 Todos：发送清空面板，跨回合快照按 id 基线过滤", async function () {
+    this.timeout(60000);
+    // 干净起点：重启清空面板与回合基线（也覆盖重启重置语义）
+    await api.restart();
+    await waitFor(
+      () => api.getStatus().processState === "running" && api.getStatus().model !== null,
+      20000,
+      "重启后恢复 running",
+    );
+    assert.deepStrictEqual(api.getTodos(), [], "重启后待办清空");
+
+    // 回合 1：TODOME 快照 → 面板 [1,2]
+    let baseline = api.getSettledCount();
+    await api.sendPrompt(`TODOME-${Date.now()}`);
+    await waitFor(() => api.getTodos().length === 2, 15000, "回合 1 待办");
+    await api.waitForSettled(30000, baseline);
+    assert.deepStrictEqual(api.getTodos().map((t) => t.id), [1, 2], "回合 1 面板 [1,2]");
+
+    // 回合 2 发送：TODOROUND 场景延迟 400ms 才发快照——sendPrompt 返回后
+    // 面板必须已清空（清空在发送前同步执行），旧任务不残留
+    baseline = api.getSettledCount();
+    await api.sendPrompt(`TODOROUND-${Date.now()}`);
+    assert.deepStrictEqual(api.getTodos(), [], "回合 2 发送后面板立即清空");
+
+    // 回合 2 快照 [1,2,3]（nextId 4）：基线=2，仅 id 3 回流
+    await waitFor(
+      () => api.getTodos().length === 1 && api.getTodos()[0]?.id === 3,
+      15000,
+      "回合 2 快照过滤",
+    );
+    await api.waitForSettled(30000, baseline);
+    const round2 = api.getTodos();
+    assert.deepStrictEqual(round2.map((t) => t.id), [3], "回合 2 面板仅新任务 [3]");
+    assert.strictEqual(round2[0].subject, "任务三");
+  });
+
   test("pinel 插件 setStatus/setWidget 帧：白名单过滤 + 防御解析 + 缓存", async () => {
     // PINELUI：假 pi 依次发 pinel.state(好) → pinel.tree → 非 pinel 干扰 → pinel.state(坏 JSON)
     const marker = `PINELUI-${Date.now()}`;

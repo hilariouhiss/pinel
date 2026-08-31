@@ -1249,6 +1249,20 @@ async function handleCommand(record) {
         void streamSequence(text, false);
         break;
       }
+      if (text.includes("TODOROUND")) {
+        // 模拟跨回合 todo 快照：上一回合任务仍在面板（基线=2），本回合快照含
+        // [1,2,3]（nextId 4）——控制器应在发送时清空面板并按基线只显示新任务。
+        // 帧延迟 400ms：集成测试在 sendPrompt 返回后先断言「发送即清空」
+        await delay(400);
+        out({ type: "tool_execution_start", toolCallId: "todo_round", toolName: "todo", args: { action: "create", subject: "任务三", description: "第三个任务" } });
+        out({ type: "tool_execution_end", toolCallId: "todo_round", toolName: "todo", result: todoResult("create", { action: "create", subject: "任务三", description: "第三个任务" }, [
+          { id: 1, subject: "任务一", status: "pending", description: "第一个任务" },
+          { id: 2, subject: "任务二", status: "pending", description: "第二个任务" },
+          { id: 3, subject: "任务三", status: "pending", description: "第三个任务" },
+        ]) });
+        void streamSequence(text, false);
+        break;
+      }
       if (text.includes("ASKUI")) {
         // 模拟 ask_user_question 插件的 RPC 问卷：发 select 帧等待回复
         out({

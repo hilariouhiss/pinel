@@ -51,7 +51,7 @@ import {
   type PinelPluginState,
 } from "./pinel-install";
 import { readGitStatus, type GitStatus } from "./git-status";
-import { parseTodoTasks, type TodoTask } from "./todos";
+import { parseTodoNextId, parseTodoTasks, selectRoundTasks, resolveRoundBaseline, type TodoTask } from "./todos";
 import { buildSubagentCard, applySubagentDetails, type SubagentCardInfo } from "./subagents";
 import { parseCommands } from "./commands";
 import { parseForkMessages } from "./fork-messages";
@@ -307,6 +307,8 @@ export class ChatController {
   private pendingUi = new Map<string, ExtensionUiRequest>();
   /** todo 工具维护的任务快照（运行期内存态，restart 后随新进程重置）。 */
   private todos: TodoTask[] = [];
+  /** 本回合起始任务 id 基线（回合清空时捕获；快照只显示 id > 基线的本回合任务）。 */
+  private todoBaseline = 0;
   /** 可用斜杠命令（get_commands 结果；空列表=未获取/获取失败，补全弹窗不弹出）。 */
   private commands: SlashCommand[] = [];
   /** 活动问卷（ask_user_question；null=无问卷，对话框走逐卡路径）。 */
@@ -641,6 +643,7 @@ export class ChatController {
       this.sessionStats = null; // 统计归属新进程会话：清空，start 首拉后填充
       this.pendingUi.clear();
       this.todos = [];
+      this.todoBaseline = 0;
       this.commands = [];
       this.mcpStatusCache = null; // MCP 状态归属旧 pi 进程：重启即失效
       this.pinelMcpCache = null; // MCP 服务器明细归属旧 pi 进程：重启即失效
@@ -761,6 +764,16 @@ export class ChatController {
         await this.client.send({ type: "steer", message: text, images });
         this.notice("info", "Queued (steer)");
       } else {
+        // 新回合开始（真实 prompt，非控制命令）：清空上一回合残留待办。
+        // 基线 = 当前面板最大任务 id（清空前捕获）；本回合 todo 快照只显示
+        // id > 基线的任务，旧回合任务即便在快照中也不回流
+        if (!input.control) {
+          this.todoBaseline = this.todos.reduce((m, t) => Math.max(m, t.id), 0);
+          if (this.todos.length > 0) {
+            this.todos = [];
+            this.fire({ type: "todos", todos: [] });
+          }
+        }
         await this.client.send({
           type: "prompt",
           message: text,
@@ -1324,6 +1337,7 @@ export class ChatController {
     this.activeBash = null; // 旧会话 bash 卡片作废（快照整体替换后不残留）
     this.tools.clear();
     this.todos = []; // 新会话待办从零开始（restart 同语义，fireSnapshot 携带空列表）
+    this.todoBaseline = 0; // 回合基线随会话切换归零（新会话首回合快照不按旧基线过滤）
     // 工作流运行态属于旧会话：清空并广播（插件不会为新会话重推，等下一次运行开始）
     this.pinelWorkflowCache = null;
     this.fire({ type: "pinelWorkflow", workflow: null });
@@ -2339,12 +2353,14 @@ export class ChatController {
 
       case "tool_execution_end": {
         const e = event as ToolExecutionEndEvent;
-        // todo 工具：解析全量任务快照并更新待办面板（未文档化字段，防御解析）
+        // todo 工具：解析全量任务快照，按回合基线过滤后更新待办面板
+        //（未文档化字段，防御解析；id ≤ 基线的上一回合任务不回流）
         if (e.toolName === "todo") {
           const tasks = parseTodoTasks(e.result);
           if (tasks) {
-            this.todos = tasks;
-            this.fire({ type: "todos", todos: tasks });
+            this.todoBaseline = resolveRoundBaseline(this.todoBaseline, parseTodoNextId(e.result));
+            this.todos = selectRoundTasks(tasks, this.todoBaseline);
+            this.fire({ type: "todos", todos: this.todos });
           }
         }
         const tool = this.tools.get(e.toolCallId) ?? {
