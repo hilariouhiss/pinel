@@ -21,7 +21,6 @@ import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
 import sendIcon from "lucide-static/icons/send.svg";
 import stopIcon from "lucide-static/icons/square.svg";
 import settingsIcon from "lucide-static/icons/settings.svg";
-import extensionIcon from "lucide-static/icons/puzzle.svg";
 
 interface Props {
   status: ChatStatus;
@@ -36,12 +35,6 @@ interface Props {
   settingsOpen?: boolean;
   /** 下半 ⚙ 设置按钮（toggle 打开配置面板）。 */
   onOpenSettings?: () => void;
-  /** 扩展管理弹层开合态（下半扩展按钮 aria-expanded）。 */
-  extensionOpen?: boolean;
-  /** 下半扩展按钮（toggle 打开扩展管理弹层）。 */
-  onOpenExtensions?: () => void;
-  /** 扩展按钮元素引用（App 持有，ExtensionPopover 锚定用）。 */
-  extensionBtnRef?: RefObject<HTMLButtonElement | null>;
   /** 模型 chip 开合态（锚定 ModelPopover）。 */
   modelOpen?: boolean;
   /** 模型 chip 点击（toggle 打开锚定下拉）。 */
@@ -179,9 +172,6 @@ export function Composer({
   editPromptTrigger = 0,
   settingsOpen = false,
   onOpenSettings,
-  extensionOpen = false,
-  onOpenExtensions,
-  extensionBtnRef,
   modelOpen = false,
   onOpenModel,
   modelChipRef,
@@ -631,18 +621,7 @@ export function Composer({
           disabled={!onOpenSettings}
           dangerouslySetInnerHTML={{ __html: settingsIcon }}
         />
-        <button
-          ref={extensionBtnRef}
-          className="status-extensions-btn"
-          title="Extensions"
-          aria-label="Extensions"
-          aria-haspopup="dialog"
-          aria-expanded={extensionOpen}
-          onClick={onOpenExtensions}
-          disabled={!onOpenExtensions}
-          dangerouslySetInnerHTML={{ __html: extensionIcon }}
-        />
-        {/* 模型/思考 chip：常显当前值（设置/扩展按钮右侧），点击弹锚定下拉切换（唯一切换入口）；
+        {/* 模型/思考 chip：常显当前值（设置按钮右侧），点击弹锚定下拉切换（唯一切换入口）；
             无模型时模型 chip 禁用、思考 chip 隐藏（对齐 ConfigPopover 思考行先例）；
             流式中不禁用（变更自下一回合生效） */}
         {status.model === null ? (

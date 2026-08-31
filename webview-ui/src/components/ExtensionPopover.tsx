@@ -37,7 +37,7 @@ interface Props {
 }
 
 /**
- * footer「扩展」按钮的扩展管理弹层（屏幕居中模态，同 config-popover 模式）：
+ * 信息条 Extensions chip 的扩展管理弹层（屏幕居中模态，同 config-popover 模式）：
  * - 数据源：宿主 getExtensionList(view)（打开/切视图时按视图拉取；启停/卸载后宿主重发刷新）
  * - All/Global/Project 三态切换（对齐 pi config 心智）+ Catalog 插件目录视图（宿主 catalogState）
  * - project 视图含继承行（全局包项目未覆盖，inherited 徽标 + dimmed；开关 = 写项目覆盖

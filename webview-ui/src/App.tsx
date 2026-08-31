@@ -67,8 +67,8 @@ export default function App() {
   const newSessionBtnRef = useRef<HTMLButtonElement>(null);
   /** 分支按钮元素引用（ForkPopover 锚定）。 */
   const forkBtnRef = useRef<HTMLButtonElement>(null);
-  /** 扩展按钮元素引用（ExtensionPopover 锚定；按钮在 Composer footer 内渲染）。 */
-  const extensionBtnRef = useRef<HTMLButtonElement>(null);
+  /** Extensions chip 元素引用（ExtensionPopover 开关信号 + 焦点还原锚；chip 在 ContextBar 渲染）。 */
+  const extensionChipRef = useRef<HTMLButtonElement>(null);
   /** 模型/思考 chip 元素引用（ModelPopover 锚定）。 */
   const modelChipRef = useRef<HTMLButtonElement>(null);
   const thinkingChipRef = useRef<HTMLButtonElement>(null);
@@ -777,8 +777,17 @@ export default function App() {
       {todos.length > 0 && <TodoPanel todos={todos} />}
       {banner}
       <div className="composer-stack">
-        {/* 上下文状态条（Context 常驻 / Skills / Prompts / Extensions / MCP 计数 chip）：Context 占位态不隐藏 */}
-        <ContextBar commands={commands} pinelMcp={pinelMcp} pinelPrompt={pinelPrompt} extensions={extensions} />
+        {/* 上下文状态条（Context 常驻 / Skills / Prompts / Extensions / MCP 计数 chip）：
+            Context 占位态不隐藏；Extensions chip 兼任扩展管理入口 */}
+        <ContextBar
+          commands={commands}
+          pinelMcp={pinelMcp}
+          pinelPrompt={pinelPrompt}
+          extensions={extensions}
+          onOpenExtensions={openExtensions}
+          extensionsOpen={popover === "ext"}
+          extensionChipRef={extensionChipRef}
+        />
         <Composer
           status={status}
           commands={commands}
@@ -787,9 +796,6 @@ export default function App() {
           editPromptTrigger={editPromptTrigger}
           settingsOpen={popover === "config"}
           onOpenSettings={openConfig}
-          extensionOpen={popover === "ext"}
-          onOpenExtensions={openExtensions}
-          extensionBtnRef={extensionBtnRef}
           modelOpen={popover === "model"}
           onOpenModel={openModel}
           modelChipRef={modelChipRef}
@@ -851,7 +857,7 @@ export default function App() {
         onClose={() => setPopover(null)}
       />
       <ExtensionPopover
-        anchor={popover === "ext" ? extensionBtnRef.current : null}
+        anchor={popover === "ext" ? extensionChipRef.current : null}
         items={extensions}
         view={extensionView}
         projectAvailable={extensionProjectAvailable}
