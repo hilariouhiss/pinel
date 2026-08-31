@@ -569,6 +569,11 @@ function SubagentCard({
 }) {
   const [open, setOpen] = useState(false);
   const running = card.status === "running";
+  // 运行中（含后台）的"当前输出" = details.activity 预览：扩展在运行期间只发
+  // "N tool uses..." 占位 content（不流式子代理正文，进程内运行），activity 由
+  // 宿主实时合并（含截断的实时响应文本或活动描述）；完成后 output = 完整结果
+  const live = running || card.status === "background";
+  const displayText = live ? (card.activity ?? "") : output;
   // 状态驱动自动开合：background（用户主动挂后台）自动展开实时输出；
   // running 不自动展开（对齐工具卡片）；完成后自动收起；
   // 手动 toggle 在 status 不变时有效（effect 不重跑，尊重用户操作）
@@ -581,7 +586,7 @@ function SubagentCard({
   }, [card.status]);
   // running 中 partial 输出同样可展开/收起（需求：运行时自动展开展示输出）；
   // output 为空时不可展开（无内容）；运行中 partial 随 tools map 实时增长
-  const canExpand = output.trim().length > 0;
+  const canExpand = displayText.trim().length > 0;
   const meta: string[] = [];
   // 继承主会话时兕底主会话实际模型短名/思考等级，而非 "main model"/"main level" 占位
   meta.push(card.model ?? mainModelName ?? "main model");
@@ -633,9 +638,9 @@ function SubagentCard({
         {canExpand && <span className="subagent-caret">{open ? "▾" : "▸"}</span>}
       </button>
       {stats.length > 0 && <div className="subagent-stats">{stats.join(" · ")}</div>}
-      {open && output.trim() && (
+      {open && displayText.trim() && (
         <div className="subagent-body msg-text">
-          <Markdown content={output} />
+          <Markdown content={displayText} />
         </div>
       )}
     </div>
