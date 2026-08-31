@@ -4,9 +4,9 @@
  * 流程（不触碰用户全局配置——临时项目 + pi install -l）：
  * 1. 临时项目目录内 `pi install -l <repo>/pi`（项目级 settings）
  * 2. spawn `pi --mode rpc`（env PINEL_PLUGIN=1，cwd=临时项目）→ 项目包自动加载
- * 3. get_commands 断言含 /pinel-state；session_start 推送断言 pinel.state/pinel.tree 帧
- * 4. prompt /pinel-state 断言 notify 回报 + 帧刷新
- * 5. 清理临时目录与子进程
+ * 3. session_start 后断言 pinel.prompt 启动帧与 pinel.mcp 基线帧
+ *    （插件加载 + 帧通道 + 两个采集器存活；pinel.state/tree 推送链已整体删除）
+ * 4. 清理临时目录与子进程
  *
  * 覆盖：插件包 manifest 正确性（零资源加载会在此暴露）、守卫 env、帧通道、
  * RPC 扩展命令派发。失败时非零退出并打印诊断。
@@ -72,7 +72,6 @@ try {
   rpcChild.stdout.on("data", (d) => {
     out += d;
   });
-  const send = (obj) => rpcChild.stdin.write(JSON.stringify(obj) + "\n");
   const frames = () =>
     out
       .split("\n")
@@ -87,32 +86,18 @@ try {
 
   await new Promise((r) => setTimeout(r, 4000)); // 等 session_start 推送
 
-  // 3. session_start 推送断言（插件被自动加载且帧通道正常）
-  let seen = frames();
-  const stateFrames = seen.filter((f) => f.type === "extension_ui_request" && f.method === "setStatus" && f.statusKey === "pinel.state");
-  const treeFrames = seen.filter((f) => f.type === "extension_ui_request" && f.method === "setWidget" && f.widgetKey === "pinel.tree");
-  if (stateFrames.length === 0) fail("未收到 pinel.state setStatus 帧（插件未加载或通道失效）");
-  if (treeFrames.length === 0) fail("未收到 pinel.tree setWidget 帧");
-
-  // 4. get_commands 断言 + /pinel-state 命令派发
-  send({ id: "smoke-1", type: "get_commands" });
-  await new Promise((r) => setTimeout(r, 1500));
-  const cmdResp = frames().find((f) => f.command === "get_commands");
-  const names = (cmdResp?.data?.commands ?? []).map((c) => c.name);
-  if (!names.includes("pinel-state") || !names.includes("pinel-tree")) {
-    fail(`get_commands 缺插件命令：${names.join(",")}`);
-  }
-  send({ id: "smoke-2", type: "prompt", message: "/pinel-state" });
-  await new Promise((r) => setTimeout(r, 2000));
-  const notify = frames().some(
-    (f) =>
-      f.type === "extension_ui_request" &&
-      f.method === "notify" &&
-      String(f.message ?? "").startsWith("Pinel:"),
+  // 3. session_start 后断言采集器帧（插件被自动加载且帧通道正常）
+  const seen = frames();
+  const promptFrames = seen.filter(
+    (f) => f.type === "extension_ui_request" && f.method === "setStatus" && f.statusKey === "pinel.prompt",
   );
-  if (!notify) fail("/pinel-state 未触发 notify 回报（命令派发失效）");
+  const mcpFrames = seen.filter(
+    (f) => f.type === "extension_ui_request" && f.method === "setStatus" && f.statusKey === "pinel.mcp",
+  );
+  if (promptFrames.length === 0) fail("未收到 pinel.prompt 启动帧（插件未加载或通道失效）");
+  if (mcpFrames.length === 0) fail("未收到 pinel.mcp 基线帧（MCP 采集器失效）");
 
-  console.log("SMOKE OK: 插件加载 / pinel.state+tree 帧 / get_commands / /pinel-state 派发全部通过");
+  console.log("SMOKE OK: 插件加载 / pinel.prompt 启动帧 / pinel.mcp 基线帧全部通过");
 } catch (err) {
   fail(err.message);
 } finally {
