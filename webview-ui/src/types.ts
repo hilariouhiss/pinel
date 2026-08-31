@@ -212,6 +212,8 @@ export interface CatalogItem {
   compat: CatalogCompat;
   compatNote?: string;
   defaultSet?: boolean;
+  /** 推荐安装集成员（目录视图 Recommended 分组）。 */
+  recommended?: boolean;
   state: "installed" | "available";
 }
 

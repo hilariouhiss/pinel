@@ -29,7 +29,7 @@ interface Props {
   /** 目录单包安装（spec = installSpec）。 */
   onInstallCatalogEntry: (spec: string) => void;
   /** 目录按组默认集安装（group + 实际 installSpec 列表，供 busy 标记）。 */
-  onInstallCatalogGroup: (group: "pi-packages" | "rpiv-mono", specs: string[]) => void;
+  onInstallCatalogGroup: (group: "pi-packages" | "rpiv-mono" | "recommended", specs: string[]) => void;
   onChangeView: (view: ExtensionView | "catalog") => void;
   onToggle: (item: ExtensionItem, enabled: boolean) => void;
   onUninstall: (item: ExtensionItem) => void;
@@ -161,8 +161,68 @@ export function ExtensionPopover({
     { group: "rpiv-mono", label: "rpiv-mono (@juicesharp)" },
   ];
 
+  // 目录行渲染（Recommended 货架与原分组共用）。
+  const renderCatalogRow = (e: CatalogItem) => {
+    const busy = installing.has(e.installSpec);
+    return (
+      <div key={e.id} className="extension-item catalog-item">
+        <div className="extension-item-main">
+          <span className="extension-item-name" title={e.installSpec}>
+            {e.name}
+          </span>
+          {e.compat !== "ok" && (
+            <span className={`extension-item-badge compat-${e.compat}`} title={e.compatNote ?? ""}>
+              {e.compat === "tui-only" ? "TUI only" : "limited"}
+            </span>
+          )}
+          {e.defaultSet && <span className="extension-item-tag">default</span>}
+          {e.recommended && <span className="extension-item-tag">recommended</span>}
+          <span className="catalog-item-desc" title={e.description}>
+            {e.description}
+          </span>
+        </div>
+        {e.state === "installed" ? (
+          <span className="catalog-item-installed">Installed</span>
+        ) : (
+          <button
+            className="catalog-item-install"
+            disabled={busy}
+            title={e.installSpec}
+            onClick={() => onInstallCatalogEntry(e.installSpec)}
+          >
+            {busy ? "Installing…" : "Install"}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  // Recommended 货架：置顶列出推荐集（跨两组），一键装未装项；原分组内仍保留这些项
+  const renderRecommended = () => {
+    const recs = catalog.filter((e) => e.recommended);
+    const pending = recs.filter((e) => e.state !== "installed");
+    const busy = recs.some((e) => installing.has(e.installSpec));
+    return (
+      <div className="extension-popover-section">
+        <div className="extension-popover-title catalog-group-header">
+          <span>Recommended</span>
+          <button
+            className="catalog-group-install"
+            disabled={pending.length === 0 || busy}
+            title={`Install ${pending.length} recommended package${pending.length === 1 ? "" : "s"}`}
+            onClick={() => onInstallCatalogGroup("recommended", recs.map((e) => e.installSpec))}
+          >
+            {busy ? "Installing…" : `Install recommended (${pending.length})`}
+          </button>
+        </div>
+        {recs.map(renderCatalogRow)}
+      </div>
+    );
+  };
+
   const renderCatalog = () => (
     <div className="catalog-groups">
+      {renderRecommended()}
       {catalogGroups.map(({ group, label }) => {
         const entries = catalog.filter((e) => e.group === group);
         const groupSpecs = entries.filter((e) => e.defaultSet).map((e) => e.installSpec);
@@ -185,39 +245,7 @@ export function ExtensionPopover({
                 {groupBusy ? "Installing…" : group === "rpiv-mono" ? "Install default set" : "Install all"}
               </button>
             </div>
-            {entries.map((e) => {
-              const busy = installing.has(e.installSpec);
-              return (
-                <div key={e.id} className="extension-item catalog-item">
-                  <div className="extension-item-main">
-                    <span className="extension-item-name" title={e.installSpec}>
-                      {e.name}
-                    </span>
-                    {e.compat !== "ok" && (
-                      <span className={`extension-item-badge compat-${e.compat}`} title={e.compatNote ?? ""}>
-                        {e.compat === "tui-only" ? "TUI only" : "limited"}
-                      </span>
-                    )}
-                    {e.defaultSet && <span className="extension-item-tag">default</span>}
-                    <span className="catalog-item-desc" title={e.description}>
-                      {e.description}
-                    </span>
-                  </div>
-                  {e.state === "installed" ? (
-                    <span className="catalog-item-installed">Installed</span>
-                  ) : (
-                    <button
-                      className="catalog-item-install"
-                      disabled={busy}
-                      title={e.installSpec}
-                      onClick={() => onInstallCatalogEntry(e.installSpec)}
-                    >
-                      {busy ? "Installing…" : "Install"}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+            {entries.map(renderCatalogRow)}
           </div>
         );
       })}
@@ -260,8 +288,8 @@ export function ExtensionPopover({
           <div className="pinel-plugin-install">
             <span className="pinel-plugin-install-text">
               {pinelPluginState === "removed"
-                ? "Pinel plugin was removed — reinstall to restore live session state &amp; tree navigation"
-                : "Install the Pinel plugin to unlock live session state &amp; session tree navigation"}
+                ? "Pinel plugin was removed — reinstall to restore live prompt composition, MCP status &amp; workflow tracking"
+                : "Install the Pinel plugin to unlock live prompt composition, MCP status &amp; workflow tracking"}
             </span>
             <button className="pinel-plugin-install-btn" onClick={onInstallPinelPlugin}>
               Install
