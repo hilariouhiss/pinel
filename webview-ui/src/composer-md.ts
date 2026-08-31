@@ -66,3 +66,77 @@ export function supportEmptyListItems(content: string): string {
 export function stripLeadingNewline<T>(children: readonly T[] | T): readonly T[] | T {
   return Array.isArray(children) && children[0] === "\n" ? children.slice(1) : children;
 }
+
+/** 严格列表语法：仅 "数字. " 有序与 "- " 无序是列表；"* "、"+"、"N) " 逐行转义为
+ *  字面文本（渲染输出与原文等宽——反斜杠被 remark 消费不占位）。
+ *  围栏代码块内不动（字面契约）；仅空格缩进 ≤3 是列表候选（tab=4 列，按
+ *  缩进代码块处理不转义）；块引用前缀（> / > > ）后同样转义。 */
+export function strictListSyntax(content: string): string {
+  let fence: string | null = null;
+  return content
+    .split("\n")
+    .map((line) => {
+      const fm = line.match(/^([ ]{0,3})(`{3,}|~{3,})/);
+      if (fm) {
+        fence = fence === null ? fm[2][0] : fence === fm[2][0] ? null : fence;
+        return line;
+      }
+      if (fence !== null) return line;
+      // 组1=块引用前缀，组2=空格缩进，组3=非严格标记（* / + / 数字+闭括号），后随空白或行尾
+      return line.replace(/^((?:[ ]{0,3}> )*)([ ]{0,3})([*+]|\d+\))(?=\s|$)/, (_m, prefix: string, indent: string, marker: string) => {
+        return prefix + indent + marker.replace(/[*+)]/g, (c) => `\\${c}`);
+      });
+    })
+    .join("\n");
+}
+
+/** 间隙注入的「块」集合（li 同块：每个列表项都始于新行；thead/tbody/tr：表格
+ *  分隔行与数据行各自成行）。 */
+const GAP_BLOCKS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "pre", "blockquote", "table", "hr", "li", "thead", "tbody", "tr"]);
+
+/** 两相邻块间的源文精确切片（含全部空行）；position 缺失退回单个换行。 */
+function gapBetween(content: string, a: any, b: any): string {
+  const ae = a?.position?.end?.offset;
+  const bs = b?.position?.start?.offset;
+  return typeof ae === "number" && typeof bs === "number" ? content.slice(ae, bs) : "\n";
+}
+
+/**
+ * rehype 插件：让渲染层行数与 textarea 原文严格一致。
+ * 1) 剔除所有空白纯文本子（remark-rehype 的合成 "\n" 分隔符——单个换行
+ *    只能让下一块另起一行，源文的 N 个空行会塌缩成 0）；
+ * 2) 相邻块元素之间注入 gapBetween 源间隙（含精确空行数）；
+ * 3) 根级首尾：源文以空行开头/结尾时补足前缀/后缀（光标停在首尾空行不飘）。
+ */
+export function composerGapAlign(content: string) {
+  return (tree: any): void => {
+    const fix = (node: any): void => {
+      const children: any[] = node.children ?? [];
+      const kids = children.filter((c: any) => !(c.type === "text" && /^[\n ]*$/.test(c.value)));
+      const out: any[] = [];
+      for (const c of kids) {
+        const prev = out[out.length - 1];
+        if (prev && GAP_BLOCKS.has(c.tagName) && GAP_BLOCKS.has(prev.tagName)) {
+          out.push({ type: "text", value: gapBetween(content, prev, c) });
+        }
+        out.push(c);
+      }
+      if (node.type === "root" && out.length > 0 && GAP_BLOCKS.has(out[0].tagName)) {
+        const s = out[0]?.position?.start?.offset;
+        if (typeof s === "number" && s > 0 && /^[\n ]+$/.test(content.slice(0, s))) {
+          out.unshift({ type: "text", value: content.slice(0, s) });
+        }
+        const last = out[out.length - 1];
+        const e = last?.position?.end?.offset;
+        if (typeof e === "number" && e < content.length && /^[\n ]+$/.test(content.slice(e))) {
+          out.push({ type: "text", value: content.slice(e) });
+        }
+      }
+      node.children = out;
+      for (const c of out) {
+        if (c.type === "element") fix(c);
+      }
+    };
+    fix(tree);
+  };
+}
