@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { buildPromptPayload, registerPromptComposition } from "./prompt-composition.js";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildPromptPayload, registerPromptComposition, scanStartupContextFiles, buildStartupPayload } from "./prompt-composition.js";
 
 /** 构造 systemPromptOptions（pi BuildSystemPromptOptions 形状）。 */
 function options(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -147,4 +150,73 @@ describe("registerPromptComposition", () => {
 		handlers.get("agent_start")!({}, { ...ctx, mode: "tui" });
 		expect(pushes.length).toBe(0);
 	});
+});
+
+function tmpAgent(overrides: { agentDir?: string; repoFiles?: Record<string, string>; globalFile?: string }) {
+  const base = mkdtempSync(join(tmpdir(), "pinel-ctx-"));
+  const agentDir = overrides.agentDir ?? join(base, "agent");
+  mkdirSync(agentDir, { recursive: true });
+  const repo = join(base, "repo");
+  mkdirSync(repo, { recursive: true });
+  for (const [rel, content] of Object.entries(overrides.repoFiles ?? {})) {
+    const p = join(repo, rel);
+    mkdirSync(join(p, ".."), { recursive: true });
+    writeFileSync(p, content);
+  }
+  if (overrides.globalFile) writeFileSync(join(agentDir, overrides.globalFile), "GLOBAL");
+  return { base, agentDir, repo };
+}
+
+describe("scanStartupContextFiles", () => {
+  const ORIG_ENV = process.env.PI_CODING_AGENT_DIR;
+  afterEach(() => {
+    if (ORIG_ENV === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = ORIG_ENV;
+  });
+
+  it("cwd 的 AGENTS.md + 全局 agentDir AGENTS.md：全局在前，level 正确", () => {
+    const t = tmpAgent({ globalFile: "AGENTS.md", repoFiles: { "AGENTS.md": "PROJ" } });
+    process.env.PI_CODING_AGENT_DIR = t.agentDir;
+    const files = scanStartupContextFiles(t.repo);
+    expect(files.map((f) => [f.level, f.name])).toEqual([
+      ["user", "AGENTS.md"],
+      ["project", "AGENTS.md"],
+    ]);
+    expect(files[0].chars).toBe(6); // "GLOBAL"
+    expect(files[1].preview).toBe("PROJ");
+    rmSync(t.base, { recursive: true, force: true });
+  });
+
+  it("AGENTS.override.md 优先于 AGENTS.md；CLAUDE.md 作为兜底候选", () => {
+    const t = tmpAgent({ repoFiles: { "AGENTS.md": "A", "AGENTS.override.md": "OVR" } });
+    process.env.PI_CODING_AGENT_DIR = t.agentDir;
+    const files = scanStartupContextFiles(t.repo);
+    expect(files.map((f) => f.name)).toEqual(["AGENTS.override.md"]);
+    rmSync(t.base, { recursive: true, force: true });
+
+    const t2 = tmpAgent({ repoFiles: { "CLAUDE.md": "C" } });
+    process.env.PI_CODING_AGENT_DIR = t2.agentDir;
+    expect(scanStartupContextFiles(t2.repo).map((f) => f.name)).toEqual(["CLAUDE.md"]);
+    rmSync(t2.base, { recursive: true, force: true });
+  });
+
+  it("逐级向上：cwd 与祖先各命中一次，去重", () => {
+    const t = tmpAgent({
+      repoFiles: { "AGENTS.md": "PARENT", "sub/AGENTS.md": "CHILD" },
+    });
+    process.env.PI_CODING_AGENT_DIR = t.agentDir;
+    const files = scanStartupContextFiles(join(t.repo, "sub"));
+    expect(files.map((f) => f.name)).toEqual(["AGENTS.md", "AGENTS.md"]);
+    expect(files[0].preview).toBe("CHILD"); // 就近在前
+    rmSync(t.base, { recursive: true, force: true });
+  });
+
+  it("全缺 → 空数组；buildStartupPayload 形状 {v:1,startup:true,files}", () => {
+    const t = tmpAgent({});
+    process.env.PI_CODING_AGENT_DIR = t.agentDir;
+    const files = scanStartupContextFiles(t.repo);
+    expect(files).toEqual([]);
+    expect(buildStartupPayload(files)).toEqual({ v: 1, startup: true, files: [] });
+    rmSync(t.base, { recursive: true, force: true });
+  });
 });
