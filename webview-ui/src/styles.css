@@ -3148,58 +3148,11 @@ body {
   color: var(--vscode-textCodeBlock-foreground);
 }
 
-/* ---------------------------------------------------------- 滚动条上下三角箭头 */
-/* 待办面板 / 消息区 / 输入框 的竖向滚动条：恢复经典上下三角按钮。
-   两个关键点：
-   1. VS Code 在 @layer vscode-default 注入 scrollbar-color（Chromium 121+ 中标准
-      属性会整体接管滚动条绘制、禁用 -webkit 自定义样式，且该属性可继承）——
-      本文件非 layer 规则声明 auto 复位，恢复 -webkit 自定义滚动条路径；
-   2. 三角 = 按钮左右两半各一个 45° 对角渐变（background-size 50% 50% 方形半盒，
-      三角边斜率恒为 45°，顶点恰在按钮上下缘中点），颜色随主题滚动条滑块色。 */
-.pinel-scroll,
-.todopanel-body,
-.composer-input {
-  scrollbar-color: auto;
-}
-
-:is(.pinel-scroll, .todopanel-body, .composer-input)::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
-}
-
-:is(.pinel-scroll, .todopanel-body, .composer-input)::-webkit-scrollbar-button:vertical {
-  display: block;
-  width: 12px;
-  height: 12px;
-  background-color: transparent;
-  background-repeat: no-repeat;
-  background-size: 50% 50%, 50% 50%;
-}
-
-/* 上三角：顶点贴按钮上缘，底边在按钮半高 */
-:is(.pinel-scroll, .todopanel-body, .composer-input)::-webkit-scrollbar-button:vertical:decrement {
-  background-position: left top, right top;
-  background-image:
-    linear-gradient(315deg, var(--vscode-scrollbarSlider-background) 50%, transparent 50%),
-    linear-gradient(45deg, var(--vscode-scrollbarSlider-background) 50%, transparent 50%);
-}
-
-:is(.pinel-scroll, .todopanel-body, .composer-input)::-webkit-scrollbar-button:vertical:decrement:hover {
-  background-image:
-    linear-gradient(315deg, var(--vscode-scrollbarSlider-hoverBackground) 50%, transparent 50%),
-    linear-gradient(45deg, var(--vscode-scrollbarSlider-hoverBackground) 50%, transparent 50%);
-}
-
-/* 下三角：顶点贴按钮下缘 */
-:is(.pinel-scroll, .todopanel-body, .composer-input)::-webkit-scrollbar-button:vertical:increment {
-  background-position: left bottom, right bottom;
-  background-image:
-    linear-gradient(225deg, var(--vscode-scrollbarSlider-background) 50%, transparent 50%),
-    linear-gradient(135deg, var(--vscode-scrollbarSlider-background) 50%, transparent 50%);
-}
-
-:is(.pinel-scroll, .todopanel-body, .composer-input)::-webkit-scrollbar-button:vertical:increment:hover {
-  background-image:
-    linear-gradient(225deg, var(--vscode-scrollbarSlider-hoverBackground) 50%, transparent 50%),
-    linear-gradient(135deg, var(--vscode-scrollbarSlider-hoverBackground) 50%, transparent 50%);
+/* ------------------------------------------------------------ 滚动条：仅滑块 */
+/* 全局隐藏滚动条上下箭头按钮，只保留滑块。
+   - 此前在面板/消息区/输入框画的三角箭头已移除，三处回归 VS Code 注入的
+     标准滚动条（scrollbar-color 路径，本身不带箭头）；
+   - 本规则兜底任何落入 -webkit 自定义路径的滚动条，保证整个 webview 无箭头。 */
+::-webkit-scrollbar-button {
+  display: none;
 }
