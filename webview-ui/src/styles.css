@@ -2969,8 +2969,9 @@ body {
 }
 
 /* ------------------------------------------------------------ 上下文状态条 */
-/* 输入卡（.composer-stack）顶部状态条（ContextBar）：Prompt/Skill/MCP 计数 chip 行；
-   次要信息层级——小字号 + 降透明度，hover/展开恢复；弹层容器复用 .model-popover 定位 */
+/* 输入卡（.composer-stack）顶部状态条（ContextBar）：Context/Skills/Prompts/Extensions/MCP
+   计数 chip 行（对齐 pi tui 启动头段名）；次要信息层级——小字号 + 降透明度，hover/展开恢复；
+   弹层容器复用 .model-popover 定位 */
 .context-bar {
   position: relative;
   display: flex;
@@ -2996,6 +2997,43 @@ body {
 .context-chip:hover,
 .context-chip.open {
   opacity: 1;
+}
+
+/* chip 包裹层：hover 预览悬浮条的定位锚 */
+.ctx-chip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* hover 预览（对齐 pi tui 段折叠行语义：紧凑名单一行）：纯 CSS 悬停显现，
+   不接交互（pointer-events none）；弹层开启时隐藏防双浮层（.lifted 仅 open 态） */
+.ctx-hover-tip {
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 0;
+  z-index: 200;
+  max-width: 320px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border));
+  background: var(--vscode-editorWidget-background, var(--vscode-widget-background));
+  color: var(--vscode-editorWidget-foreground, var(--vscode-widget-foreground));
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 120ms ease 200ms;
+  pointer-events: none;
+}
+
+.ctx-chip-wrap:hover .ctx-hover-tip {
+  opacity: 0.9;
+}
+
+.context-bar.lifted .ctx-hover-tip {
+  display: none;
 }
 
 /* 行自带左右内边距（10px），容器纵向 4px / 横向归零，避免双重缩进 */
@@ -3055,7 +3093,12 @@ body {
   opacity: 0.55;
 }
 
-/* ── 提示词组成弹层（Sys chip）────────────────────────────── */
+/* 禁用扩展整行灰显（Extensions 弹层；启用数计入 chip 计数） */
+.ctx-ext-off {
+  opacity: 0.55;
+}
+
+/* ── 提示词组成弹层（Context chip）────────────────────────── */
 
 /* 段组：标题行 + 可选展开区 */
 .ctx-comp-group {

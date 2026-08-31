@@ -1,17 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { PinelMcp, PinelMcpServer, PinelPrompt, PinelPromptFile, SlashCommand } from "../types";
+import type { ExtensionItem, PinelMcp, PinelMcpServer, PinelPrompt, PinelPromptFile, SlashCommand } from "../types";
 
 interface Props {
-  /** 斜杠命令列表（宿主 get_commands 镜像；prompt/skill chip 计数与弹层明细数据源）。 */
+  /** 斜杠命令列表（宿主 get_commands 镜像；prompts/skills chip 计数与弹层明细数据源）。 */
   commands: SlashCommand[];
   /** MCP 服务器明细（宿主 statusKey "pinel.mcp" 帧；null=未收到帧 → MCP chip 隐藏）。 */
   pinelMcp: PinelMcp | null;
-  /** 提示词组成（宿主 statusKey "pinel.prompt" 帧；null=未收到 → Sys chip 占位态）。 */
+  /** 提示词组成（宿主 statusKey "pinel.prompt" 帧；null=未收到 → Context chip 占位态）。 */
   pinelPrompt: PinelPrompt | null;
+  /** 扩展列表（宿主 getExtensionList 镜像；面板挂载预热拉取，装/卸/启停后宿主重推）。 */
+  extensions: ExtensionItem[];
 }
 
-/** 弹层种类（与四个 chip 一一对应；null=关闭）。 */
-type CtxKind = "sys" | "prompt" | "skill" | "mcp";
+/** 弹层种类（与五个 chip 一一对应；null=关闭）。 */
+type CtxKind = "context" | "skill" | "prompt" | "ext" | "mcp";
 
 /** 紧凑字符数（K 一位小数；对齐信息条 compact 语义）。 */
 function compactChars(n: number): string {
@@ -19,12 +21,18 @@ function compactChars(n: number): string {
 }
 
 /**
- * 输入卡顶部上下文状态条：Sys(提示词组成)/Prompt/Skill/MCP 计数 chip 行 + 锚定明细弹层（纯展示）：
- * - 可见性：Sys 常驻（未收到 pinel.prompt 帧显示 "Sys –" 占位，弹层说明等待首轮推送）、
- *   Prompt N / Skill N（N>0 才显示）、MCP n/m（收到 pinel.mcp 帧且服务器非空才显示）
- * - Sys 弹层 = 提示词组成四段（系统提示词/用户级/项目级/插件注入）：
+ * 输入卡顶部上下文状态条：Context/Skills/Prompts/Extensions/MCP 计数 chip 行（对齐 pi tui
+ * 启动头 [Context][Skills][Prompts][Extensions] 段语义与顺序）+ hover 预览 + 锚定明细弹层（纯展示）：
+ * - 可见性：Context 常驻（未收到 pinel.prompt 帧显示 "Context –" 占位，弹层说明等待首轮推送；
+ *   计数 = 加载的上下文文件数：自定义系统提示词 + 用户/项目级文件 + 追加段）、
+ *   Skills N / Prompts N / Extensions N（N>0 才显示，对齐 pi tui 空段隐藏）、
+ *   MCP n/m（收到 pinel.mcp 帧且服务器非空才显示）
+ * - hover 预览：chip 悬停显示紧凑名单（对齐 pi tui 段折叠行），CSS 自绘悬浮条（pointer-events
+ *   none，弹层开启时隐藏防双浮层）；点击弹层显示完整明细
+ * - Context 弹层 = 提示词组成四段（系统提示词/用户级/项目级/插件注入）：
  *   段行点击展开预览文本（插件侧截断 2000 字符）；插件注入不可按插件拆分
  *   （pi API 只给链式合并结果），合并段 + 注脚说明
+ * - Extensions 弹层 = 纯展示行（名称/本地|包/全局|项目/禁用态）；管理操作走输入框旁扩展按钮
  * - MCP 弹层 = 服务器明细行：连接状态 + 全局/项目范围 + 工具数
  * - 弹层：chip 上方 bottom 锚定，定位/Esc/焦点三 effect 逐段移植 ModelPopover
  *   （左对齐 + 超右缘右对齐回退 + resize 重算；Esc window capture 拦截
@@ -32,14 +40,17 @@ function compactChars(n: number): string {
  * - rows 为信息展示（非 listbox 选项），弹层开关是组件内局部 state，
  *   不触碰 App 的弹层枚举
  */
-export function ContextBar({ commands, pinelMcp, pinelPrompt }: Props) {
+export function ContextBar({ commands, pinelMcp, pinelPrompt, extensions }: Props) {
   const prompts = commands.filter((c) => c.source === "prompt");
   const skills = commands.filter((c) => c.source === "skill");
+  // 扩展计数只算启用项（对齐 pi tui [Extensions] 段只列已加载；禁用项在弹层中灰显）
+  const enabledExtensions = extensions.filter((e) => e.enabled);
   const [open, setOpen] = useState<CtxKind | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const sysChipRef = useRef<HTMLButtonElement>(null);
-  const promptChipRef = useRef<HTMLButtonElement>(null);
+  const contextChipRef = useRef<HTMLButtonElement>(null);
   const skillChipRef = useRef<HTMLButtonElement>(null);
+  const promptChipRef = useRef<HTMLButtonElement>(null);
+  const extChipRef = useRef<HTMLButtonElement>(null);
   const mcpChipRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ bottom?: number; left?: number; right?: number }>({});
@@ -56,19 +67,23 @@ export function ContextBar({ commands, pinelMcp, pinelPrompt }: Props) {
 
   // 当前弹层锚点；种类数据消失（chip 卸载）时按 null 关闭，防重挂载幽灵弹层
   const anchor =
-    open === "sys"
-      ? sysChipRef.current
-      : open === "prompt"
-        ? prompts.length > 0
-          ? promptChipRef.current
+    open === "context"
+      ? contextChipRef.current
+      : open === "skill"
+        ? skills.length > 0
+          ? skillChipRef.current
           : null
-        : open === "skill"
-          ? skills.length > 0
-            ? skillChipRef.current
+        : open === "prompt"
+          ? prompts.length > 0
+            ? promptChipRef.current
             : null
-          : open === "mcp" && mcpVisible
-            ? mcpChipRef.current
-            : null;
+          : open === "ext"
+            ? extensions.length > 0
+              ? extChipRef.current
+              : null
+            : open === "mcp" && mcpVisible
+              ? mcpChipRef.current
+              : null;
 
   // 锚定定位：chip 上方（bottom 锚定）；左对齐、弹层宽于右缘距离时右对齐回退
   useLayoutEffect(() => {
@@ -140,22 +155,36 @@ export function ContextBar({ commands, pinelMcp, pinelPrompt }: Props) {
     setExpanded(null);
   };
 
-  const renderChip = (kind: CtxKind, label: string, title: string) => {
-    const ref = kind === "sys" ? sysChipRef : kind === "prompt" ? promptChipRef : kind === "skill" ? skillChipRef : mcpChipRef;
+  const renderChip = (kind: CtxKind, label: string, hover: string) => {
+    const ref =
+      kind === "context"
+        ? contextChipRef
+        : kind === "skill"
+          ? skillChipRef
+          : kind === "prompt"
+            ? promptChipRef
+            : kind === "ext"
+              ? extChipRef
+              : mcpChipRef;
     return (
-      <button
-        ref={ref}
-        className={`composer-chip context-chip${open === kind ? " open" : ""}`}
-        aria-haspopup="dialog"
-        aria-expanded={open === kind}
-        title={title}
-        onClick={() => {
-          setExpanded(null);
-          setOpen((o) => (o === kind ? null : kind));
-        }}
-      >
-        {label}
-      </button>
+      <span className="ctx-chip-wrap">
+        <button
+          ref={ref}
+          className={`composer-chip context-chip${open === kind ? " open" : ""}`}
+          aria-haspopup="dialog"
+          aria-expanded={open === kind}
+          aria-label={hover}
+          onClick={() => {
+            setExpanded(null);
+            setOpen((o) => (o === kind ? null : kind));
+          }}
+        >
+          {label}
+        </button>
+        <span className="ctx-hover-tip" role="tooltip">
+          {hover}
+        </span>
+      </span>
     );
   };
 
@@ -188,7 +217,7 @@ export function ContextBar({ commands, pinelMcp, pinelPrompt }: Props) {
     </div>
   );
 
-  /** Sys 弹层：提示词组成四段 + 计数脚注；未收到帧时占位说明。 */
+  /** Context 弹层：提示词组成四段 + 计数脚注；未收到帧时占位说明。 */
   const renderComposition = () => {
     if (!pinelPrompt) {
       return (
@@ -259,10 +288,28 @@ export function ContextBar({ commands, pinelMcp, pinelPrompt }: Props) {
     unknown: "未知",
   };
 
-  // 弹层行（纯展示）：prompt/skill = `/name` + 截断描述（title 全文）；mcp = 服务器明细
+  // 弹层行（纯展示）：ext = 扩展明细（名称/类型/作用域/禁用态，禁用整行灰显）
+  const renderExtensionRows = () =>
+    extensions.map((x) => (
+      <div
+        key={x.id}
+        className={`ctx-popover-row ctx-mcp-row${x.enabled ? "" : " ctx-ext-off"}`}
+        title={`${x.name} · ${x.kind === "local" ? "本地" : "包"} · ${x.scope === "project" ? "项目级" : "全局"}${x.enabled ? "" : " · 已禁用（重启 pi 生效后不加载）"}`}
+      >
+        <span className="ctx-popover-name ctx-mcp-name">{x.name}</span>
+        <span className="ctx-mcp-scope">{x.kind === "local" ? "本地" : "包"}</span>
+        <span className="ctx-mcp-scope">{x.scope === "project" ? "项目" : "全局"}</span>
+        {!x.enabled && <span className="ctx-mcp-status">已禁用</span>}
+      </div>
+    ));
+
+  // 弹层行（纯展示）：skill/prompt = `/name` + 截断描述（title 全文）；mcp = 服务器明细
   const renderRows = () => {
-    if (open === "sys") {
+    if (open === "context") {
       return renderComposition();
+    }
+    if (open === "ext") {
+      return renderExtensionRows();
     }
     if (open === "mcp") {
       if (!pinelMcp) {
@@ -297,31 +344,54 @@ export function ContextBar({ commands, pinelMcp, pinelPrompt }: Props) {
     ));
   };
 
+  // Context 计数/hover 名单：加载的上下文文件（自定义系统提示词 + 用户/项目级 + 追加段）
+  const contextCount = pinelPrompt
+    ? pinelPrompt.files.length +
+      (pinelPrompt.system.kind === "custom" ? 1 : 0) +
+      (pinelPrompt.append ? 1 : 0)
+    : 0;
+  const contextHover = !pinelPrompt
+    ? "等待首轮推送：首条消息发出后显示上下文组成"
+    : [
+        pinelPrompt.system.kind === "custom" ? "系统提示词" : null,
+        ...pinelPrompt.files.map((f) => f.name),
+        pinelPrompt.append ? "追加段" : null,
+      ]
+        .filter((s): s is string => s !== null)
+        .join(" · ");
+
   const ariaLabel =
-    open === "sys"
-      ? "Prompt composition"
-      : open === "prompt"
-        ? "Prompt commands"
-        : open === "skill"
-          ? "Skills"
-          : "MCP servers";
+    open === "context"
+      ? "Context composition"
+      : open === "skill"
+        ? "Skills"
+        : open === "prompt"
+          ? "Prompts"
+          : open === "ext"
+            ? "Extensions"
+            : "MCP servers";
 
   return (
     <>
       <div className={`context-bar${open !== null ? " lifted" : ""}`}>
         {renderChip(
-          "sys",
-          pinelPrompt ? `Sys ${compactChars(pinelPrompt.finalChars)}` : "Sys –",
-          "Prompt composition（系统提示词 / 用户级 / 项目级 / 插件注入）",
+          "context",
+          pinelPrompt ? `Context ${contextCount}` : "Context –",
+          contextHover,
         )}
-        {prompts.length > 0 && renderChip("prompt", `Prompt ${prompts.length}`, "Prompt commands")}
-        {skills.length > 0 && renderChip("skill", `Skill ${skills.length}`, "Skills")}
-        {pinelMcp &&
-          pinelMcp.servers.length > 0 &&
+        {skills.length > 0 && renderChip("skill", `Skills ${skills.length}`, skills.map((s) => s.name).join(", "))}
+        {prompts.length > 0 && renderChip("prompt", `Prompts ${prompts.length}`, prompts.map((p) => `/${p.name}`).join(", "))}
+        {extensions.length > 0 &&
+          renderChip(
+            "ext",
+            `Extensions ${enabledExtensions.length}`,
+            enabledExtensions.map((e) => e.name).join(", "),
+          )}
+        {mcpVisible &&
           renderChip(
             "mcp",
             `MCP ${connectedCount}/${enabledCount}`,
-            "MCP servers（连接状态 / 全局 / 项目）",
+            pinelMcp.servers.map((s) => s.name).join(", "),
           )}
       </div>
       {anchor && (

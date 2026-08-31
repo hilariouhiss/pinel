@@ -74,7 +74,7 @@ export default function App() {
   const thinkingChipRef = useRef<HTMLButtonElement>(null);
   /** 可 fork 的历史用户消息（getForkMessages 响应填充；打开时拉取）。 */
   const [forkMessages, setForkMessages] = useState<ForkMessageItem[]>([]);
-  /** 扩展列表（getExtensionList 响应填充；打开时拉取，启停/卸载后宿主重发）。 */
+  /** 扩展列表（getExtensionList 响应填充；挂载预热 + 打开管理弹层拉取，启停/卸载后宿主重发）。 */
   const [extensions, setExtensions] = useState<ExtensionItem[]>([]);
   /** 扩展弹层当前视图（All/Global/Project 切换；切换时重拉列表）。 */
   const [extensionView, setExtensionView] = useState<ExtensionView | "catalog">("all");
@@ -426,6 +426,8 @@ export default function App() {
     // 挂载预热拉取文件列表：手打/粘贴 @引用 发送时解析依赖 fileList，
     // 不预热的场景（无 atTrigger 击键）fileList 可能为空导致引用静默丢失
     vscode.postMessage({ type: "getFileList" });
+    // 预热拉取扩展列表：信息条 Extensions chip 常驻显示计数（装/卸/启停后宿主重推）
+    vscode.postMessage({ type: "getExtensionList", view: "all" });
     return () => window.removeEventListener("message", handleMessage);
   }, [handleMessage]);
 
@@ -577,7 +579,7 @@ export default function App() {
   // 扩展管理弹层：打开时按当前视图拉取列表（每次打开实时扫描）+ 目录状态
   const openExtensions = () => {
     setPopover((prev) => (prev === "ext" ? null : "ext")); // 已开则关闭（toggle）
-    setExtensions([]);
+    // 不清空 extensions：信息条 chip 常驻显示，宿主重扫后整体替换
     // catalog 为本地视图：宿主按 all 刷新扩展列表（背景），目录状态单独拉
     vscode.postMessage({ type: "getExtensionList", view: extensionView === "catalog" ? "all" : extensionView });
     vscode.postMessage({ type: "getCatalogState" });
@@ -775,8 +777,8 @@ export default function App() {
       {todos.length > 0 && <TodoPanel todos={todos} />}
       {banner}
       <div className="composer-stack">
-        {/* 上下文状态条（Sys 常驻 / Prompt / Skill / MCP 计数 chip）：Sys 占位态不隐藏 */}
-        <ContextBar commands={commands} pinelMcp={pinelMcp} pinelPrompt={pinelPrompt} />
+        {/* 上下文状态条（Context 常驻 / Skills / Prompts / Extensions / MCP 计数 chip）：Context 占位态不隐藏 */}
+        <ContextBar commands={commands} pinelMcp={pinelMcp} pinelPrompt={pinelPrompt} extensions={extensions} />
         <Composer
           status={status}
           commands={commands}
