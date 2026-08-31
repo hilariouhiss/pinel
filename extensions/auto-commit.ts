@@ -1,6 +1,6 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { agentDir } from "./agent-dir.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**
@@ -34,8 +34,7 @@ export function readAutoCommitEnabled(settingsJson: unknown): boolean {
 
 /** settings.json 路径：对齐宿主 agentSettingsPath（PI_CODING_AGENT_DIR 覆盖，默认 ~/.pi/agent）。 */
 export function pinelSettingsPath(env: NodeJS.ProcessEnv = process.env): string {
-	const agentDir = env.PI_CODING_AGENT_DIR?.trim() || path.join(os.homedir(), ".pi", "agent");
-	return path.join(agentDir, "settings.json");
+	return path.join(agentDir(env), "settings.json");
 }
 
 /** 开启且未注入过时追加提示词；否则原样返回（不返回重写 → 不破坏 prompt 前缀缓存）。 */

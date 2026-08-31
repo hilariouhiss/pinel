@@ -19,8 +19,8 @@
  * status: connected|disabled|needs-auth|failed|cached|not-connected|unknown
  */
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { agentDir } from "./agent-dir.js";
 import { getPinelCtx } from "./push-target.js";
 
 export const MCP_ADAPTER_STATUS_EVENT = "pi-mcp-adapter/status/v1";
@@ -46,12 +46,6 @@ interface ServerRow {
 	disabled?: boolean;
 }
 
-/** agentDir 解析（镜像 pi config.ts getAgentDir：env 优先，缺省 ~/.pi/agent）。 */
-function agentDir(): string {
-	const env = process.env.PI_CODING_AGENT_DIR;
-	if (env && env.length > 0) return env;
-	return join(homedir(), ".pi", "agent");
-}
 
 /** 读取 mcp.json 的 mcpServers：名字 → 是否 disabled（坏 JSON/形状漂移 → 空表）。 */
 function readServerDefs(path: string): Map<string, boolean> {

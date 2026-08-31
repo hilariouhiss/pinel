@@ -27,17 +27,11 @@
  * 预览统一截断 PREVIEW_CHARS；推送按 JSON 去重（组成不变不重发）。
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { agentDir } from "./agent-dir.js";
 
 const PREVIEW_CHARS = 2000;
 
-/** agentDir 解析（镜像 pi config.ts getAgentDir：env 优先，缺省 ~/.pi/agent）。 */
-function agentDir(): string {
-	const env = process.env.PI_CODING_AGENT_DIR;
-	if (env && env.length > 0) return env;
-	return join(homedir(), ".pi", "agent");
-}
 
 /** 路径归一比较前缀（大小写不敏感 + 分隔符统一；Windows 路径兼容）。 */
 function isUnderDir(filePath: string, dir: string): boolean {
