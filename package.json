@@ -1,6 +1,6 @@
 {
   "name": "@hilariouhiss/pinel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pinel bridge plugin for Pi — live state push and session-tree navigation inside the Pinel VS Code panel",
   "keywords": ["pi-package", "pinel", "vscode"],
   "license": "MIT",
