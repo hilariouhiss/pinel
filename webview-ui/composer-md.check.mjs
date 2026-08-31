@@ -159,4 +159,7 @@ assert.strictEqual(exact("**a** **b**"), "a b", "行内元素间空格不删");
 assert.strictEqual(exact("x `a` `b` y"), "x `a` `b` y", "行内代码间空格不删");
 // 文档首行缩进列表：前缀去尾空白，缩进只由 sliceLiMarker 出一份
 assert.strictEqual(exact("  - a"), "  • a", "文档首行缩进列表不双计");
+// 前缀去缩进仅限列表容器：非列表首块（段落/标题/围栏/表格）缩进原样保留
+assert.strictEqual(exact("  para"), "  para", "非列表首块缩进保留");
+assert.strictEqual(exact("  - a"), "  • a", "列表首块缩进不双计（守卫仍生效）");
 console.log("composer-md check OK");

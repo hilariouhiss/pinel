@@ -138,9 +138,14 @@ export function composerGapAlign(content: string) {
       if (node.type === "root" && out.length > 0 && GAP_BLOCKS.has(out[0].tagName)) {
         const s = out[0]?.position?.start?.offset;
         if (typeof s === "number" && s > 0 && /^[\n ]+$/.test(content.slice(0, s))) {
-          // 前缀去尾部空格/tab：文档首行缩进列表（"  - a"）时 sliceLiMarker
-          // 会重发行首缩进，双计成 "    • a"；保留换行（前导空行仍渲染）
-          out.unshift({ type: "text", value: content.slice(0, s).replace(/[ \t]+$/, "") });
+          const prefix = content.slice(0, s);
+          // 仅列表容器重发行首缩进（sliceLiMarker 回扫行首）：前缀去尾随空白；
+          // 其余首块（段落/标题/围栏/表格）自身不重发，前缀原样保留
+          const first = out[0];
+          const stripped = first.tagName === "ul" || first.tagName === "ol"
+            ? prefix.replace(/[ \t]+$/, "")
+            : prefix;
+          out.unshift({ type: "text", value: stripped });
         }
         const last = out[out.length - 1];
         const e = last?.position?.end?.offset;
