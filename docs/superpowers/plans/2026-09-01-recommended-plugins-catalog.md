@@ -2,19 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Ruling (2026-09-01):** 推荐集计数以枚举清单为准 = 12 项（原 13 个死依赖 − tui-only 的 rpiv-voice）。文中「11」为计划撰写时的算术错误，已按 12 修正。
+
 **Goal:** 修复审计问题 2：pi/package.json 的 13 个从未被 import 也从不被 pi 加载的死依赖全部删除（只留 rpiv-workflow），配套插件套件改由 Pinel 面板目录的「Recommended」分组一键推荐安装。
 
-**Architecture:** pi 侧纯删除（package.json 依赖瘦身 + README 安装指引改写）；vscode 侧在既有目录流上加「推荐」概念——`CatalogEntry` 加 `recommended` 标记（11 项：@gotgenes×9 + rpiv-args + rpiv-ask-user-question + rpiv-todo，剔除 tui-only 的 rpiv-voice），`installSpecsForGroup` 联合扩展 `"recommended"`，ExtensionPopover 目录视图顶部新增 Recommended 分组与「Install recommended (N)」按钮，安装执行复用既有 `installCatalogEntries`（spawn `pi install` 逐个，120s 超时，写全局 settings）。零新机制、零新依赖。
+**Architecture:** pi 侧纯删除（package.json 依赖瘦身 + README 安装指引改写）；vscode 侧在既有目录流上加「推荐」概念——`CatalogEntry` 加 `recommended` 标记（12 项：@gotgenes×9 + rpiv-args + rpiv-ask-user-question + rpiv-todo，剔除 tui-only 的 rpiv-voice），`installSpecsForGroup` 联合扩展 `"recommended"`，ExtensionPopover 目录视图顶部新增 Recommended 分组与「Install recommended (N)」按钮，安装执行复用既有 `installCatalogEntries`（spawn `pi install` 逐个，120s 超时，写全局 settings）。零新机制、零新依赖。
 
 **Tech Stack:** TypeScript（pi 包与 vscode 扩展既有约定）、vitest（pi 测试）、mocha + vscode-test（vscode 测试）、真实 pi 冒烟（`npm run smoke:plugin`，验证依赖瘦身后插件加载链路）。
 
-**Spec:** 本会话用户需求（逐字）："编写计划，修复第二个问题，实现为推荐安装插件" + 三个已确认决策：推荐范围 = 11 个（剔除 rpiv-voice）；UI = Recommended 分组 + 一键装；pi 依赖 = 全部删除只留 rpiv-workflow。
+**Spec:** 本会话用户需求（逐字）："编写计划，修复第二个问题，实现为推荐安装插件" + 三个已确认决策：推荐范围 = 12 个（剔除 rpiv-voice）；UI = Recommended 分组 + 一键装；pi 依赖 = 全部删除只留 rpiv-workflow。
 
 ## Global Constraints
 
 - 两个独立 git 仓库：`c:/source_code/Other/pinel/pi` 与 `c:/source_code/Other/pinel/vscode`。两仓各自提交；命令用 `git -C <绝对路径>`。
 - 不新增任何 npm 依赖，只删依赖（pi 侧）。vscode 侧零依赖变动。
-- 推荐集 = 11 项，**rpiv-voice 排除**（tui-only，面板内无效）；rpiv-voice 的 `defaultSet: true` 保持不变（rpiv-mono 默认集语义不动）。
+- 推荐集 = 12 项，**rpiv-voice 排除**（tui-only，面板内无效）；rpiv-voice 的 `defaultSet: true` 保持不变（rpiv-mono 默认集语义不动）。
 - 推荐项在其原分组（pi-packages / rpiv-mono）内**原样保留**——Recommended 分组是置顶货架，不是从原组移出。
 - 安装执行复用 `installCatalogEntries`（写真实全局 settings）：集成测试不得直调安装链路，单测覆盖纯函数（catalog.test.ts）。
 - pi 侧 `@juicesharp/rpiv-workflow` 是唯一被代码 import 的依赖（`pinel-workflows.ts`/`workflows/*.ts`），保留；`typebox` 已在 peerDependencies（pi 核心捆绑），不动。
@@ -29,9 +31,9 @@
 | `pi/package.json`（修改） | dependencies 只留 rpiv-workflow |
 | `pi/package-lock.json`（修改） | npm install 同步 |
 | `pi/README.md`（修改） | 安装节改写：推荐套件指向面板 Catalog → Recommended |
-| `vscode/src/chat/catalog.ts`（修改） | `recommended?: boolean` 标记 11 项；`installSpecsForGroup` 扩展 `"recommended"` |
+| `vscode/src/chat/catalog.ts`（修改） | `recommended?: boolean` 标记 12 项；`installSpecsForGroup` 扩展 `"recommended"` |
 | `vscode/src/chat/panel.ts`（修改） | `WebviewInstallCatalogGroupMessage.group` 联合加 `"recommended"` |
-| `vscode/src/test/catalog.test.ts`（修改） | 推荐集断言（11 项、rpiv-voice 排除、installSpecsForGroup("recommended")） |
+| `vscode/src/test/catalog.test.ts`（修改） | 推荐集断言（12 项、rpiv-voice 排除、installSpecsForGroup("recommended")） |
 | `vscode/webview-ui/src/types.ts`（修改） | `CatalogItem` 加 `recommended?: boolean` |
 | `vscode/webview-ui/src/components/ExtensionPopover.tsx`（修改） | Recommended 分组 + 一键装按钮 + recommended 徽标；行渲染抽为共用函数；修两处过期横幅文案 |
 
@@ -87,7 +89,7 @@ Expected: 零输出（源码零引用已删包；仅 rpiv-workflow 合法保留�
 
 ```markdown
 > rpiv-workflow 随本包依赖自动安装。推荐的配套插件（pi-subagents、pi-colgrep、
-> rpiv-ask-user-question、rpiv-todo 等 11 个）在 Pinel 面板
+> rpiv-ask-user-question、rpiv-todo 等 12 个）在 Pinel 面板
 > Extensions → Catalog → Recommended 一键安装；rpiv-pi 需单独安装并在
 > settings.json packages 中加载。
 ```
@@ -122,20 +124,20 @@ git -C c:/source_code/Other/pinel/pi commit -m "docs(pi-pinel): recommended suit
 
 **Interfaces:**
 - Consumes: Task 1 不涉及本仓。既有 `CatalogEntry`/`installSpecsForGroup`/`WebviewInstallCatalogGroupMessage`。
-- Produces: `CatalogEntry.recommended?: boolean`（11 项为 true）；`installSpecsForGroup(group: CatalogGroup | "recommended")`；`WebviewInstallCatalogGroupMessage.group: "pi-packages" | "rpiv-mono" | "recommended"`。`CatalogGroup` 类型本身不变（目录项仍只有两组）。
+- Produces: `CatalogEntry.recommended?: boolean`（12 项为 true）；`installSpecsForGroup(group: CatalogGroup | "recommended")`；`WebviewInstallCatalogGroupMessage.group: "pi-packages" | "rpiv-mono" | "recommended"`。`CatalogGroup` 类型本身不变（目录项仍只有两组）。
 
 - [ ] **Step 1: catalog.ts 加 recommended 标记**
 
 - `CatalogEntry` 接口（`defaultSet?: boolean` 之后）加一行：
 
 ```typescript
-  /** 推荐安装集成员（面板 Catalog → Recommended 分组；11 项，剔除 tui-only 的 rpiv-voice）。 */
+  /** 推荐安装集成员（面板 Catalog → Recommended 分组；12 项，剔除 tui-only 的 rpiv-voice）。 */
   recommended?: boolean;
 ```
 
-- 为 11 项加 `recommended: true`（位置紧随各条目 `compat` 字段或任意字段顺序均可，保持现有条目排版风格）：
+- 为 12 项加 `recommended: true`（位置紧随各条目 `compat` 字段或任意字段顺序均可，保持现有条目排版风格）：
   - @gotgenes 全部 9 项：`pi-permission-system`、`pi-permission-model-judge`、`pi-subagents`、`pi-github-tools`、`pi-autoformat`、`pi-colgrep`、`pi-session-tools`、`pi-subagents-worktrees`、`pi-nocd`
-  - rpiv 侧 2 项：`rpiv-args`、`rpiv-ask-user-question`、`rpiv-todo` —— 共 11 项；注意 **rpiv-voice 不加**（其 `defaultSet: true` 保持原样）。
+  - rpiv 侧 2 项：`rpiv-args`、`rpiv-ask-user-question`、`rpiv-todo` —— 共 12 项；注意 **rpiv-voice 不加**（其 `defaultSet: true` 保持原样）。
 
 - [ ] **Step 2: catalog.ts 扩展 installSpecsForGroup**
 
@@ -143,7 +145,7 @@ git -C c:/source_code/Other/pinel/pi commit -m "docs(pi-pinel): recommended suit
 
 ```typescript
 /** 组批量安装 spec 列表：pi-packages = git 整仓 9 包；rpiv-mono = 默认集三包（用户指定）；
- *  recommended = 推荐集 11 项（跨两组，剔除 tui-only 的 rpiv-voice）。 */
+ *  recommended = 推荐集 12 项（跨两组，剔除 tui-only 的 rpiv-voice）。 */
 export function installSpecsForGroup(group: CatalogGroup | "recommended"): string[] {
   if (group === "pi-packages") {
     return [PI_PACKAGES_ALL_SPEC];
@@ -163,7 +165,7 @@ export function installSpecsForGroup(group: CatalogGroup | "recommended"): strin
 
 ```typescript
 /** 目录按组默认集安装（pi-packages = git 整仓；rpiv-mono = 默认集三包；
- *  recommended = 推荐集 11 项）。 */
+ *  recommended = 推荐集 12 项）。 */
 interface WebviewInstallCatalogGroupMessage {
   type: "installCatalogGroup";
   group: "pi-packages" | "rpiv-mono" | "recommended";
@@ -177,9 +179,9 @@ interface WebviewInstallCatalogGroupMessage {
 在 `describe("catalog 静态清单")` 内新增两个 it：
 
 ```typescript
-  it("推荐集 = 11 项（@gotgenes×9 + rpiv-args/ask-user-question/todo），rpiv-voice 排除", () => {
+  it("推荐集 = 12 项（@gotgenes×9 + rpiv-args/ask-user-question/todo），rpiv-voice 排除", () => {
     const recs = CATALOG.filter((e) => e.recommended);
-    assert.strictEqual(recs.length, 11);
+    assert.strictEqual(recs.length, 12);
     assert.deepStrictEqual(
       recs.map((e) => e.id).sort(),
       [
@@ -193,9 +195,9 @@ interface WebviewInstallCatalogGroupMessage {
     assert.ok(!recs.some((e) => e.compat === "tui-only"), "推荐集不得含 tui-only 项");
   });
 
-  it("installSpecsForGroup：recommended = 推荐集 11 个 installSpec（目录顺序）", () => {
+  it("installSpecsForGroup：recommended = 推荐集 12 个 installSpec（目录顺序）", () => {
     const specs = installSpecsForGroup("recommended");
-    assert.strictEqual(specs.length, 11);
+    assert.strictEqual(specs.length, 12);
     assert.deepStrictEqual(specs, CATALOG.filter((e) => e.recommended).map((e) => e.installSpec));
     for (const s of specs) {
       assert.ok(s.startsWith("npm:"), `推荐集 spec 应为 npm 形式：${s}`);
@@ -389,6 +391,6 @@ Expected: 两仓干净（本计划文件已在 vscode 仓提交）。
 
 ## Self-Review
 
-- **Spec coverage:** 三决策全覆盖——11 项推荐集（Task 2 Step 1 显式列出、rpiv-voice 排除并在测试断言）→ Recommended 分组 + 一键装（Task 3 Steps 2-4）→ pi 依赖全删只留 rpiv-workflow（Task 1 Steps 2-4）+ README 指引（Task 1 Step 5）。审计问题 2 的「装而不加载」矛盾随依赖删除消失；横幅文案修复是审计问题 1 的遗留收尾（Task 3 Step 5）。
-- **Placeholder scan:** 无 TBD/TODO；所有代码块完整；11 项清单与 installSpecsForGroup("recommended") 的过滤逻辑一致；冒烟作为瘦身端到端验证已写入 Step 2。
+- **Spec coverage:** 三决策全覆盖——12 项推荐集（Task 2 Step 1 显式列出、rpiv-voice 排除并在测试断言）→ Recommended 分组 + 一键装（Task 3 Steps 2-4）→ pi 依赖全删只留 rpiv-workflow（Task 1 Steps 2-4）+ README 指引（Task 1 Step 5）。审计问题 2 的「装而不加载」矛盾随依赖删除消失；横幅文案修复是审计问题 1 的遗留收尾（Task 3 Step 5）。
+- **Placeholder scan:** 无 TBD/TODO；所有代码块完整；12 项清单与 installSpecsForGroup("recommended") 的过滤逻辑一致；冒烟作为瘦身端到端验证已写入 Step 2。
 - **Type consistency:** `recommended?: boolean` 三处一致（catalog.ts CatalogEntry ↔ types.ts CatalogItem ↔ ExtensionPopover 消费）；group 联合 `"recommended"` 三处一致（catalog.ts installSpecsForGroup 参数 ↔ panel.ts 消息类型 ↔ ExtensionPopover props）；`CatalogGroup` 类型保持不变与「目录项仍两组」约束一致。catalog.test.ts 新增断言与 catalog.ts 实现同构（filter 逻辑两侧相同是测试意图，非复制实现）。
