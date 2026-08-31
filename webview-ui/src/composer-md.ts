@@ -82,8 +82,10 @@ export function strictListSyntax(content: string): string {
         return line;
       }
       if (fence !== null) return line;
-      // 组1=块引用前缀，组2=空格缩进，组3=非严格标记（* / + / 数字+闭括号），后随空白或行尾
-      return line.replace(/^((?:[ ]{0,3}> )*)([ ]{0,3})([*+]|\d+\))(?=\s|$)/, (_m, prefix: string, indent: string, marker: string) => {
+      // 组1=块引用前缀，组2=空格缩进，组3=非严格标记（* / + / 数字+闭括号），
+      // 后随空白/行尾/非标记字符（*b 强调、*** HR、**bold** 均按此区分：仅紧邻
+      // * 或 + 的星号不转义）
+      return line.replace(/^((?:[ ]{0,3}> )*)([ ]{0,3})([*+]|\d+\))(?=\s|$|[^*+])/, (_m, prefix: string, indent: string, marker: string) => {
         return prefix + indent + marker.replace(/[*+)]/g, (c) => `\\${c}`);
       });
     })
@@ -116,7 +118,10 @@ export function composerGapAlign(content: string) {
       const out: any[] = [];
       for (const c of kids) {
         const prev = out[out.length - 1];
-        if (prev && GAP_BLOCKS.has(c.tagName) && GAP_BLOCKS.has(prev.tagName)) {
+        // c 为块元素且 prev 为块元素或内容文本（li 内裸文本后嵌嵌套列表的
+        // 源换行同样注入——否则嵌套项与父项内容坍缩到同一行）；空白文本
+        // 已被上方过滤，不会双注入
+        if (prev && GAP_BLOCKS.has(c.tagName) && (prev.type === "text" || GAP_BLOCKS.has(prev.tagName))) {
           out.push({ type: "text", value: gapBetween(content, prev, c) });
         }
         out.push(c);
