@@ -308,3 +308,12 @@ Run: `rm -rf .tmp-scrollbar-verify`
 - **Spec coverage:** 需求 1（去箭头）→ Task 1 的 `* { scrollbar-color: auto }` + `::-webkit-scrollbar-button { display: none }`；需求 2（空闲隐藏）→ Task 1 的 opacity 规则 + Task 2 的监听；需求 3（不回归）→ 复位只动 `scrollbar-color`，注入的 10px 宽度与 thumb 颜色规则不动，App/Composer 滚动逻辑零改动（File Structure 明确）。全覆盖。
 - **Placeholder scan:** 无 TBD/TODO；所有步骤含可执行代码与命令。
 - **Type consistency:** 类名 `pinel-scrolling` 在 CSS、TS、check.mjs、验证页四处一致；`SCROLL_IDLE_MS = 1000` 与 CSS 注释「1s」一致；`capture: true` 与自检断言一致。
+
+---
+
+## Errata（实施后追加）
+
+Task 1 的 CSS 机制与最终实现不同（controller ruling，ledger 见 `.superpowers/sdd/2025-08-31-scrollbar-autohide/progress.md`）：
+- **opacity/transition 在 `::-webkit-scrollbar-*` 部件上被 Blink 滚动条绘制器忽略**（计算样式报值、渲染不生效），本计划原方案的「淡出」无任何视觉效果。
+- 实际采用：空闲隐藏 = `background-color: transparent` 直切显隐（透明 thumb 几何不变、仍可拖拽）；无过渡动画（滚动条部件不支持任何过渡属性）；hover 保持 = `background-color: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4))`。
+- 行为验证必须用像素级截图差分（headless Edge），计算样式断言不足以证明渲染。
