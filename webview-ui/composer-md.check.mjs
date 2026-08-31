@@ -3,7 +3,13 @@
  * 挂入 npm run compile 门：列表标记切片规则坏掉时编译即红。
  */
 import assert from "node:assert";
-import { sliceLiMarker, stripLeadingNewline, supportEmptyListItems } from "./src/composer-md.ts";
+import {
+  sliceLiMarker,
+  stripLeadingNewline,
+  supportEmptyListItems,
+  strictListSyntax,
+  composerGapAlign,
+} from "./src/composer-md.ts";
 
 const pos = (start, end) => ({ start: { offset: start }, end: { offset: end } });
 
@@ -49,4 +55,76 @@ assert.deepStrictEqual(stripLeadingNewline(["a", "\n", "b"]), ["a", "\n", "b"]);
 assert.strictEqual(stripLeadingNewline("abc"), "abc");
 // 空数组原样返回
 assert.deepStrictEqual(stripLeadingNewline([]), []);
+
+// ---- strictListSyntax：仅 "数字. " 与 "- " 是列表 ----
+assert.strictEqual(strictListSyntax("* item"), "\\* item");
+assert.strictEqual(strictListSyntax("+ item"), "\\+ item");
+assert.strictEqual(strictListSyntax("1) item"), "1\\) item");
+assert.strictEqual(strictListSyntax("123) item"), "123\\) item");
+assert.strictEqual(strictListSyntax("  * sub"), "  \\* sub", "缩进≤3 同样转义");
+assert.strictEqual(strictListSyntax("    * code"), "    * code", "缩进≥4 是代码块不动");
+assert.strictEqual(strictListSyntax("- item"), "- item", "合法无序列表不动");
+assert.strictEqual(strictListSyntax("1. item"), "1. item", "合法有序列表不动");
+assert.strictEqual(strictListSyntax("1.item"), "1.item", "无空白不是列表候选");
+assert.strictEqual(strictListSyntax("***"), "***", "星号 HR 不动（无尾空白）");
+assert.strictEqual(
+  strictListSyntax("```\n* x\n```\n* y"),
+  "```\n* x\n```\n\\* y",
+  "围栏内不动、围栏外转义",
+);
+assert.strictEqual(strictListSyntax("a\n\n*b"), "a\n\n\\*b", "块间空行后同样转义");
+assert.strictEqual(strictListSyntax("> * x"), "> \\* x", "块引用前缀后同样转义");
+assert.strictEqual(strictListSyntax("> > 1) x"), "> > 1\\) x", "嵌套块引用前缀后同样转义");
+assert.strictEqual(strictListSyntax("\t* x"), "\t* x", "tab 缩进是代码块不转义");
+assert.strictEqual(strictListSyntax("\t1) x"), "\t1) x", "tab 缩进是代码块不转义（有序）");
+assert.strictEqual(strictListSyntax("> - x"), "> - x", "块引用内合法无序列表不动");
+
+// ---- composerGapAlign：渲染行数 = 源文行数（真实管线）----
+import { unified } from "unified";
+import remarkParse from "remark-parse";
+import remarkGfm from "remark-gfm";
+import remarkRehype from "remark-rehype";
+
+const processor = unified().use(remarkParse).use(remarkGfm).use(remarkRehype);
+
+/** 复刻 Composer 压平（块塌缩行内；code/table 用源切片）；与插件组合后行数必等。 */
+function flatten(content, node) {
+  if (node.type === "text") return node.value;
+  if (node.type === "element" && (node.tagName === "code" || node.tagName === "table")) {
+    const p = node.position;
+    return p ? content.slice(p.start.offset, p.end.offset) : "";
+  }
+  return (node.children ?? []).map((c) => flatten(content, c)).join("");
+}
+
+const CASES = [
+  "para1\n\npara2",
+  "para1\n\n\npara2",
+  "- a\n\npara2",
+  "- a\n- b",
+  "# H\n\npara",
+  "para1\npara2",
+  "- a\n  - b\n\npara",
+  "```\nx\ny\n```\n\npara",
+  "> q1\n> q2\n\npara",
+  "\n\npara", // 开头空行
+  "para\n\n", // 结尾空行
+  "* em\n\npara", // 转义后按正文
+  "1) x\n\npara", // 转义后按正文
+  "> * x\n\npara", // 块引用内嵌转义
+  "\t* x\n\npara", // tab 缩进代码块
+  "| a | b |\n|---|---|\n| c | d |", // 表格（分隔行可见）
+  "para\n\n| a | b |\n|---|---|\n| c | d |\n\npara2", // 表格夹在段落间（周边空行）
+];
+for (const src of CASES) {
+  const mdContent = strictListSyntax(src); // 与 Composer 相同的流水线
+  const hast = processor.runSync(processor.parse(mdContent));
+  composerGapAlign(mdContent)(hast);
+  const rendered = flatten(mdContent, hast);
+  assert.strictEqual(
+    rendered.split("\n").length,
+    src.split("\n").length,
+    `行数必须一致: ${JSON.stringify(src)} → ${JSON.stringify(rendered)}`,
+  );
+}
 console.log("composer-md check OK");
