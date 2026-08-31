@@ -96,8 +96,8 @@ let attachmentSeq = 0;
  * 对齐前提：等宽字体（--pinel-font-family），仅颜色/字重/斜体/背景等不改变
  * 字形宽度的样式；markdown 语法字符（**、#、- 等）以同宽标记符/样式替换。
  * 列表标记按 node.position 从原文切出（无序 -、*、+ → •，有序 1. /3) 原样，
- * 裸标记 "1." 同样灰显标记，行首缩进原样保留，宽度忠实）；表格分隔符不渲染、
- * 图片 🖼 占位。渲染输入对裸标记行补零宽字符（空列表项可打断段落解析）。
+ * 裸标记 "1." 同样灰显标记，行首缩进原样保留，宽度忠实）；表格整段源码原文
+ * 渲染（分隔行可见）、图片 🖼 占位。渲染输入对裸标记行补零宽字符（空列表项可打断段落解析）。
  * 复制/发送仍是 textarea 的原始 markdown 源码（本层纯视觉，aria-hidden）。
  */
 function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObject<HTMLDivElement | null> }) {

@@ -105,8 +105,9 @@ function gapBetween(content: string, a: any, b: any): string {
 
 /**
  * rehype 插件：让渲染层行数与 textarea 原文严格一致。
- * 1) 剔除所有空白纯文本子（remark-rehype 的合成 "\n" 分隔符——单个换行
- *    只能让下一块另起一行，源文的 N 个空行会塌缩成 0）；
+ * 1) 剔除含换行的空白纯文本子（remark-rehype 的合成 "\n" 分隔符——单个换行
+ *    只能让下一块另起一行，源文的 N 个空行会塌缩成 0）；纯空格文本是行内
+ *    空格（如 **a** **b** 的元素间空格）必须保留；
  * 2) 相邻块元素之间注入 gapBetween 源间隙（含精确空行数）；
  * 3) 根级首尾：源文以空行开头/结尾时补足前缀/后缀（光标停在首尾空行不飘）。
  */
@@ -114,7 +115,7 @@ export function composerGapAlign(content: string) {
   return (tree: any): void => {
     const fix = (node: any): void => {
       const children: any[] = node.children ?? [];
-      const kids = children.filter((c: any) => !(c.type === "text" && /^[\n ]*$/.test(c.value)));
+      const kids = children.filter((c: any) => !(c.type === "text" && /^[\n ]*\n[\n ]*$/.test(c.value)));
       const out: any[] = [];
       for (const c of kids) {
         const prev = out[out.length - 1];
@@ -137,7 +138,9 @@ export function composerGapAlign(content: string) {
       if (node.type === "root" && out.length > 0 && GAP_BLOCKS.has(out[0].tagName)) {
         const s = out[0]?.position?.start?.offset;
         if (typeof s === "number" && s > 0 && /^[\n ]+$/.test(content.slice(0, s))) {
-          out.unshift({ type: "text", value: content.slice(0, s) });
+          // 前缀去尾部空格/tab：文档首行缩进列表（"  - a"）时 sliceLiMarker
+          // 会重发行首缩进，双计成 "    • a"；保留换行（前导空行仍渲染）
+          out.unshift({ type: "text", value: content.slice(0, s).replace(/[ \t]+$/, "") });
         }
         const last = out[out.length - 1];
         const e = last?.position?.end?.offset;

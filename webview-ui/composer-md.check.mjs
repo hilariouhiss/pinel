@@ -154,4 +154,9 @@ const exact = (content) => {
 assert.strictEqual(exact("- a\n  - b"), "• a\n  • b");
 assert.strictEqual(exact("- a\n  - b\n  - c"), "• a\n  • b\n  • c");
 assert.strictEqual(exact("para\n\n- a"), "para\n\n• a");
+// 含换行的空白纯文本才是合成分隔符；纯空格（行内元素间空格）必须保留
+assert.strictEqual(exact("**a** **b**"), "a b", "行内元素间空格不删");
+assert.strictEqual(exact("x `a` `b` y"), "x `a` `b` y", "行内代码间空格不删");
+// 文档首行缩进列表：前缀去尾空白，缩进只由 sliceLiMarker 出一份
+assert.strictEqual(exact("  - a"), "  • a", "文档首行缩进列表不双计");
 console.log("composer-md check OK");
