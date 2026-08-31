@@ -3148,12 +3148,15 @@ body {
   color: var(--vscode-textCodeBlock-foreground);
 }
 
-/* -------------------------------------------- 滚动条：无箭头 + 空闲自动隐藏 */
+/* ------------------------------------------------------------ 滚动条：无箭头 + 空闲自动隐藏 */
 /* 全 webview 强制 -webkit 自定义滚动条路径：
    - VS Code 在 @layer vscode-default 注入 scrollbar-color（标准路径，Windows 上
      渲染原生经典滚动条——带上下/左右箭头，且 CSS 无法隐藏或淡出）；
    - 非 layer 的 auto 复位压过注入规则；复位后 VS Code 注入的 width/height 10px
-     与主题化 thumb 颜色（同为 @layer 规则）继续生效，只多不少。 */
+     与主题化 thumb 颜色（同为 @layer 规则）继续生效，只多不少。
+   空闲隐藏用 background-color 直切显隐：Blink 滚动条绘制器忽略 opacity/transition
+   （计算样式会报，渲染不生效），背景色透明化是唯一可渲染的隐藏手段；透明 thumb
+   几何不变，仍可命中拖拽。 */
 * {
   scrollbar-color: auto;
 }
@@ -3163,16 +3166,12 @@ body {
   display: none;
 }
 
-/* 空闲自动隐藏：html 无 .pinel-scrolling（1s 内无滚动事件）时滑块淡出；
-   三大常驻滚动区 hover 时保持可见，方便直接抓取滚动条 */
-::-webkit-scrollbar-thumb {
-  transition: opacity 0.3s ease;
-}
-
+/* 空闲自动隐藏：html 无 .pinel-scrolling（1s 内无滚动事件）时滑块透明；
+   三大常驻滚动区 hover 时恢复滑块颜色，方便直接抓取滚动条 */
 html:not(.pinel-scrolling) ::-webkit-scrollbar-thumb {
-  opacity: 0;
+  background-color: transparent;
 }
 
 html:not(.pinel-scrolling) :is(.pinel-scroll, .todopanel-body, .composer-input):hover::-webkit-scrollbar-thumb {
-  opacity: 1;
+  background-color: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4));
 }
