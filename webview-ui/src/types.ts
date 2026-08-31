@@ -244,20 +244,6 @@ export interface SessionEnv {
   git: GitStatus | null;
 }
 
-export interface PinelTreeNode {
-  entryId: string;
-  role: "user" | "assistant";
-  text: string;
-  timestamp?: number;
-}
-
-/** pinel.tree 载荷（插件推送 → 宿主 pinel-payload 解析 → 广播）。 */
-export interface PinelTree {
-  v: 1;
-  nodes: PinelTreeNode[];
-  leafId?: string;
-}
-
 /** Pinel 插件（npm 包）安装态。 */
 export type PinelPluginState = "installed" | "offer" | "removed";
 
@@ -290,16 +276,6 @@ export interface PinelMcpServer {
 export interface PinelMcp {
   v: 1;
   servers: PinelMcpServer[];
-}
-
-/** pinel.state 快照（插件推送 → 宿主防御解析 → 广播）。 */
-export interface PinelState {
-  v: 1;
-  messages: { user: number; assistant: number; toolResult: number; total: number };
-  model?: string;
-  thinkingLevel?: string;
-  leafId?: string;
-  sessionFile?: string;
 }
 
 /** pinel.workflow 载荷（rpiv-workflow 生命周期推送；宿主防御解析后广播）。 */
@@ -345,7 +321,7 @@ export interface PinelPrompt {
 }
 
 export type HostMessage =
-  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelState: PinelState | null; pinelTree: PinelTree | null; pinelWorkflow: PinelWorkflow | null; pinelPrompt: PinelPrompt | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; pinelMcp: PinelMcp | null }
+  | { type: "snapshot"; messages: ChatMessage[]; status: ChatStatus; pendingUi: UiRequest[]; todos: TodoTask[]; commands: SlashCommand[]; questionnaire: QuestionnaireView | null; sessionTitle: string | undefined; sessionStats: SessionStats | null; sessionEnv: SessionEnv; pinelWorkflow: PinelWorkflow | null; pinelPrompt: PinelPrompt | null; pinelPluginState: PinelPluginState | null; ponytailStatus: PonytailStatus | null; pinelMcp: PinelMcp | null }
   | { type: "stream"; blocks: StreamBlock[] }
   | { type: "message"; message: ChatMessage }
   | { type: "bash"; message: ChatMessage }
@@ -373,8 +349,6 @@ export type HostMessage =
   | { type: "forkMessages"; messages: ForkMessageItem[] }
   | { type: "extensionList"; items: ExtensionItem[]; projectAvailable: boolean }
   | { type: "catalogState"; entries: CatalogItem[] }
-  | { type: "pinelState"; state: PinelState }
-  | { type: "pinelTree"; tree: PinelTree }
   | { type: "pinelWorkflow"; workflow: PinelWorkflow | null }
   | { type: "pinelPrompt"; prompt: PinelPrompt | null }
   | { type: "pinelPluginState"; state: PinelPluginState }

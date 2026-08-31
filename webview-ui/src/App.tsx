@@ -364,9 +364,6 @@ export default function App() {
       case "sessionStats":
         setSessionStats(msg.stats);
         break;
-      case "pinelState":
-        // 消息计数指标已被 ponytail 状态替代，帧不再渲染；宿主管线/测试钩子保留
-        break;
       case "ponytailStatus":
         setPonytailStatus(msg.status);
         break;
@@ -378,10 +375,6 @@ export default function App() {
         break;
       case "pinelPrompt":
         setPinelPrompt(msg.prompt);
-        break;
-      case "pinelTree":
-        // 会话树弹层已移除（双击 Esc 入口废除，与 Fork 弹层功能重叠）；
-        // 帧不再消费——宿主 pinel.tree 推送管线保留（插件集成面 + 测试钩子）
         break;
       case "pinelPluginState":
         setPinelPluginState(msg.state);
