@@ -26,8 +26,9 @@
  * }
  * 预览统一截断 PREVIEW_CHARS；推送按 JSON 去重（组成不变不重发）。
  */
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const PREVIEW_CHARS = 2000;
 
@@ -48,6 +49,70 @@ function isUnderDir(filePath: string, dir: string): boolean {
 
 function preview(text: string): string {
 	return text.length > PREVIEW_CHARS ? `${text.slice(0, PREVIEW_CHARS)}…` : text;
+}
+
+export interface PromptCompositionFile {
+  level: "user" | "project";
+  name: string;
+  path: string;
+  chars: number;
+  preview: string;
+}
+
+/** 每目录上下文文件候选（对齐 pi loadContextFileFromDir：override 优先，大小写变体）。 */
+const CONTEXT_CANDIDATES = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"] as const;
+
+/** 读单个目录的上下文文件（候选序命中即停；无/读失败 → null）。 */
+function loadContextFromDir(dir: string): { path: string; content: string } | null {
+  for (const name of CONTEXT_CANDIDATES) {
+    const filePath = join(dir, name);
+    try {
+      if (!existsSync(filePath) || !statSync(filePath).isFile()) continue;
+      return { path: filePath, content: readFileSync(filePath, "utf8") };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+/**
+ * 启动帧上下文文件扫描（session_start 时 pi 尚未通过 API 暴露 contextFiles，
+ * 按 pi 契约自行解析；首轮权威全帧到达后覆盖，此处仅影响首条消息前的展示窗口）。
+ * 遍历：全局 agentDir + cwd 逐级向上至根（含 cwd 自身）。
+ */
+export function scanStartupContextFiles(cwd: string): PromptCompositionFile[] {
+  const files: PromptCompositionFile[] = [];
+  const seen = new Set<string>();
+  const push = (filePath: string, content: string) => {
+    const norm = filePath.replace(/\\/g, "/");
+    if (seen.has(norm)) return;
+    seen.add(norm);
+    files.push({
+      level: isUnderDir(filePath, agentDir()) ? "user" : "project",
+      name: norm.split("/").pop() ?? filePath,
+      path: filePath,
+      chars: content.length,
+      preview: preview(content),
+    });
+  };
+  const global = loadContextFromDir(agentDir());
+  if (global) push(global.path, global.content);
+  let dir = resolve(cwd);
+  for (;;) {
+    const found = loadContextFromDir(dir);
+    if (found) push(found.path, found.content);
+    const parent = join(dir, "..");
+    const next = resolve(parent);
+    if (next === dir) break;
+    dir = next;
+  }
+  return files;
+}
+
+/** 启动帧（v:1；startup 标记 + files；system/counts/finalChars 缺省，宿主解析器接受）。 */
+export function buildStartupPayload(files: PromptCompositionFile[]): Record<string, unknown> {
+  return { v: 1, startup: true, files };
 }
 
 interface Section {
@@ -136,6 +201,16 @@ export function registerPromptComposition(pi: PromptCompositionPi): void {
 	let options: PromptCompositionOptions | null = null;
 	let baseText: string | undefined;
 	let lastJson: string | null = null;
+
+	pi.on("session_start", (_ev: any, ctx: any) => {
+		if (ctx?.mode !== "rpc") return;
+		const cwd = typeof ctx.cwd === "string" ? ctx.cwd : "";
+		if (!cwd) return;
+		const files = scanStartupContextFiles(cwd);
+		const json = JSON.stringify(buildStartupPayload(files));
+		lastJson = json; // 占位去重：全帧与启动帧 JSON 不同
+		ctx.ui?.setStatus?.("pinel.prompt", json);
+	});
 
 	pi.on("before_agent_start", (ev: any, ctx: any) => {
 		if (ctx?.mode !== "rpc") return;
