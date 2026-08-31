@@ -167,6 +167,15 @@ function tmpAgent(overrides: { agentDir?: string; repoFiles?: Record<string, str
   return { base, agentDir, repo };
 }
 
+/**
+ * 仅保留 fixture 内的扫描结果：walk-up 会越过 tmp base 扫到真实祖先
+ * （Windows 下 tmpdir 位于用户目录内，用户根的 stray AGENTS.md 会污染断言）。
+ */
+function withinBase(base: string, files: { path: string }[]) {
+  const b = base.replace(/\\/g, "/");
+  return files.filter((f) => f.path.replace(/\\/g, "/").startsWith(b));
+}
+
 describe("scanStartupContextFiles", () => {
   const ORIG_ENV = process.env.PI_CODING_AGENT_DIR;
   afterEach(() => {
@@ -177,7 +186,7 @@ describe("scanStartupContextFiles", () => {
   it("cwd 的 AGENTS.md + 全局 agentDir AGENTS.md：全局在前，level 正确", () => {
     const t = tmpAgent({ globalFile: "AGENTS.md", repoFiles: { "AGENTS.md": "PROJ" } });
     process.env.PI_CODING_AGENT_DIR = t.agentDir;
-    const files = scanStartupContextFiles(t.repo);
+    const files = withinBase(t.base, scanStartupContextFiles(t.repo));
     expect(files.map((f) => [f.level, f.name])).toEqual([
       ["user", "AGENTS.md"],
       ["project", "AGENTS.md"],
@@ -190,13 +199,14 @@ describe("scanStartupContextFiles", () => {
   it("AGENTS.override.md 优先于 AGENTS.md；CLAUDE.md 作为兜底候选", () => {
     const t = tmpAgent({ repoFiles: { "AGENTS.md": "A", "AGENTS.override.md": "OVR" } });
     process.env.PI_CODING_AGENT_DIR = t.agentDir;
-    const files = scanStartupContextFiles(t.repo);
+    const files = withinBase(t.base, scanStartupContextFiles(t.repo));
     expect(files.map((f) => f.name)).toEqual(["AGENTS.override.md"]);
     rmSync(t.base, { recursive: true, force: true });
 
     const t2 = tmpAgent({ repoFiles: { "CLAUDE.md": "C" } });
     process.env.PI_CODING_AGENT_DIR = t2.agentDir;
-    expect(scanStartupContextFiles(t2.repo).map((f) => f.name)).toEqual(["CLAUDE.md"]);
+    const files2 = withinBase(t2.base, scanStartupContextFiles(t2.repo));
+    expect(files2.map((f) => f.name)).toEqual(["CLAUDE.md"]);
     rmSync(t2.base, { recursive: true, force: true });
   });
 
@@ -205,7 +215,7 @@ describe("scanStartupContextFiles", () => {
       repoFiles: { "AGENTS.md": "PARENT", "sub/AGENTS.md": "CHILD" },
     });
     process.env.PI_CODING_AGENT_DIR = t.agentDir;
-    const files = scanStartupContextFiles(join(t.repo, "sub"));
+    const files = withinBase(t.base, scanStartupContextFiles(join(t.repo, "sub")));
     expect(files.map((f) => f.name)).toEqual(["AGENTS.md", "AGENTS.md"]);
     expect(files[0].preview).toBe("CHILD"); // 就近在前
     rmSync(t.base, { recursive: true, force: true });
@@ -214,7 +224,7 @@ describe("scanStartupContextFiles", () => {
   it("全缺 → 空数组；buildStartupPayload 形状 {v:1,startup:true,files}", () => {
     const t = tmpAgent({});
     process.env.PI_CODING_AGENT_DIR = t.agentDir;
-    const files = scanStartupContextFiles(t.repo);
+    const files = withinBase(t.base, scanStartupContextFiles(t.repo));
     expect(files).toEqual([]);
     expect(buildStartupPayload(files)).toEqual({ v: 1, startup: true, files: [] });
     rmSync(t.base, { recursive: true, force: true });
