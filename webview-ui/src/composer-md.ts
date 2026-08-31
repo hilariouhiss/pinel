@@ -92,9 +92,9 @@ export function strictListSyntax(content: string): string {
     .join("\n");
 }
 
-/** 间隙注入的「块」集合（li 同块：每个列表项都始于新行；thead/tbody/tr：表格
- *  分隔行与数据行各自成行）。 */
-const GAP_BLOCKS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "pre", "blockquote", "table", "hr", "li", "thead", "tbody", "tr"]);
+/** 间隙注入的「块」集合（li 同块：每个列表项都始于新行；表格整表按源码切片
+ *  渲染、thead/tbody/tr 子层注入不可见，不在此列）。 */
+const GAP_BLOCKS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "pre", "blockquote", "table", "hr", "li"]);
 
 /** 两相邻块间的源文精确切片（含全部空行）；position 缺失退回单个换行。 */
 function gapBetween(content: string, a: any, b: any): string {
@@ -122,7 +122,15 @@ export function composerGapAlign(content: string) {
         // 源换行同样注入——否则嵌套项与父项内容坍缩到同一行）；空白文本
         // 已被上方过滤，不会双注入
         if (prev && GAP_BLOCKS.has(c.tagName) && (prev.type === "text" || GAP_BLOCKS.has(prev.tagName))) {
-          out.push({ type: "text", value: gapBetween(content, prev, c) });
+          let gap = gapBetween(content, prev, c);
+          // 列表容器/项自带的 sliceLiMarker 已含行首缩进：间隙只保留换行，
+          // 否则嵌套列表缩进双计（"  - b" 渲染成 "    • b"，光标错位）。
+          // 块引用嵌套（间隙尾段含 ">"）不在本修正范围（既有偏差）。
+          if ((c.tagName === "ul" || c.tagName === "ol" || c.tagName === "li") &&
+              !gap.slice(gap.lastIndexOf("\n") + 1).includes(">")) {
+            gap = gap.replace(/[ \t]+$/, "");
+          }
+          out.push({ type: "text", value: gap });
         }
         out.push(c);
       }

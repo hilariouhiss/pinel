@@ -127,4 +127,31 @@ for (const src of CASES) {
     `行数必须一致: ${JSON.stringify(src)} → ${JSON.stringify(rendered)}`,
   );
 }
+
+// ---- 精确渲染断言（字符级）：嵌套列表缩进不得双计 ----
+/** 复刻 Composer 渲染（li 前置 sliceLiMarker；code/table 用源切片）。 */
+const exact = (content) => {
+  const mdContent = strictListSyntax(content);
+  const hast = processor.runSync(processor.parse(mdContent));
+  composerGapAlign(mdContent)(hast);
+  const render = (node) => {
+    if (node.type === "text") return node.value;
+    if (node.type === "element") {
+      if (node.tagName === "code" || node.tagName === "table") {
+        const p = node.position;
+        return p ? mdContent.slice(p.start.offset, p.end.offset) : "";
+      }
+      if (node.tagName === "li") {
+        return sliceLiMarker(mdContent, node.position) + (node.children ?? []).map(render).join("");
+      }
+      return (node.children ?? []).map(render).join("");
+    }
+    return (node.children ?? []).map(render).join("");
+  };
+  return render(hast);
+};
+// 间隙 "\n  " 携带缩进 + sliceLiMarker 再含缩进 = 双计；修正后缩进只保留一份
+assert.strictEqual(exact("- a\n  - b"), "• a\n  • b");
+assert.strictEqual(exact("- a\n  - b\n  - c"), "• a\n  • b\n  • c");
+assert.strictEqual(exact("para\n\n- a"), "para\n\n• a");
 console.log("composer-md check OK");
