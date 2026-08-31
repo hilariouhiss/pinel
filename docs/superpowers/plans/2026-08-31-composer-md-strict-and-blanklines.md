@@ -4,7 +4,7 @@
 
 **Goal:** 输入框 WYSIWYG 渲染层严格按 markdown 语法渲染（有序 `数字. `、无序 `- `，其余按正文），并修复空行不显示与光标错位。
 
-**Architecture:** 渲染库结论——**react-markdown v10 + remark-gfm 已是输入框与消息渲染器**（Composer.tsx:17-18、Markdown.tsx:2-3，package.json 既有依赖），无需换库；任何现成库都不提供「与 textarea 等宽字体逐行像素对齐」的 WYSIWYG 层（这是本项目的定制约束），问题全部出在自定义压平层：① 块间合成换行只有一个 `\n`，源文空行全部塌缩（remark-rehype 探针实证）；② 非严格列表标记（`* `、`+ `、`1) `）被 CommonMark 解析成列表。修复：新增纯函数 `strictListSyntax`（逐行转义非严格标记为字面文本，围栏感知）+ rehype 插件 `composerGapAlign`（剔除合成换行、按节点 position 在块间注入**源文精确间隙**、根级补首尾空白），渲染行数与 textarea 原文严格一致 → 空行可见、光标对齐。
+**Architecture:** 渲染库结论——**react-markdown v10 + remark-gfm 已是输入框与消息渲染器**（Composer.tsx:17-18、Markdown.tsx:2-3，package.json 既有依赖），无需换库；任何现成库都不提供「与 textarea 等宽字体逐行像素对齐」的 WYSIWYG 层（这是本项目的定制约束），问题全部出在自定义压平层：① 块间合成换行只有一个 `\n`，源文空行全部塌缩（remark-rehype 探针实证）；② 非严格列表标记（`* `、`+ `、`1) `）被 CommonMark 解析成列表。修复：新增纯函数 `strictListSyntax`（逐行转义非严格标记为字面文本，围栏感知、块引用前缀感知、仅空格缩进） + rehype 插件 `composerGapAlign`（剔除合成换行、按节点 position 在块间注入**源文精确间隙**、根级补首尾空白），渲染行数与 textarea 原文严格一致 → 空行可见、光标对齐。表格改为**按源码原文渲染**（table 节点位置整段切片，管道与分隔行可见、行数精确），块引用内嵌非严格标记（`> * x`）同样转义，tab 缩进行按 CommonMark 语义视为缩进代码块不转义（原正则 `\s` 会误吞 tab 并污染代码块）。
 
 **Tech Stack:** react-markdown v10 / remark-gfm（既有）、rehype 插件、纯函数 + `node --experimental-strip-types` 自检（沿仓库 check 模式）。零新依赖。
 
@@ -17,15 +17,19 @@
 3. 非 markdown 块按正文渲染（含被转义的非严格列表行，原文可见）。
 4. 有序列表仅 `数字. `（`1) ` 等一律按正文）；无序列表仅 `- `（`* `、`+ ` 按正文）。
 5. 空行修复：任意数量的空行、块间空行、列表项间换行、首尾空行，渲染层行数与 textarea 原文一致；光标/选区与显示文本对齐。
+6. GFM 表格按源码原文渲染（管道/分隔行/多行单元格字面可见，行数精确）。
+7. 块引用内嵌的非严格列表标记（`> * x`、`> > 1) x`）同样转义为正文。
+8. tab 缩进行按 CommonMark 语义视为缩进代码块，不被误转义（转义正则仅匹配空格缩进）。
 
 ## Global Constraints
 
 - 等宽对齐前提不变：渲染层仅改变颜色/字重/背景，不改变字形宽度；markdown 语法字符以同宽标记符替换（`- `→`• ` 等宽）。转义新增的 `\` 在渲染输出中被 remark 消费，不占宽度（探针验证：`\* x` 渲染为 `* x`）。
 - 仅作用于渲染层输入（`mdContent` 流水线）；发送/复制仍是 textarea 原始源码（现状契约，`supportEmptyListItems` 注释同）。
 - 围栏代码块内（``` / ~~~）不得转义/修改（字面文本契约）。
-- 缩进 ≤3 空格的行首才是列表标记候选（CommonMark 语义）；≥4 空格为缩进代码块，不动。
+- 缩进 ≤3 空格的列表标记才是候选（CommonMark 语义；tab = 4 列，按缩进代码块处理不转义——旧 `\s` 会把 tab 误判为缩进而污染代码块）；块引用前缀（`> `、`> > `）后同样转义。
+- 表格按源码原文渲染：table 节点 position 整段切片（管道、分隔行、多行单元格全部字面可见），thead/tbody/tr 参与间隙注入；td/th/tr/thead/tbody 组件条目删除（YAGNI）。
 - 零新依赖；中文注释；`npm run compile` / `npm run package` 全绿；composer-md.check.mjs 既有用例保持全绿。
-- 已知不修（挂账）：GFM 表格分隔行不渲染（行数偏差，既有注释承认）；块引用内嵌的非严格列表标记（`> * x`）不转义；tab 缩进列表。
+- 无挂账项（表格、块引用内嵌标记、tab 缩进均在本计划内修复）。
 
 ## File Structure
 
@@ -52,28 +56,30 @@
 ```ts
 /** 严格列表语法：仅 "数字. " 有序与 "- " 无序是列表；"* "、"+"、"N) " 逐行转义为
  *  字面文本（渲染输出与原文等宽——反斜杠被 remark 消费不占位）。
- *  围栏代码块内不动（字面契约）；缩进 ≤3 才是列表候选（≥4 是缩进代码块）。 */
+ *  围栏代码块内不动（字面契约）；仅空格缩进 ≤3 是列表候选（tab=4 列，按
+ *  缩进代码块处理不转义）；块引用前缀（> / > > ）后同样转义。 */
 export function strictListSyntax(content: string): string {
   let fence: string | null = null;
   return content
     .split("\n")
     .map((line) => {
-      const fm = line.match(/^(\s{0,3})(`{3,}|~{3,})/);
+      const fm = line.match(/^([ ]{0,3})(`{3,}|~{3,})/);
       if (fm) {
         fence = fence === null ? fm[2][0] : fence === fm[2][0] ? null : fence;
         return line;
       }
       if (fence !== null) return line;
-      // 组1=缩进，组2=非严格标记（* / + / 数字+闭括号），后随空白或行尾
-      return line.replace(/^(\s{0,3})([*+]|\d+\))(?=\s|$)/, (_m, indent: string, marker: string) => {
-        return indent + marker.replace(/[*+)]/g, (c) => `\\${c}`);
+      // 组1=块引用前缀，组2=空格缩进，组3=非严格标记（* / + / 数字+闭括号），后随空白或行尾
+      return line.replace(/^((?:[ ]{0,3}> )*)([ ]{0,3})([*+]|\d+\))(?=\s|$)/, (_m, prefix: string, indent: string, marker: string) => {
+        return prefix + indent + marker.replace(/[*+)]/g, (c) => `\\${c}`);
       });
     })
     .join("\n");
 }
 
-/** 间隙注入的「块」集合（li 同块：每个列表项都始于新行）。 */
-const GAP_BLOCKS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "pre", "blockquote", "table", "hr", "li"]);
+/** 间隙注入的「块」集合（li 同块：每个列表项都始于新行；thead/tbody/tr：表格
+ *  分隔行与数据行各自成行）。 */
+const GAP_BLOCKS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "pre", "blockquote", "table", "hr", "li", "thead", "tbody", "tr"]);
 
 /** 两相邻块间的源文精确切片（含全部空行）；position 缺失退回单个换行。 */
 function gapBetween(content: string, a: any, b: any): string {
@@ -166,6 +172,11 @@ assert.strictEqual(
   "围栏内不动、围栏外转义",
 );
 assert.strictEqual(strictListSyntax("a\n\n*b"), "a\n\n\\*b", "块间空行后同样转义");
+assert.strictEqual(strictListSyntax("> * x"), "> \\* x", "块引用前缀后同样转义");
+assert.strictEqual(strictListSyntax("> > 1) x"), "> > 1\\) x", "嵌套块引用前缀后同样转义");
+assert.strictEqual(strictListSyntax("\t* x"), "\t* x", "tab 缩进是代码块不转义");
+assert.strictEqual(strictListSyntax("\t1) x"), "\t1) x", "tab 缩进是代码块不转义（有序）");
+assert.strictEqual(strictListSyntax("> - x"), "> - x", "块引用内合法无序列表不动");
 ```
 
 - [ ] **Step 2: 追加行数对齐探针（真实 remark-gfm 管线，复刻 Composer 压平规则）**
@@ -203,6 +214,10 @@ const CASES = [
   "para\n\n", // 结尾空行
   "* em\n\npara", // 转义后按正文
   "1) x\n\npara", // 转义后按正文
+  "> * x\n\npara", // 块引用内嵌转义
+  "\t* x\n\npara", // tab 缩进代码块
+  "| a | b |\n|---|---|\n| c | d |", // 表格（分隔行可见）
+  "para\n\n| a | b |\n|---|---|\n| c | d |\n\npara2", // 表格夹在段落间（周边空行）
 ];
 for (const src of CASES) {
   const mdContent = strictListSyntax(src); // 与 Composer 相同的流水线
@@ -220,7 +235,7 @@ for (const src of CASES) {
 - [ ] **Step 3: 跑自检**
 
 Run: `cd vscode && npm run check:composer-md`
-Expected: `composer-md check OK`（旧用例 + 12 条转义 + 13 条行数对齐全绿）。
+Expected: `composer-md check OK`（旧用例 + 18 条转义 + 17 条行数对齐全绿）。
 
 - [ ] **Step 4: Commit**
 
@@ -262,7 +277,7 @@ import { composerGapAlign, sliceLiMarker, strictListSyntax, supportEmptyListItem
         rehypePlugins={[[composerGapAlign, mdContent]]}
 ```
 
-- [ ] **Step 3: 移除已冗余的 stripLeadingNewline 调用**
+- [ ] **Step 3: 移除已冗余的 stripLeadingNewline 调用；表格改源码原文渲染**
 
 ul/ol/li/blockquote 组件改为直接透传 children（插件已剔除合成换行）：
 
@@ -279,6 +294,23 @@ ul/ol/li/blockquote 组件改为直接透传 children（插件已剔除合成换
             <span className="composer-md-quote">{children}</span>
           ),
 ```
+
+表格整段源码切片（管道/分隔行字面可见，行数精确对齐；与 code 块同机制）：
+
+```tsx
+          table: ({ node }) => {
+            // 表格按源码原文渲染：单元格文本在 mdast 中不含管道，逐格渲染
+            // 必然丢管道/分隔行 → 整段按 position 切片（多行单元格亦字面可见）
+            const pos = node?.position;
+            const raw =
+              pos?.start?.offset != null && pos?.end?.offset != null
+                ? mdContent.slice(pos.start.offset, pos.end.offset)
+                : "";
+            return <span>{raw}</span>;
+          },
+```
+
+删除 td/th/tr/thead/tbody 组件条目（table 不再渲染子节点）。
 
 删除 `import { ..., stripLeadingNewline } ...` 中的 `stripLeadingNewline`（composer-md.ts 保留导出——check 脚本仍在测它）。
 
@@ -312,7 +344,7 @@ Expected: 全部 check（含 composer-md 探针）+ lint + esbuild 绿。
 
 - [ ] **Step 2: 浏览器级渲染抽查（headless Edge，临时页）**
 
-用 `.tmp-composer-verify/check.html`：内嵌 webview 打包产物不可行（React 应用），改抽查 rehype 管线输出——把 `composerGapAlign` 的等价 JS 内联进页面脚本对 13 个 CASES 行数断言（与 Task 2 探针同源）；再加一个纯 DOM 布局断言：等宽字体下 `div(white-space:pre-wrap)` 与 `textarea` 同文本的 clientHeight 相等（空行布局的浏览器级实证）。
+用 `.tmp-composer-verify/check.html`：内嵌 webview 打包产物不可行（React 应用），改抽查 rehype 管线输出——把 `composerGapAlign` 的等价 JS 内联进页面脚本对 17 个 CASES 行数断言（与 Task 2 探针同源）；再加一个纯 DOM 布局断言：等宽字体下 `div(white-space:pre-wrap)` 与 `textarea` 同文本的 clientHeight 相等（空行布局的浏览器级实证）。
 Run: `"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" --headless=new --no-first-run --dump-dom --virtual-time-budget=8000 --user-data-dir="<tmp profile>" "file:///C:/source_code/Other/pinel/.tmp-composer-verify/check.html" 2>/dev/null | grep -o "RESULT.*"`
 Expected: `RESULT all-ok`（含行数与高度断言）。验证后删除临时目录。
 
@@ -322,6 +354,9 @@ Expected: `RESULT all-ok`（含行数与高度断言）。验证后删除临时�
 1. 输入 `para1`、空行、`para2` → 空行可见；光标在 para2 行首与显示文本对齐；Ctrl+G 打开编辑器对比完全一致。
 2. 输入 `* item`、`+ item`、`1) item` → 按原文正文显示（星号/加号/右括号可见，无列表样式）。
 3. 输入 `- item`、`1. item` → 列表标记灰显、内容正常；连续多行列表无多余/缺失空行。
+3b. 输入 `> * x`、`> > 1) x` → 块引用内按正文显示（星号/括号可见，无列表样式）。
+3c. 输入 `| a | b |`+换行+`|---|---|`+换行+`| c | d |` → 三行原文可见（含分隔行），行数与 textarea 一致。
+3d. 输入 tab 开头的 `\t* x` → 按缩进代码块原文显示，反斜杠不泄漏。
 4. 空列表项（裸 `-` / `1.` 行）行为不变；围栏代码块内 `* x` 原样字面。
 5. 复制/发送内容仍是原始 markdown 源码。
 6. 粘贴多空行长文本：滚动、光标、选区位置与显示一致。
@@ -335,4 +370,4 @@ Expected: `RESULT all-ok`（含行数与高度断言）。验证后删除临时�
 - **Spec coverage:** 需求 1 → Architecture 结论 + Task 2 真实管线探针；需求 2/3/4 → Task 1 strictListSyntax + Task 3 接入；需求 5 → composerGapAlign + Task 2 行数断言 + Task 4 浏览器级高度断言与手动清单。全覆盖。
 - **Placeholder scan:** 无 TBD；全部步骤含可执行代码/命令。
 - **Type consistency:** `strictListSyntax(content: string): string`、`composerGapAlign(content: string): (tree) => void` 在 Task 1/2/3 一致；`GAP_BLOCKS` 含 li；gap 注入条件（双侧块）与 li 换行场景匹配（Task 2 CASES 覆盖 `- a\n- b` 与嵌套列表）。
-- **风险记录:** 转义依赖 remark 反斜杠消费（探针 `\* x`→`* x` 已证）；表格式分隔行与块引用内嵌标记不修（挂账，见 Global Constraints）；hast position 在 react-markdown 管线存在性由既有 `code`/`li` 切片代码实证（同管线同数据）。
+- **风险记录:** 转义依赖 remark 反斜杠消费（探针 `\* x`→`* x` 已证）；table 整段切片与 code 块同机制（position 在 react-markdown 管线存在性由既有 `code`/`li` 切片代码实证）；thead/tbody/tr 间隙注入覆盖表格分隔行（Task 2 表格用例覆盖夹段落场景）。
