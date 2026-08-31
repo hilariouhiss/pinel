@@ -74,3 +74,29 @@ export function parseTodoTasks(result: unknown): TodoTask[] | null {
   }
   return parsed;
 }
+
+/** 防御解析 details.nextId（会话内单调递增的任务计数器；clear 后归 1）。 */
+export function parseTodoNextId(result: unknown): number | null {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  const details = (result as Record<string, unknown>).details;
+  if (!details || typeof details !== "object") {
+    return null;
+  }
+  const nextId = (details as Record<string, unknown>).nextId;
+  return typeof nextId === "number" && Number.isFinite(nextId) && nextId >= 1 ? nextId : null;
+}
+
+/** 回合任务视图：只保留 id > 基线的新任务（上一回合任务即便在快照中也不回流）。 */
+export function selectRoundTasks(tasks: TodoTask[], baseline: number): TodoTask[] {
+  return tasks.filter((t) => t.id > baseline);
+}
+
+/**
+ * 回合基线解析：快照 nextId ≤ 基线 ⇒ 会话内发生 clear（计数器归 1，
+ * 后续新任务 id 从头计）⇒ 基线归零；否则保持（nextId 会话内单调）。
+ */
+export function resolveRoundBaseline(prev: number, nextId: number | null): number {
+  return nextId !== null && nextId <= prev ? 0 : prev;
+}
