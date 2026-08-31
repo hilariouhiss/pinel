@@ -14,8 +14,10 @@ pi install <本包路径或 npm 源>
 pi install git:github.com/obra/superpowers@v6.3.0   # 工作流按名引用这些技能
 pi install npm:@juicesharp/rpiv-pi   # 停靠提问的 lane（TUI 会话用；面板内问卷由 Pinel 原生渲染）
 
-> rpiv-workflow、@gotgenes/* 工具集与 rpiv-args/ask-user-question/todo/voice
-> 随本包依赖自动安装；rpiv-pi 需单独安装并在 settings.json packages 中加载。
+> rpiv-workflow 随本包依赖自动安装。推荐的配套插件（pi-subagents、pi-colgrep、
+> rpiv-ask-user-question、rpiv-todo 等 11 个）在 Pinel 面板
+> Extensions → Catalog → Recommended 一键安装；rpiv-pi 需单独安装并在
+> settings.json packages 中加载。
 
 
 ## 用法
