@@ -51,7 +51,7 @@ import {
   type PinelPluginState,
 } from "./pinel-install";
 import { readGitStatus, type GitStatus } from "./git-status";
-import { parseTodoNextId, parseTodoTasks, selectRoundTasks, resolveRoundBaseline, type TodoTask } from "./todos";
+import { parseTodoNextId, parseTodoTasks, raiseRoundBaseline, selectRoundTasks, resolveRoundBaseline, type TodoTask } from "./todos";
 import { buildSubagentCard, applySubagentDetails, type SubagentCardInfo } from "./subagents";
 import { parseCommands } from "./commands";
 import { parseForkMessages } from "./fork-messages";
@@ -768,7 +768,7 @@ export class ChatController {
         // 基线 = 当前面板最大任务 id（清空前捕获）；本回合 todo 快照只显示
         // id > 基线的任务，旧回合任务即便在快照中也不回流
         if (!input.control) {
-          this.todoBaseline = this.todos.reduce((m, t) => Math.max(m, t.id), 0);
+          this.todoBaseline = raiseRoundBaseline(this.todoBaseline, this.todos);
           if (this.todos.length > 0) {
             this.todos = [];
             this.fire({ type: "todos", todos: [] });

@@ -1,5 +1,5 @@
 import * as assert from "assert";
-import { parseTodoNextId, parseTodoTasks, selectRoundTasks, resolveRoundBaseline } from "../chat/todos";
+import { parseTodoNextId, parseTodoTasks, raiseRoundBaseline, selectRoundTasks, resolveRoundBaseline } from "../chat/todos";
 
 suite("parseTodoTasks 单元测试", () => {
   test("create 快照：解析全量任务列表", () => {
@@ -116,5 +116,17 @@ suite("parseTodoNextId / selectRoundTasks / resolveRoundBaseline", () => {
     assert.strictEqual(resolveRoundBaseline(3, 1), 0, "clear 后归 1 → 基线归零");
     assert.strictEqual(resolveRoundBaseline(0, 1), 0, "首回合基线保持 0");
     assert.strictEqual(resolveRoundBaseline(3, null), 3, "nextId 缺失保持基线");
+  });
+
+  test("基线条高水位抬升：面板为空时沿用 prev，非空取 max", () => {
+    const tasks = [
+      { id: 1, subject: "a", status: "pending" as const },
+      { id: 6, subject: "b", status: "pending" as const },
+    ];
+    assert.strictEqual(raiseRoundBaseline(3, tasks), 6);
+    assert.strictEqual(raiseRoundBaseline(5, tasks), 6);
+    assert.strictEqual(raiseRoundBaseline(7, tasks), 7, "面板 max 小于 prev 时保持");
+    assert.strictEqual(raiseRoundBaseline(7, []), 7, "空面板保持 prev（安静回合防御）");
+    assert.strictEqual(raiseRoundBaseline(0, []), 0);
   });
 });

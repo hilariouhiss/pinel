@@ -100,3 +100,12 @@ export function selectRoundTasks(tasks: TodoTask[], baseline: number): TodoTask[
 export function resolveRoundBaseline(prev: number, nextId: number | null): number {
   return nextId !== null && nextId <= prev ? 0 : prev;
 }
+
+/**
+ * 回合基线抬升：基线随面板高水位单调不减（面板为空时沿用上一回合基线，
+ * 防「安静回合→下一回合旧任务回流一轮」；resolveRoundBaseline 仍负责观察
+ * 到 clear 时归零）。
+ */
+export function raiseRoundBaseline(prev: number, tasks: TodoTask[]): number {
+  return Math.max(prev, tasks.reduce((m, t) => Math.max(m, t.id), 0));
+}
