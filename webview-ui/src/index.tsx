@@ -33,3 +33,20 @@ if (container) {
     });
   }
 }
+
+// 滚动条空闲自动隐藏：文档级 capture 监听任意区域的 scroll 事件（scroll 不冒泡，
+// capture 才能一网打尽）→ 给 <html> 打 pinel-scrolling 类；1s 无滚动移除，
+// CSS 据此淡出所有滑块。覆盖聊天/历史两个视图的全部滚动区。
+const SCROLL_IDLE_MS = 1000;
+let scrollIdleTimer: number | undefined;
+document.addEventListener(
+  "scroll",
+  () => {
+    document.documentElement.classList.add("pinel-scrolling");
+    window.clearTimeout(scrollIdleTimer);
+    scrollIdleTimer = window.setTimeout(() => {
+      document.documentElement.classList.remove("pinel-scrolling");
+    }, SCROLL_IDLE_MS);
+  },
+  { capture: true, passive: true },
+);
