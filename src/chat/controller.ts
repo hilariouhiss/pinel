@@ -59,6 +59,12 @@ import { parseModels, parseThinkingLevels } from "./models";
 import type { SessionListItem } from "./session-history";
 import {
   defaultAgentDir,
+  filterExtensionView,
+  gitRef,
+  installedPackageRoot,
+  packageDisplayName,
+  packageSourceKind,
+  readPackageVersion,
   projectConfigDir,
   readSettings,
   removePackageFromSettings,
@@ -67,13 +73,20 @@ import {
   setLocalExtensionEnabled,
   setPackageEnabled,
   uninstallLocalExtension,
-  filterExtensionView,
   type ExtensionItem,
   type ExtensionKind,
   type ExtensionScope,
   type ExtensionView,
   writeSettings,
 } from "./extensions";
+import {
+  UpdateCheckCache,
+  checkGitUpdate,
+  checkNpmUpdate,
+  spawnRunner,
+  type UpdateCheckResult,
+  type UpdateStatus,
+} from "./extension-updates";
 import { catalogInstallState, getCatalog, installedIdentities, type CatalogEntry } from "./catalog";
 
 /** 目录项 + 安装态（webview 协议镜像；字段定义见 webview-ui/src/types.ts）。 */
@@ -292,6 +305,8 @@ export class ChatController {
   private disposed = false;
   /** 最近一条已展示通知（同文本同级别 300ms 窗口去重；pi 双重 emit 的扩展通知）。 */
   private lastNotice: { level: "info" | "warning" | "error"; text: string; at: number } | null = null;
+  /** 更新检查结果缓存（10 分钟 TTL；手动刷新 force 绕过）。 */
+  private readonly updateCache = new UpdateCheckCache();
   private workspaceWatcher: vscode.Disposable;
   /** 会话信息开关配置监听（dispose 释放）。 */
   private configWatcher: vscode.Disposable;
@@ -1078,6 +1093,81 @@ export class ChatController {
     // 项目 scope 需在 workspace 根执行（.pi/settings.json 解析）；全局用 agentDir 即可
     const cwd = scope === "project" ? (this.workspaceRoot ?? defaultAgentDir()) : defaultAgentDir();
     return runPiCommand(command, args, cwd);
+  }
+
+  /**
+   * 更新检查（扩展弹层数据）：包条目并发检查（npm view / git ls-remote），带 TTL 缓存。
+   * inherited 行实际装在全局 → effectiveScope=global。失败 → unknown（不抛）。
+   * ponytail: Promise.all 无并发上限——典型 N < 30，超限再加分批。
+   */
+  async checkExtensionUpdates(view: ExtensionView, force: boolean): Promise<ExtensionUpdateEntry[]> {
+    const items = (await this.getExtensionList(view)).filter((i) => i.kind === "package");
+    const agentDir = defaultAgentDir();
+    const projectRoot = this.workspaceRoot ?? undefined;
+    return Promise.all(
+      items.map(async (item): Promise<ExtensionUpdateEntry> => {
+        const effectiveScope: ExtensionScope = item.inherited ? "global" : item.scope;
+        const key = `${effectiveScope}:${item.source}`;
+        const cached = force ? undefined : this.updateCache.get(key);
+        const result = cached ?? (await this.checkPackageUpdate(item, effectiveScope, agentDir, projectRoot));
+        this.updateCache.set(key, result);
+        return { id: item.id, kind: item.kind, scope: item.scope, ...result };
+      }),
+    );
+  }
+
+  /** 单包更新判定（安装路径 → npm/git 分支；pinned git ref / 本地路径 → current/unknown）。 */
+  private async checkPackageUpdate(
+    item: ExtensionItem,
+    scope: ExtensionScope,
+    agentDir: string,
+    projectRoot?: string,
+  ): Promise<UpdateCheckResult> {
+    const root = installedPackageRoot(item.source, scope, agentDir, projectRoot);
+    if (!root) return { status: "unknown" };
+    const kind = packageSourceKind(item.source);
+    if (kind === "npm") {
+      return checkNpmUpdate(item.source, item.version ?? (await readPackageVersion(root)), spawnRunner);
+    }
+    if (kind === "git") {
+      if (gitRef(item.source)) return { status: "current" }; // pinned ref 对齐 pi 跳过
+      return checkGitUpdate(root, spawnRunner);
+    }
+    return { status: "unknown" }; // 本地路径包：无远端概念
+  }
+
+  /**
+   * 单包更新：官方 `pi update <source> [-l]`（安装布局/依赖由 pi 维护）。
+   * inherited 行实际装在全局 → 更新全局（不带 -l，cwd=agentDir）。
+   */
+  async updateExtension(
+    id: string,
+    kind: ExtensionKind,
+    scope: ExtensionScope,
+    source: string,
+    inherited: boolean,
+  ): Promise<void> {
+    if (kind !== "package") return;
+    const effectiveScope = inherited ? "global" : scope;
+    try {
+      const command = this.resolvePiCommand();
+      const args = ["update", source, ...(effectiveScope === "project" ? ["-l"] : [])];
+      const cwd = effectiveScope === "project" ? (this.workspaceRoot ?? defaultAgentDir()) : defaultAgentDir();
+      await runPiCommand(command, args, cwd, 120000);
+      this.updateCache.clear();
+      this.notice("info", `Updated ${packageDisplayName(source)}. Restart pi to activate.`);
+    } catch (err) {
+      this.notice("error", `Failed to update ${packageDisplayName(source)}: ${(err as Error).message}`);
+    }
+  }
+
+  /** 批量更新：串行（同一 npm prefix 并发 install 不安全），单包失败继续。 */
+  async updateAllExtensions(
+    entries: Array<{ id: string; kind: ExtensionKind; scope: ExtensionScope; source: string; inherited: boolean }>,
+  ): Promise<void> {
+    for (const e of entries) {
+      await this.updateExtension(e.id, e.kind, e.scope, e.source, e.inherited);
+    }
   }
 
   /** 文本文件引用最大字节数（超限截断 + notice）。 */
@@ -3016,6 +3106,15 @@ export async function confirmExtensionReload(): Promise<boolean> {
     "Reload",
   );
   return pick === "Reload";
+}
+
+/** 扩展更新检查条目（webview 按行键合并）。 */
+export interface ExtensionUpdateEntry {
+  id: string;
+  kind: ExtensionKind;
+  scope: ExtensionScope;
+  status: UpdateStatus;
+  latestVersion?: string;
 }
 
 /**
