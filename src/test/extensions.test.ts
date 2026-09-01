@@ -401,6 +401,12 @@ suite("parseNpmSpec / isPinnedNpmSpec", () => {
     assert.strictEqual(isPinnedNpmSpec("npm:pkg@^1.0.0"), false);
     assert.strictEqual(isPinnedNpmSpec("npm:pkg"), false);
   });
+  test("range / dist-tag 非 pinned，预发布精确版 pinned", () => {
+    assert.strictEqual(isPinnedNpmSpec("npm:pkg@1.x"), false);
+    assert.strictEqual(isPinnedNpmSpec("npm:pkg@latest"), false);
+    assert.strictEqual(isPinnedNpmSpec("npm:pkg@beta"), false);
+    assert.strictEqual(isPinnedNpmSpec("npm:pkg@1.2.3-beta.1"), true);
+  });
 });
 
 suite("gitRef / gitHostPath（经 installedPackageRoot 间接验证）", () => {

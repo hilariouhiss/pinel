@@ -3,12 +3,10 @@ import { UpdateCheckCache, checkGitUpdate, checkNpmUpdate, type CommandRunner } 
 
 /** 脚本化假 runner：按 (cmd+args 前缀) 依次出队 {stdout} 或 Error。 */
 function fakeRunner(script: Array<{ match: string; stdout?: string; error?: Error }>): CommandRunner {
-  let calls = 0;
   return (cmd, args) => {
     const key = `${cmd} ${args.join(" ")}`;
     const step = script.find((s) => key.startsWith(s.match));
     assert.ok(step, `unexpected command: ${key}`);
-    calls++;
     if (step.error) return Promise.reject(step.error);
     return Promise.resolve(step.stdout ?? "");
   };

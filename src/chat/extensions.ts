@@ -135,10 +135,10 @@ export function parseNpmSpec(source: string): { name: string; version?: string }
   return { name: s };
 }
 
-/** npm spec 是否 pinned 精确版本（无 range 修饰符）→ 更新检查跳过（对齐 pi）。 */
+/** npm spec 是否 pinned 精确版本（x.y.z[-prerelease]，对齐 pi 的 semver.valid 判定）→ 更新检查跳过。 */
 export function isPinnedNpmSpec(source: string): boolean {
   const { version } = parseNpmSpec(source);
-  return version !== undefined && !/["\^~><*|\s]/.test(version);
+  return version !== undefined && /^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$/.test(version);
 }
 
 /** git/URL spec 的 @ref（git:host/path@v1 → v1）；无 ref → undefined。 */

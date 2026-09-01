@@ -1070,6 +1070,7 @@ export class ChatController {
         // 本地路径包：pi remove 不支持 local source（抛 Unsupported remove source）
         await removePackageFromSettings(this.settingsPathForScope(scope), source);
       }
+      this.updateCache.clear(); // 卸载后清缓存，避免 TTL 内重装看到旧状态
     } catch (err) {
       this.notice("error", `Failed to uninstall extension: ${(err as Error).message}`);
     }
@@ -1131,15 +1132,16 @@ export class ChatController {
       return checkNpmUpdate(item.source, item.version ?? (await readPackageVersion(root)), spawnRunner);
     }
     if (kind === "git") {
-      if (gitRef(item.source)) return { status: "current" }; // pinned ref 对齐 pi 跳过
+      if (gitRef(item.source)) return { status: "current" }; // ref-pinned：更新只会重装同一 ref，无意义
       return checkGitUpdate(root, spawnRunner);
     }
     return { status: "unknown" }; // 本地路径包：无远端概念
   }
 
   /**
-   * 单包更新：官方 `pi update <source> [-l]`（安装布局/依赖由 pi 维护）。
-   * inherited 行实际装在全局 → 更新全局（不带 -l，cwd=agentDir）。
+   * 单包更新：官方 `pi update <source>`（scope 无关，会同时更新两个 settings 里匹配的安装；
+   * 安装布局/依赖由 pi 维护）。inherited 行实际装在全局 → cwd=agentDir；
+   * project → cwd=workspace root，让 pi 看到对应 .pi/settings.json。
    */
   async updateExtension(
     id: string,
@@ -1152,7 +1154,7 @@ export class ChatController {
     const effectiveScope = inherited ? "global" : scope;
     try {
       const command = this.resolvePiCommand();
-      const args = ["update", source, ...(effectiveScope === "project" ? ["-l"] : [])];
+      const args = ["update", source];
       const cwd = effectiveScope === "project" ? (this.workspaceRoot ?? defaultAgentDir()) : defaultAgentDir();
       await runPiCommand(command, args, cwd, 120000);
       this.updateCache.clear();

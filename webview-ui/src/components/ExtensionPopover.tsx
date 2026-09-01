@@ -127,7 +127,7 @@ export function ExtensionPopover({
     const busy = updating.has(extensionRowKey(item));
     return (
       <div
-        key={`${item.kind}:${item.scope}:${item.id}`}
+        key={extensionRowKey(item)}
         className={`extension-item${item.inherited ? " inherited" : ""}`}
       >
         <div className="extension-item-main">
