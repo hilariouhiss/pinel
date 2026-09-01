@@ -59,6 +59,10 @@ export interface ExtensionItem {
   enabled: boolean;
   /** 包对象形式仅部分过滤（部分资源类型禁用/白名单）。 */
   filtered?: boolean;
+  /** 来源类型徽标（包 = npm/git/path；本地散文件扩展无）。 */
+  sourceKind?: PackageSourceKind;
+  /** 已装版本（安装目录 package.json 的 version；本地散文件扩展无）。 */
+  version?: string;
   /** 卸载目标：本地 = 文件或目录绝对路径；包 = source spec。 */
   source: string;
   /** project 视图中的继承行：真实来源全局、项目未覆盖；scope 已重写为 project（开关写项目 settings）。 */
@@ -107,6 +111,92 @@ export function packageIdentity(source: string, baseDir?: string): string {
     }
   }
   return `local:${baseDir ? path.resolve(baseDir, source) : path.resolve(source)}`;
+}
+
+/** 来源类型（行内徽标）。 */
+export type PackageSourceKind = "npm" | "git" | "path";
+
+/** 来源 spec → 类型徽标。 */
+export function packageSourceKind(source: string): PackageSourceKind {
+  if (source.startsWith("npm:")) return "npm";
+  if (source.startsWith("git:") || /^(https?|ssh|git):\/\//.test(source)) return "git";
+  return "path";
+}
+
+/** npm spec 拆解：npm:pkg / npm:pkg@1.0.0 / npm:@scope/pkg@2.0.0 → name(+version/range)。 */
+export function parseNpmSpec(source: string): { name: string; version?: string } {
+  const s = source.slice(4);
+  const scoped = s.startsWith("@");
+  const rest = scoped ? s.slice(1) : s;
+  const at = rest.lastIndexOf("@");
+  if (at > 0 && rest.slice(at + 1)) {
+    return { name: (scoped ? "@" : "") + rest.slice(0, at), version: rest.slice(at + 1) };
+  }
+  return { name: s };
+}
+
+/** npm spec 是否 pinned 精确版本（无 range 修饰符）→ 更新检查跳过（对齐 pi）。 */
+export function isPinnedNpmSpec(source: string): boolean {
+  const { version } = parseNpmSpec(source);
+  return version !== undefined && !/["\^~><*|\s]/.test(version);
+}
+
+/** git/URL spec 的 @ref（git:host/path@v1 → v1）；无 ref → undefined。 */
+export function gitRef(source: string): string | undefined {
+  const s = source.startsWith("git:") ? source.slice(4) : source;
+  const at = s.lastIndexOf("@");
+  if (at > 0 && s.indexOf("/") < at && !s.slice(at + 1).includes("/")) {
+    return s.slice(at + 1) || undefined;
+  }
+  return undefined;
+}
+
+/** git/URL spec → host/path（去 .git、去 ref；镜像 packageIdentity 的 URL 归一）。 */
+export function gitHostPath(source: string): { host: string; path: string } | undefined {
+  let u: URL;
+  try {
+    u = source.startsWith("git:") ? new URL(`git://${source.slice(4)}`) : new URL(source);
+  } catch {
+    return undefined;
+  }
+  const p = u.pathname.replace(/^\/+/, "").replace(/\.git$/, "").replace(/@[^/]*$/, "");
+  if (!u.hostname || !p) return undefined;
+  return { host: u.hostname, path: p };
+}
+
+/**
+ * 包安装根目录（镜像 pi package-manager 布局）：
+ * npm = <base>/npm/node_modules/<name>；git = <base>/git/<host>/<path>；本地路径 = base 相对解析。
+ * base：global = agentDir；project = <projectRoot>/.pi（无 projectRoot → undefined）。
+ */
+export function installedPackageRoot(
+  source: string,
+  scope: ExtensionScope,
+  agentDir: string,
+  projectRoot?: string,
+): string | undefined {
+  const base = scope === "project" ? (projectRoot ? path.join(projectRoot, ".pi") : undefined) : agentDir;
+  if (!base) return undefined;
+  const kind = packageSourceKind(source);
+  if (kind === "npm") {
+    return path.join(base, "npm", "node_modules", ...parseNpmSpec(source).name.split("/"));
+  }
+  if (kind === "git") {
+    const hp = gitHostPath(source);
+    return hp ? path.join(base, "git", hp.host, ...hp.path.split("/")) : undefined;
+  }
+  return path.resolve(base, source);
+}
+
+/** 读包目录 package.json 的 version；缺失/损坏 → undefined。 */
+export async function readPackageVersion(pkgDir: string): Promise<string | undefined> {
+  try {
+    const raw = await fs.readFile(path.join(pkgDir, "package.json"), "utf8");
+    const pkg = JSON.parse(raw) as { version?: unknown };
+    return typeof pkg.version === "string" ? pkg.version : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** 包 source spec → 展示名（纯函数便于单测）。 */
@@ -230,15 +320,26 @@ async function resolveDirExtension(
   return null;
 }
 
-/** 扫描 settings.json 的 packages 数组（全局 + 项目）。 */
+/** 扫描 settings.json 的 packages 数组（全局 + 项目）并富化来源类型与已装版本。 */
 export async function scanPackages(
   globalSettingsPath: string,
   projectSettingsPath?: string,
+  opts?: { agentDir: string; projectRoot?: string },
 ): Promise<ExtensionItem[]> {
   const items: ExtensionItem[] = [];
   items.push(...(await scanPackagesIn(globalSettingsPath, "global")));
   if (projectSettingsPath) {
     items.push(...(await scanPackagesIn(projectSettingsPath, "project")));
+  }
+  const agentDir = opts?.agentDir;
+  if (agentDir) {
+    for (const item of items) {
+      item.sourceKind = packageSourceKind(item.source);
+      const root = installedPackageRoot(item.source, item.scope, agentDir, opts?.projectRoot);
+      if (root) {
+        item.version = await readPackageVersion(root);
+      }
+    }
   }
   return items;
 }

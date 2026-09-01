@@ -1009,6 +1009,7 @@ export class ChatController {
     const packages = await scanPackages(
       path.join(agentDir, "settings.json"),
       projectDir ? path.join(projectDir, "settings.json") : undefined,
+      { agentDir, projectRoot: root ?? undefined },
     );
     return filterExtensionView([...local, ...packages], view, agentDir, projectDir);
   }

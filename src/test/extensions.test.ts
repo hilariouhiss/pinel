@@ -4,9 +4,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   defaultAgentDir,
+  installedPackageRoot,
+  isPinnedNpmSpec,
   packageDisplayName,
   packageIdentity,
+  packageSourceKind,
+  parseNpmSpec,
   projectConfigDir,
+  readPackageVersion,
   resolveAgentDir,
   scanLocalExtensions,
   scanPackages,
@@ -374,6 +379,86 @@ suite("setPackageEnabled", () => {
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+suite("packageSourceKind", () => {
+  test("npm/git/path 三类", () => {
+    assert.strictEqual(packageSourceKind("npm:pi-web-access"), "npm");
+    assert.strictEqual(packageSourceKind("git:github.com/u/r"), "git");
+    assert.strictEqual(packageSourceKind("https://github.com/u/r"), "git");
+    assert.strictEqual(packageSourceKind("../local/pkg"), "path");
+  });
+});
+
+suite("parseNpmSpec / isPinnedNpmSpec", () => {
+  test("裸名 / scoped / 带版本 / 带 range", () => {
+    assert.deepStrictEqual(parseNpmSpec("npm:pi-web-access"), { name: "pi-web-access" });
+    assert.deepStrictEqual(parseNpmSpec("npm:@scope/pkg"), { name: "@scope/pkg" });
+    assert.deepStrictEqual(parseNpmSpec("npm:@scope/pkg@2.0.0"), { name: "@scope/pkg", version: "2.0.0" });
+    assert.deepStrictEqual(parseNpmSpec("npm:pkg@^1.2.3"), { name: "pkg", version: "^1.2.3" });
+    assert.strictEqual(isPinnedNpmSpec("npm:pkg@1.0.0"), true);
+    assert.strictEqual(isPinnedNpmSpec("npm:pkg@^1.0.0"), false);
+    assert.strictEqual(isPinnedNpmSpec("npm:pkg"), false);
+  });
+});
+
+suite("gitRef / gitHostPath（经 installedPackageRoot 间接验证）", () => {
+  test("installedPackageRoot：全局 npm（scoped）", () => {
+    assert.strictEqual(
+      installedPackageRoot("npm:@scope/pkg@1.0.0", "global", "/agent"),
+      path.join("/agent", "npm", "node_modules", "@scope", "pkg"),
+    );
+  });
+  test("installedPackageRoot：项目 npm 需 projectRoot，无则 undefined", () => {
+    assert.strictEqual(installedPackageRoot("npm:pkg", "project", "/agent"), undefined);
+    assert.strictEqual(
+      installedPackageRoot("npm:pkg", "project", "/agent", "/ws"),
+      path.join("/ws", ".pi", "npm", "node_modules", "pkg"),
+    );
+  });
+  test("installedPackageRoot：git 带/不带 ref，URL 形式", () => {
+    assert.strictEqual(
+      installedPackageRoot("git:github.com/obra/superpowers@v6.3.0", "global", "/agent"),
+      path.join("/agent", "git", "github.com", "obra", "superpowers"),
+    );
+    assert.strictEqual(
+      installedPackageRoot("https://github.com/u/repo", "global", "/agent"),
+      path.join("/agent", "git", "github.com", "u", "repo"),
+    );
+  });
+  test("installedPackageRoot：本地路径按 baseDir 解析", () => {
+    assert.strictEqual(
+      installedPackageRoot("../pkg", "global", "/agent"),
+      path.resolve("/agent", "../pkg"),
+    );
+  });
+});
+
+suite("readPackageVersion", () => {
+  test("有 version / 无 package.json / 损坏 JSON", async () => {
+    const dir = await tmpdir("pinel-ver-");
+    await write(path.join(dir, "package.json"), `{"name":"x","version":"1.2.3"}`);
+    assert.strictEqual(await readPackageVersion(dir), "1.2.3");
+    assert.strictEqual(await readPackageVersion(path.join(dir, "missing")), undefined);
+    await write(path.join(dir, "bad", "package.json"), "{oops");
+    assert.strictEqual(await readPackageVersion(path.join(dir, "bad")), undefined);
+  });
+});
+
+suite("scanPackages 版本富化", () => {
+  test("npm 包读 node_modules 版本 + sourceKind；本地散文件无版本", async () => {
+    const agent = await tmpdir("pinel-scan-");
+    const settings = path.join(agent, "settings.json");
+    await write(settings, JSON.stringify({ packages: ["npm:foo"] }));
+    await write(
+      path.join(agent, "npm", "node_modules", "foo", "package.json"),
+      `{"name":"foo","version":"0.9.1"}`,
+    );
+    const items = await scanPackages(settings, undefined, { agentDir: agent });
+    assert.strictEqual(items.length, 1);
+    assert.strictEqual(items[0].sourceKind, "npm");
+    assert.strictEqual(items[0].version, "0.9.1");
   });
 });
 
