@@ -8,14 +8,10 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type RefObject,
-  type ReactNode,
 } from "react";
 import { vscode } from "../index";
 import { isCommandQuery, matchCommands } from "../command-match";
-import { parseAtRefs, matchAtToken } from "../at-refs";
-import { composerGapAlign, sliceLiMarker, strictListSyntax, supportEmptyListItems } from "../composer-md";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { parseAtRefs, matchAtToken, splitAtRefs } from "../at-refs";
 import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
 import sendIcon from "lucide-static/icons/send.svg";
@@ -92,79 +88,25 @@ async function compressImage(
 let attachmentSeq = 0;
 
 /**
- * 输入框 WYSIWYG 渲染层：块元素全部折叠为行内，与 textarea 原始文本像素级对齐。
- * 对齐前提：等宽字体（--pinel-font-family），仅颜色/字重/斜体/背景等不改变
- * 字形宽度的样式；markdown 语法字符（**、#、- 等）以同宽标记符/样式替换。
- * 列表标记按 node.position 从原文切出（无序 -、*、+ → •，有序 1. /3) 原样，
- * 裸标记 "1." 同样灰显标记，行首缩进原样保留，宽度忠实）；表格整段源码原文
- * 渲染（分隔行可见）、图片 🖼 占位。渲染输入对裸标记行补零宽字符（空列表项可打断段落解析）。
- * 复制/发送仍是 textarea 的原始 markdown 源码（本层纯视觉，aria-hidden）。
+ * 输入框渲染层：纯文本显示，仅高亮反引号包裹的 @file 引用
+ * （`@path` / `@"带空格路径"`，与 parseAtRefs 语法一致）。markdown 语法
+ * 字符原样可见（不再全量渲染）；文本节点由 React 转义（HTML 注入安全）。
+ * 复制/发送仍是 textarea 的原始文本（本层纯视觉，aria-hidden）。
  */
 function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObject<HTMLDivElement | null> }) {
-  // 渲染层输入流水线：严格列表转义（* + N) → 字面文本）→ 裸标记行补零宽
-  // 字符；后续 code/li 的位置切片与间隙对齐插件均以本串为准
-  const mdContent = strictListSyntax(supportEmptyListItems(content));
-  const h = (marker: string) =>
-    ({ children }: { children?: ReactNode }) => (
-      <span className="composer-md-h">
-        <span className="composer-md-marker">{marker}</span>
-        {children}
-      </span>
-    );
+  // splitAtRefs 捕获组保证引用段在奇数下标：偶数普通文本、奇数高亮
+  const parts = splitAtRefs(content);
   return (
     <div className="composer-md" aria-hidden="true" ref={mdRef}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[[composerGapAlign, mdContent]]}
-        components={{
-          p: ({ children }) => <>{children}</>,
-          a: ({ children }) => <span className="md-link">{children}</span>,
-          code: ({ children, node }) => {
-            // 宽度忠实渲染：用 node.position 源偏移切出含反引号/围栏的原始
-            // 切片（等宽字体下与 textarea 原文 1:1 对齐，任意反引号数皆准）；
-            // position 缺失（异常路径）退回纯内容。围栏含 \n → block 样式
-            const text = String(children).replace(/\n$/, "");
-            const pos = node?.position;
-            const raw =
-              pos?.start?.offset != null && pos?.end?.offset != null
-                ? mdContent.slice(pos.start.offset, pos.end.offset)
-                : text;
-            return <code className={raw.includes("\n") ? "composer-md-block" : "composer-md-inline-code"}>{raw}</code>;
-          },
-          pre: ({ children }) => <>{children}</>,
-          h1: h("# "),
-          h2: h("## "),
-          h3: h("### "),
-          h4: h("#### "),
-          h5: h("##### "),
-          h6: h("###### "),
-          ul: ({ children }) => <>{children}</>,
-          ol: ({ children }) => <>{children}</>,
-          li: ({ children, node }) => (
-            <span className="composer-md-li">
-              <span className="composer-md-marker">{sliceLiMarker(mdContent, node?.position)}</span>
-              {children}
-            </span>
-          ),
-          blockquote: ({ children }) => (
-            <span className="composer-md-quote">{children}</span>
-          ),
-          hr: () => <span className="composer-md-hr">---</span>,
-          table: ({ node }) => {
-            // 表格按源码原文渲染：单元格文本在 mdast 中不含管道，逐格渲染
-            // 必然丢管道/分隔行 → 整段按 position 切片（多行单元格亦字面可见）
-            const pos = node?.position;
-            const raw =
-              pos?.start?.offset != null && pos?.end?.offset != null
-                ? mdContent.slice(pos.start.offset, pos.end.offset)
-                : "";
-            return <span>{raw}</span>;
-          },
-          img: () => <span className="composer-md-img">🖼</span>,
-        }}
-      >
-        {mdContent}
-      </ReactMarkdown>
+      {parts.map((p, i) =>
+        i % 2 === 1 ? (
+          <span key={i} className="composer-md-ref">
+            {p}
+          </span>
+        ) : (
+          p
+        ),
+      )}
     </div>
   );
 }

@@ -1,5 +1,13 @@
 import type { FileItem } from "./types";
 
+/** 渲染层 @file 高亮切分：反引号包裹形态（与 parseAtRefs 语法一致），
+ *  split 捕获组保留分隔段 → 偶数下标为普通文本、奇数下标为高亮引用。 */
+const AT_REF_RE = /(`@(?:"[^"]*"|[^`\s]*)`)/g;
+
+export function splitAtRefs(content: string): string[] {
+  return content.split(AT_REF_RE);
+}
+
 /** 保守尾随标点集（. 除外：防 @README.md 整 token 未命中时被剥坏）。 */
 const TRAILING_PUNCT = ",;:!?)]}。、）】";
 

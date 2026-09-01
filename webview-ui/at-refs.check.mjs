@@ -3,7 +3,7 @@
  * 挂入 npm run compile 门：@ 文件引用解析规则坏掉时编译即红。
  */
 import assert from "node:assert";
-import { parseAtRefs, matchAtToken } from "./src/at-refs.ts";
+import { parseAtRefs, matchAtToken, splitAtRefs } from "./src/at-refs.ts";
 
 const fileList = [
   { path: "src/a.ts" },
@@ -66,5 +66,17 @@ assert.deepStrictEqual(matchAtToken("`@src/a.ts"), { trigger: true, query: "src/
 // 非 @ 开头：不触发
 assert.deepStrictEqual(matchAtToken("hello"), { trigger: false, query: "" });
 assert.deepStrictEqual(matchAtToken(""), { trigger: false, query: "" });
+
+// splitAtRefs：反引号 @file 切分（偶数下标普通文本 / 奇数下标引用）
+assert.deepStrictEqual(splitAtRefs("看 `@src/a.ts` 这个"), ["看 ", "`@src/a.ts`", " 这个"]);
+assert.deepStrictEqual(splitAtRefs("`@\"src/a b.ts\"`"), ["", "`@\"src/a b.ts\"`", ""]);
+// 多个引用 + 首尾/相邻引用（奇偶性保持：引用恒在奇数下标）
+assert.deepStrictEqual(splitAtRefs("`@a.ts``@b.ts`"), ["", "`@a.ts`", "", "`@b.ts`", ""]);
+// 裸 @ 不切分（仅反引号形态高亮）；未闭合反引号不切分
+assert.deepStrictEqual(splitAtRefs("@src/a.ts 和 `@src/a.ts"), ["@src/a.ts 和 `@src/a.ts"]);
+// 反引号内非 @ 不切分；邮箱不误伤（未包裹）
+assert.deepStrictEqual(splitAtRefs("`code` x@y.com"), ["`code` x@y.com"]);
+// 空文本
+assert.deepStrictEqual(splitAtRefs(""), [""]);
 
 console.log("at-refs check OK");

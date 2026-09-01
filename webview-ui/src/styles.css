@@ -1327,8 +1327,8 @@ body {
   overflow: hidden;
 }
 
-/* 输入框 WYSIWYG 渲染层：与 textarea 完全同构的字体度量（等宽字体 → 像素级对齐），
-   仅颜色/字重/斜体/背景等不改变字形宽度的样式；scrollTop 由 textarea onScroll 同步 */
+/* 输入框渲染层：纯文本显示，与 textarea 完全同构的字体度量（等宽字体 → 像素级对齐），
+   仅高亮反引号 @file 引用（颜色/背景不改变字形宽度）；scrollTop 由 textarea onScroll 同步 */
 .composer-md {
   position: absolute;
   top: 7px; /* 与 .composer-input padding 对齐 */
@@ -1349,34 +1349,11 @@ body {
   overflow-wrap: break-word;
 }
 
-.composer-md .composer-md-marker {
-  color: var(--vscode-descriptionForeground);
-}
-
-.composer-md .composer-md-h {
+/* @file 引用高亮：仅颜色/背景（等宽对齐不受影响） */
+.composer-md .composer-md-ref {
   color: var(--vscode-textLink-foreground);
-  font-weight: 700;
-}
-
-.composer-md .composer-md-inline-code,
-.composer-md .composer-md-block {
-  color: var(--vscode-textPreformat-foreground, var(--vscode-input-foreground));
   background: var(--vscode-textCodeBlock-background, var(--vscode-input-background));
   border-radius: 3px;
-}
-
-.composer-md .composer-md-quote {
-  color: var(--vscode-descriptionForeground);
-}
-
-.composer-md .composer-md-quote::before {
-  content: "| "; /* 与 "&gt; " 同宽（2 字符） */
-  color: var(--vscode-descriptionForeground);
-}
-
-.composer-md .composer-md-hr,
-.composer-md .composer-md-img {
-  color: var(--vscode-descriptionForeground);
 }
 
 /* IME 组合期间：隐藏渲染层、恢复原文可见（透明文字下组合候选不可见） */
