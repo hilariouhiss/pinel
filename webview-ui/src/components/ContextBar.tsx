@@ -40,7 +40,7 @@ function compactChars(n: number): string {
  *   none，弹层开启时隐藏防双浮层）；点击弹层显示完整明细
  * - Context 弹层 = 提示词组成四段（系统提示词/用户级/项目级/插件注入）：
  *   段行点击展开预览文本（插件侧截断 2000 字符）；插件注入不可按插件拆分
- *   （pi API 只给链式合并结果），合并段 + 注脚说明
+ *   （pi API 只给链式合并结果），合并段 + 注脚说明；Context 0 时弹层留白
  * - Extensions chip 点击 → App 侧扩展管理弹层（浏览/启停/卸载/目录安装，居中模态），
  *   本组件只负责触发与计数，不内部弹层
  * - MCP 弹层 = 服务器明细行：连接状态 + 全局/项目范围 + 工具数
@@ -238,10 +238,20 @@ export function ContextBar({
       );
     }
     const p = pinelPrompt;
+    // Context 0（无自定义系统提示词/文件/追加段）：弹层留白，不显示启动帧/未发现文件等内置提示
+    if (p.files.length === 0 && p.system?.kind !== "custom" && !p.append) {
+      return null;
+    }
     const userFiles = p.files.filter((f) => f.level === "user");
     const projectFiles = p.files.filter((f) => f.level === "project");
     const fileRow = (f: PinelPromptFile) =>
       renderCompRow(`file:${f.path}`, f.name, compactChars(f.chars), f.preview);
+    /** 空上下文文件提示行（启动帧/全帧零文件共用）。 */
+    const renderNoFilesRow = () => (
+      <div className="ctx-comp-row">
+        <span className="ctx-comp-desc">未发现上下文文件（~/.pi/agent/AGENTS.md 或项目 AGENTS.md/CLAUDE.md）</span>
+      </div>
+    );
     /** 启动帧/降级弹层体：仅文件列表 + 说明（首轮权威全帧到达后覆盖）。 */
     const renderStartupBody = () => (
       <>
@@ -260,11 +270,7 @@ export function ContextBar({
             {projectFiles.map(fileRow)}
           </>
         )}
-        {userFiles.length === 0 && projectFiles.length === 0 && (
-          <div className="ctx-comp-row">
-            <span className="ctx-comp-desc">未发现上下文文件（~/.pi/agent/AGENTS.md 或项目 AGENTS.md/CLAUDE.md）</span>
-          </div>
-        )}
+        {userFiles.length === 0 && projectFiles.length === 0 && renderNoFilesRow()}
       </>
     );
     if (p.startup) {
@@ -283,6 +289,7 @@ export function ContextBar({
           `${compactChars(system.chars)} · ${system.kind === "custom" ? "自定义" : "pi 内置"}`,
           system.preview,
         )}
+        {userFiles.length === 0 && projectFiles.length === 0 && renderNoFilesRow()}
         {userFiles.length > 0 && (
           <>
             <div className="ctx-comp-heading">用户级</div>
