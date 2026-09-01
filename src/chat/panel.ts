@@ -178,6 +178,35 @@ interface WebviewUninstallExtensionMessage {
   name: string;
 }
 
+interface WebviewCheckExtensionUpdatesMessage {
+  type: "checkExtensionUpdates";
+  /** 弹层视图（默认沿用最近请求）。 */
+  view?: "all" | "global" | "project";
+  /** 手动刷新：绕过 TTL 缓存。 */
+  force?: boolean;
+}
+
+interface WebviewUpdateExtensionMessage {
+  type: "updateExtension";
+  id: string;
+  kind: "local" | "package";
+  scope: "global" | "project";
+  source: string;
+  /** inherited 行实际装在全局（更新走全局）。 */
+  inherited?: boolean;
+}
+
+interface WebviewUpdateAllExtensionsMessage {
+  type: "updateAllExtensions";
+  entries: Array<{
+    id: string;
+    kind: "local" | "package";
+    scope: "global" | "project";
+    source: string;
+    inherited?: boolean;
+  }>;
+}
+
 /** 一键安装 Pinel 插件（宿主 spawn pi install npm:@hilariouhiss/pinel）。 */
 interface WebviewInstallPinelPluginMessage {
   type: "installPinelPlugin";
@@ -254,6 +283,9 @@ type WebviewInMessage =
   | WebviewSetCompactionThresholdMessage
   | WebviewSetExtensionEnabledMessage
   | WebviewUninstallExtensionMessage
+  | WebviewCheckExtensionUpdatesMessage
+  | WebviewUpdateExtensionMessage
+  | WebviewUpdateAllExtensionsMessage
   | WebviewReadyMessage;
 
 /**
@@ -473,6 +505,31 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           }
         })();
         break;
+      case "checkExtensionUpdates":
+        void this.postExtensionUpdates(msg.view ?? this.lastExtensionView, msg.force === true);
+        break;
+      case "updateExtension":
+        void (async () => {
+          await this.controller.updateExtension(msg.id, msg.kind, msg.scope, msg.source, msg.inherited === true);
+          await this.postExtensionList();
+          await this.postExtensionUpdates(this.lastExtensionView, true);
+          if (await confirmExtensionReload()) {
+            await this.controller.restart();
+          }
+        })();
+        break;
+      case "updateAllExtensions":
+        void (async () => {
+          await this.controller.updateAllExtensions(
+            msg.entries.map((e) => ({ ...e, inherited: e.inherited === true })),
+          );
+          await this.postExtensionList();
+          await this.postExtensionUpdates(this.lastExtensionView, true);
+          if (await confirmExtensionReload()) {
+            await this.controller.restart();
+          }
+        })();
+        break;
       case "toggleSessionStats":
         // 开关是 pinel UI 偏好（不依赖 pi 运行）：取当前 status 值翻转
         void this.controller.setShowSessionStats(!this.controller.getStatus().showSessionStats);
@@ -501,6 +558,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       });
     } catch {
       // 扫描异常：不弹 notice（弹层空列表即可），仅忽略
+    }
+  }
+
+  /** 更新检查结果回发（打开弹层/手动刷新/更新完成后；force 绕过缓存）。 */
+  private async postExtensionUpdates(view: "all" | "global" | "project", force: boolean): Promise<void> {
+    try {
+      const entries = await this.controller.checkExtensionUpdates(view, force);
+      this.post({ type: "extensionUpdates", entries });
+    } catch {
+      // 检查异常：静默（行保持 unknown/旧值，不弹 notice）
     }
   }
 

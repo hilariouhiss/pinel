@@ -174,6 +174,7 @@ export type OutMessage =
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "forkMessages"; messages: ForkMessage[] }
   | { type: "extensionList"; items: ExtensionItem[]; projectAvailable: boolean }
+  | { type: "extensionUpdates"; entries: ExtensionUpdateEntry[] }
   | { type: "catalogState"; entries: CatalogItemState[] }
   | { type: "pinelWorkflow"; workflow: PinelWorkflowPayload | null }
   | { type: "pinelPrompt"; prompt: PinelPromptPayload | null }

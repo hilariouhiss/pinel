@@ -197,6 +197,23 @@ export interface ExtensionItem {
   source: string;
   /** project 视图继承行：真实来源全局、项目未覆盖；scope 已重写为 project。 */
   inherited?: boolean;
+  /** 来源类型徽标（包 = npm/git/path；本地散文件扩展无）。 */
+  sourceKind?: "npm" | "git" | "path";
+  /** 已装版本（安装目录 package.json 的 version；本地散文件扩展无）。 */
+  version?: string;
+  /** 更新态（extensionUpdates 消息合并产物；缺省 = 未检查）。 */
+  update?: "available" | "current" | "unknown";
+  /** npm 远端最新版（update=available 时有值）。 */
+  latestVersion?: string;
+}
+
+/** 扩展更新检查条目（宿主 extensionUpdates 消息载荷；webview 按行键合并进 items）。 */
+export interface ExtensionUpdateEntry {
+  id: string;
+  kind: ExtensionKind;
+  scope: ExtensionScope;
+  status: "available" | "current" | "unknown";
+  latestVersion?: string;
 }
 
 /** 插件目录兼容性判定（宿主 catalog 镜像）。 */
@@ -350,6 +367,7 @@ export type HostMessage =
   | { type: "fileList"; items: FileItem[]; truncated: boolean }
   | { type: "forkMessages"; messages: ForkMessageItem[] }
   | { type: "extensionList"; items: ExtensionItem[]; projectAvailable: boolean }
+  | { type: "extensionUpdates"; entries: ExtensionUpdateEntry[] }
   | { type: "catalogState"; entries: CatalogItem[] }
   | { type: "pinelWorkflow"; workflow: PinelWorkflow | null }
   | { type: "pinelPrompt"; prompt: PinelPrompt | null }
