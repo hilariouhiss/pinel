@@ -1621,6 +1621,7 @@ body {
   font-size: 12px;
   font-weight: 600;
   color: var(--vscode-foreground);
+  margin-right: auto; /* 按钮组（Update all/刷新/关闭）靠右 */
 }
 
 .popover-close {
@@ -2449,6 +2450,81 @@ body {
 .extension-item-badge.compat-tui-only {
   background: var(--vscode-inputValidation-warningBackground, var(--vscode-badge-background));
   color: var(--vscode-inputValidation-warningForeground, var(--vscode-badge-foreground));
+}
+
+/* 来源徽标（npm/git/path）：弱化底色区分于 scope 徽标 */
+.extension-item-badge.kind {
+  background: transparent;
+  border: 1px solid var(--vscode-input-border);
+  color: var(--vscode-descriptionForeground);
+}
+
+/* 已装版本（暗色小字；无版本 = —） */
+.extension-item-version {
+  flex: none;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* 行内更新按钮（有更新才渲染） */
+.extension-item-update-btn {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.extension-item-update-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 标题栏 Update all */
+.extension-update-all {
+  flex: none;
+  margin-right: 6px;
+  padding: 1px 8px;
+  border: none;
+  border-radius: 4px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.extension-update-all:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 标题栏手动刷新（对齐 popover-close 尺寸；内联 SVG stroke=currentColor） */
+.popover-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: 4px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+
+.popover-refresh:hover {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
+}
+
+.popover-refresh svg {
+  width: 12px;
+  height: 12px;
 }
 
 /* ------------------------------------------------------------ 会话历史 */

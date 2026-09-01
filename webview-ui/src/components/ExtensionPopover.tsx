@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
 import type { CatalogItem, ExtensionItem, ExtensionView, PinelPluginState } from "../types";
+import { extensionRowKey, updatableItems } from "../extension-updates";
 // SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
 import deleteIcon from "lucide-static/icons/trash-2.svg";
+import refreshIcon from "lucide-static/icons/refresh-cw.svg";
 
 /** 视图选项（顺序 = UI 顺序；catalog = 插件目录，本地视图不请求宿主扩展列表）。 */
 const VIEW_OPTIONS: { value: ExtensionView | "catalog"; label: string }[] = [
@@ -25,6 +27,14 @@ interface Props {
   catalog: CatalogItem[];
   /** 安装中的 installSpec 集合（防重复点击；宿主刷新时清除）。 */
   installing: Set<string>;
+  /** 更新中的行键（按钮置忙防重复点击）。 */
+  updating: Set<string>;
+  /** 手动刷新更新检查（force 绕过缓存）。 */
+  onCheckUpdates: (force: boolean) => void;
+  /** 单行更新（官方 pi update 路径）。 */
+  onUpdate: (item: ExtensionItem) => void;
+  /** 全部更新（targets = updatableItems）。 */
+  onUpdateAll: (targets: ExtensionItem[]) => void;
   onInstallPinelPlugin: () => void;
   /** 目录单包安装（spec = installSpec）。 */
   onInstallCatalogEntry: (spec: string) => void;
@@ -57,6 +67,10 @@ export function ExtensionPopover({
   pinelPluginState,
   catalog,
   installing,
+  updating,
+  onCheckUpdates,
+  onUpdate,
+  onUpdateAll,
   onInstallPinelPlugin,
   onInstallCatalogEntry,
   onInstallCatalogGroup,
@@ -105,47 +119,71 @@ export function ExtensionPopover({
 
   const local = items.filter((i) => i.kind === "local");
   const packages = items.filter((i) => i.kind === "package");
+  // Update all 目标（管理视图才有更新行；catalog 自身无）
+  const updatable = view !== "catalog" ? updatableItems(items) : [];
+  const updateAllBusy = updatable.some((i) => updating.has(extensionRowKey(i)));
 
-  const renderRow = (item: ExtensionItem) => (
-    <div
-      key={`${item.kind}:${item.scope}:${item.id}`}
-      className={`extension-item${item.inherited ? " inherited" : ""}`}
-    >
-      <div className="extension-item-main">
-        <span className="extension-item-name" title={item.source}>
-          {item.name}
-        </span>
-        <span className="extension-item-badge">{item.inherited ? "inherited" : item.scope}</span>
-        {item.filtered && <span className="extension-item-tag">filtered</span>}
-      </div>
-      <button
-        className={`extension-item-toggle${item.enabled ? " on" : ""}`}
-        role="switch"
-        aria-checked={item.enabled}
-        title={
-          item.inherited
-            ? item.enabled
-              ? "Disable in this project (overrides global)"
-              : "Enable in this project (overrides global)"
-            : item.enabled
-              ? "Disable"
-              : "Enable"
-        }
-        onClick={() => onToggle(item, !item.enabled)}
+  const renderRow = (item: ExtensionItem) => {
+    const busy = updating.has(extensionRowKey(item));
+    return (
+      <div
+        key={`${item.kind}:${item.scope}:${item.id}`}
+        className={`extension-item${item.inherited ? " inherited" : ""}`}
       >
-        {item.enabled ? "On" : "Off"}
-      </button>
-      {!item.inherited && (
+        <div className="extension-item-main">
+          <span className="extension-item-name" title={item.source}>
+            {item.name}
+          </span>
+          {item.sourceKind && (
+            <span className="extension-item-badge kind">{item.sourceKind}</span>
+          )}
+          <span className="extension-item-badge">{item.inherited ? "inherited" : item.scope}</span>
+          {item.filtered && <span className="extension-item-tag">filtered</span>}
+          <span className="extension-item-version">{item.version ?? "—"}</span>
+          {item.update === "available" && (
+            <button
+              className="extension-item-update-btn"
+              disabled={busy}
+              title={
+                item.latestVersion
+                  ? `Installed ${item.version ?? "?"} → latest ${item.latestVersion}`
+                  : "Update available"
+              }
+              onClick={() => onUpdate(item)}
+            >
+              {busy ? "Updating…" : "Update"}
+            </button>
+          )}
+        </div>
         <button
-          className="extension-item-delete"
-          title="Uninstall"
-          aria-label={`Uninstall ${item.name}`}
-          onClick={() => onUninstall(item)}
-          dangerouslySetInnerHTML={{ __html: deleteIcon }}
-        />
-      )}
-    </div>
-  );
+          className={`extension-item-toggle${item.enabled ? " on" : ""}`}
+          role="switch"
+          aria-checked={item.enabled}
+          title={
+            item.inherited
+              ? item.enabled
+                ? "Disable in this project (overrides global)"
+                : "Enable in this project (overrides global)"
+              : item.enabled
+                ? "Disable"
+                : "Enable"
+          }
+          onClick={() => onToggle(item, !item.enabled)}
+        >
+          {item.enabled ? "On" : "Off"}
+        </button>
+        {!item.inherited && (
+          <button
+            className="extension-item-delete"
+            title="Uninstall"
+            aria-label={`Uninstall ${item.name}`}
+            onClick={() => onUninstall(item)}
+            dangerouslySetInnerHTML={{ __html: deleteIcon }}
+          />
+        )}
+      </div>
+    );
+  };
 
   const renderSection = (title: string, list: ExtensionItem[]) =>
     list.length === 0 ? null : (
@@ -264,6 +302,23 @@ export function ExtensionPopover({
       >
         <div className="popover-titlebar">
           <span className="popover-titlebar-title">Extensions</span>
+          {updatable.length > 0 && (
+            <button
+              className="extension-update-all"
+              disabled={updateAllBusy}
+              title={`pi update ${updatable.length} package${updatable.length === 1 ? "" : "s"}`}
+              onClick={() => onUpdateAll(updatable)}
+            >
+              {updateAllBusy ? "Updating…" : `Update all (${updatable.length})`}
+            </button>
+          )}
+          <button
+            className="popover-refresh"
+            aria-label="Check for updates"
+            title="Check for updates"
+            onClick={() => onCheckUpdates(true)}
+            dangerouslySetInnerHTML={{ __html: refreshIcon }}
+          />
           <button className="popover-close" aria-label="Close extensions" onClick={onClose}>
             ×
           </button>

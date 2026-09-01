@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelMcp, PinelPluginState, PinelPrompt, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionUpdateEntry, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelMcp, PinelPluginState, PinelPrompt, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
@@ -13,6 +13,7 @@ import { WorkflowBar } from "./components/WorkflowBar";
 import { MessageView, userText, type ToolResultInfo } from "./components/MessageView";
 import { RecentRoundBar } from "./components/RecentRoundBar";
 import { resolveVisibleUser } from "./roundbar-rule";
+import { extensionRowKey, mergeExtensionUpdates, updatableItems } from "./extension-updates";
 import { Notices } from "./components/Notices";
 import { TodoPanel } from "./components/TodoPanel";
 import { UiDialogs } from "./components/UiDialogs";
@@ -78,6 +79,15 @@ export default function App() {
   const [extensions, setExtensions] = useState<ExtensionItem[]>([]);
   /** 扩展弹层当前视图（All/Global/Project 切换；切换时重拉列表）。 */
   const [extensionView, setExtensionView] = useState<ExtensionView | "catalog">("all");
+  /** 更新检查条目（extensionUpdates 消息填充；与 extensions 经 useMemo 合并渲染）。 */
+  const [updateEntries, setUpdateEntries] = useState<ExtensionUpdateEntry[]>([]);
+  /** 更新中的行键（乐观置忙；extensionList/extensionUpdates 到达即清）。 */
+  const [updatingKeys, setUpdatingKeys] = useState<Set<string>>(new Set());
+  /** 合并更新态的列表（ExtensionPopover 渲染源）。 */
+  const mergedExtensions = useMemo(
+    () => mergeExtensionUpdates(extensions, updateEntries),
+    [extensions, updateEntries],
+  );
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   /** 安装中的 spec（防重复点击；catalogState 刷新时清除）。 */
   const [installing, setInstalling] = useState<Set<string>>(new Set());
@@ -391,6 +401,11 @@ export default function App() {
       case "extensionList":
         setExtensions(msg.items);
         setExtensionProjectAvailable(msg.projectAvailable);
+        setUpdatingKeys(new Set()); // 更新流程后列表重发 = 清乐观忙态
+        break;
+      case "extensionUpdates":
+        setUpdateEntries(msg.entries);
+        setUpdatingKeys(new Set());
         break;
       case "catalogState":
         setCatalog(msg.entries);
@@ -575,6 +590,7 @@ export default function App() {
     // 不清空 extensions：信息条 chip 常驻显示，宿主重扫后整体替换
     // catalog 为本地视图：宿主按 all 刷新扩展列表（背景），目录状态单独拉
     vscode.postMessage({ type: "getExtensionList", view: extensionView === "catalog" ? "all" : extensionView });
+    vscode.postMessage({ type: "checkExtensionUpdates", view: extensionView === "catalog" ? "all" : extensionView, force: false });
     vscode.postMessage({ type: "getCatalogState" });
   };
 
@@ -585,7 +601,48 @@ export default function App() {
       vscode.postMessage({ type: "getCatalogState" });
     } else {
       vscode.postMessage({ type: "getExtensionList", view });
+      vscode.postMessage({ type: "checkExtensionUpdates", view, force: false });
     }
+  };
+
+  // 更新检查：弹层打开/视图切换自动（force=false）；标题栏刷新按钮 force=true 绕过缓存
+  const checkExtensionUpdates = (force: boolean) => {
+    vscode.postMessage({
+      type: "checkExtensionUpdates",
+      view: extensionView === "catalog" ? "all" : extensionView,
+      force,
+    });
+  };
+
+  // 单行 / 批量更新：乐观置忙，结果经 extensionList + extensionUpdates 回流清除
+  const updateExtensionItem = (item: ExtensionItem) => {
+    setUpdatingKeys((prev) => new Set(prev).add(extensionRowKey(item)));
+    vscode.postMessage({
+      type: "updateExtension",
+      id: item.id,
+      kind: item.kind,
+      scope: item.scope,
+      source: item.source,
+      inherited: item.inherited === true,
+    });
+  };
+
+  const updateAllExtensionItems = (targets: ExtensionItem[]) => {
+    setUpdatingKeys((prev) => {
+      const next = new Set(prev);
+      for (const i of targets) next.add(extensionRowKey(i));
+      return next;
+    });
+    vscode.postMessage({
+      type: "updateAllExtensions",
+      entries: targets.map((i) => ({
+        id: i.id,
+        kind: i.kind,
+        scope: i.scope,
+        source: i.source,
+        inherited: i.inherited === true,
+      })),
+    });
   };
 
   // 启停扩展：发 setExtensionEnabled（宿主执行后重发列表 + reload 提示）
@@ -851,12 +908,16 @@ export default function App() {
       />
       <ExtensionPopover
         anchor={popover === "ext" ? extensionChipRef.current : null}
-        items={extensions}
+        items={mergedExtensions}
         view={extensionView}
         projectAvailable={extensionProjectAvailable}
         pinelPluginState={pinelPluginState}
         catalog={catalog}
         installing={installing}
+        updating={updatingKeys}
+        onCheckUpdates={checkExtensionUpdates}
+        onUpdate={updateExtensionItem}
+        onUpdateAll={updateAllExtensionItems}
         onInstallPinelPlugin={() => vscode.postMessage({ type: "installPinelPlugin" })}
         onInstallCatalogEntry={(spec) => {
           setInstalling((prev) => new Set(prev).add(spec));
