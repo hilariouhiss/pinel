@@ -61,11 +61,20 @@ suite("checkGitUpdate", () => {
     ]);
     assert.deepStrictEqual(await checkGitUpdate("/pkg", run), { status: "available" });
   });
-  test("有 upstream：按 upstream ref ls-remote，相同 → current", async () => {
+  test("有 upstream：按 fully-qualified ref ls-remote，相同 → current", async () => {
     const run = fakeRunner([
       revParse(LOCAL),
       { match: "git rev-parse --abbrev-ref", stdout: "origin/main\n" },
-      { match: "git ls-remote origin origin/main", stdout: `${LOCAL}\trefs/heads/main\n` },
+      { match: "git ls-remote origin refs/heads/main", stdout: `${LOCAL}\trefs/heads/main\n` },
+    ]);
+    assert.deepStrictEqual(await checkGitUpdate("/pkg", run), { status: "current" });
+  });
+  test("upstream ls-remote 无 SHA → 回退 origin HEAD", async () => {
+    const run = fakeRunner([
+      revParse(LOCAL),
+      { match: "git rev-parse --abbrev-ref", stdout: "origin/main\n" },
+      { match: "git ls-remote origin refs/heads/main", stdout: "" },
+      { match: "git ls-remote origin HEAD", stdout: `${LOCAL}\tHEAD\n` },
     ]);
     assert.deepStrictEqual(await checkGitUpdate("/pkg", run), { status: "current" });
   });

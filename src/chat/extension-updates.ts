@@ -77,27 +77,41 @@ export async function checkNpmUpdate(
   }
 }
 
-/** git 更新检查：upstream ref 优先 ls-remote，回退 origin/HEAD。 */
+/** git 更新检查：镜像 pi getRemoteGitHead —— upstream ref（origin/ 前缀剥掉）ls-remote 取 SHA，无 SHA 回退 origin HEAD。 */
 export async function checkGitUpdate(installPath: string, run: CommandRunner): Promise<UpdateCheckResult> {
   try {
     const local = (await run("git", ["rev-parse", "HEAD"], { cwd: installPath, timeoutMs: 15000 })).trim();
-    let upstream: string | undefined;
-    try {
-      upstream = (await run("git", ["rev-parse", "--abbrev-ref", "@{upstream}"], { cwd: installPath, timeoutMs: 10000 })).trim();
-    } catch {
-      // 无 upstream 分支：回退 origin/HEAD
-    }
-    const remote = await run(
-      "git",
-      upstream ? ["ls-remote", "origin", upstream] : ["ls-remote", "origin", "HEAD"],
-      { cwd: installPath, timeoutMs: 20000 },
-    );
-    // 注：brief 草稿用 {40}，与自身测试的短哈希 fixture（aaa/bbb）矛盾 → 放宽为任意长度 hex（真实 ls-remote 恒为 40 位）
-    const m = remote.match(/^([0-9a-f]+)\s/m);
-    if (!m) return { status: "unknown" };
-    return m[1] === local ? { status: "current" } : { status: "available" };
+    const remote = await getRemoteGitHead(installPath, run);
+    return remote === local ? { status: "current" } : { status: "available" };
   } catch {
     return { status: "unknown" };
+  }
+}
+
+/** 镜像 pi getRemoteGitHead：upstream ref 优先；无 SHA 则回退 origin HEAD（无则抛错）。 */
+async function getRemoteGitHead(installPath: string, run: CommandRunner): Promise<string> {
+  const upstreamRef = await getGitUpstreamRef(installPath, run);
+  if (upstreamRef) {
+    const remoteHead = await run("git", ["ls-remote", "origin", upstreamRef], { cwd: installPath, timeoutMs: 20000 });
+    // pi 用 {40}；测试 fixture 用短哈希（aaa/bbb）→ 放宽为任意长度 hex（真实 ls-remote 恒为 40 位）
+    const match = remoteHead.match(/^([0-9a-f]+)\s/m);
+    if (match?.[1]) return match[1];
+  }
+  const remoteHead = await run("git", ["ls-remote", "origin", "HEAD"], { cwd: installPath, timeoutMs: 20000 });
+  const match = remoteHead.match(/^([0-9a-f]+)\s+HEAD$/m);
+  if (!match?.[1]) throw new Error("Failed to determine remote HEAD");
+  return match[1];
+}
+
+/** 镜像 pi getGitUpstreamRef：@{upstream} 需 origin/ 前缀，剥前缀 → refs/heads/<branch>；否则 undefined。 */
+async function getGitUpstreamRef(installPath: string, run: CommandRunner): Promise<string | undefined> {
+  try {
+    const upstream = (await run("git", ["rev-parse", "--abbrev-ref", "@{upstream}"], { cwd: installPath, timeoutMs: 10000 })).trim();
+    if (!upstream.startsWith("origin/")) return undefined;
+    const branch = upstream.slice("origin/".length);
+    return branch ? `refs/heads/${branch}` : undefined;
+  } catch {
+    return undefined;
   }
 }
 
