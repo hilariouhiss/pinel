@@ -506,7 +506,7 @@ export async function removePackageFromSettings(
 // settings.json 读写（严格 JSON + 原子写；见模块头注释）
 // -------------------------------------------------------------------------
 
-type SettingsObject = Record<string, unknown>;
+export type SettingsObject = Record<string, unknown>;
 
 /** 读 settings.json：不存在 → 空对象；损坏 JSON → 抛错（绝不覆盖，调用方 notice）。 */
 export async function readSettings(settingsPath: string): Promise<SettingsObject> {

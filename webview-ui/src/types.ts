@@ -25,6 +25,8 @@ export interface ChatStatus {
   autoCompactPercent: number | null;
   /** 自动提交（pi settings.json pinel.autoCommit 镜像；开启时插件注入提示词）。 */
   autoCommitEnabled: boolean;
+  /** 当前模式名（宿主 pinel.modes.active 镜像；undefined = Default）。 */
+  modeName?: string;
   /** 当前会话文件路径（get_state.sessionFile；会话历史高亮用）。 */
   sessionFile?: string;
   /** 会话信息条开关（pinel.showSessionStats 配置镜像；UI 偏好不依赖 pi 运行）。 */
@@ -212,6 +214,27 @@ export interface ExtensionUpdateEntry {
   latestVersion?: string;
 }
 
+/** 模式配置（宿主 AgentMode 镜像；skills = 排除键 id 集）。 */
+export interface AgentMode {
+  name: string;
+  skills: string[];
+}
+
+/** 扫描出的本地 skill（宿主 ModeSkill 镜像；id = 排除键，name = 展示名）。 */
+export interface ModeSkill {
+  id: string;
+  name: string;
+  description?: string;
+  scope: "global" | "project";
+}
+
+/** 模式状态（宿主 modeState 消息/弹层数据源镜像）。 */
+export interface ModeState {
+  active: string | null;
+  modes: AgentMode[];
+  skills: ModeSkill[];
+}
+
 /** 插件目录兼容性判定（宿主 catalog 镜像）。 */
 export type CatalogCompat = "ok" | "limited" | "tui-only";
 
@@ -365,6 +388,7 @@ export type HostMessage =
   | { type: "extensionList"; items: ExtensionItem[] }
   | { type: "extensionUpdates"; entries: ExtensionUpdateEntry[] }
   | { type: "catalogState"; entries: CatalogItem[] }
+  | { type: "modeState"; state: ModeState }
   | { type: "pinelWorkflow"; workflow: PinelWorkflow | null }
   | { type: "pinelPrompt"; prompt: PinelPrompt | null }
   | { type: "pinelPluginState"; state: PinelPluginState }

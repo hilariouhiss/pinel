@@ -210,6 +210,36 @@ interface WebviewGetCatalogStateMessage {
   type: "getCatalogState";
 }
 
+/** 拉取模式状态（打开模式弹层时；宿主扫描本地 skills + 读 pinel.modes）。 */
+interface WebviewGetModeStateMessage {
+  type: "getModeState";
+}
+
+/** 新建模式（空名/重名由宿主防御）。 */
+interface WebviewCreateModeMessage {
+  type: "createMode";
+  name: string;
+}
+
+/** 删除模式（删激活项 = 回 Default 并提示 reload）。 */
+interface WebviewDeleteModeMessage {
+  type: "deleteMode";
+  name: string;
+}
+
+/** 更新模式 skill 集（改激活项 = 重算排除段并提示 reload）。 */
+interface WebviewUpdateModeSkillsMessage {
+  type: "updateModeSkills";
+  name: string;
+  skills: string[];
+}
+
+/** 切换模式（null = Default；写盘后提示 reload）。 */
+interface WebviewSwitchModeMessage {
+  type: "switchMode";
+  name: string | null;
+}
+
 /** 目录单包安装（spec = 目录项 installSpec，宿主仅透传；显式按钮触发非静默）。 */
 interface WebviewInstallCatalogEntryMessage {
   type: "installCatalogEntry";
@@ -270,6 +300,11 @@ type WebviewInMessage =
   | WebviewGetExtensionListMessage
   | WebviewInstallPinelPluginMessage
   | WebviewGetCatalogStateMessage
+  | WebviewGetModeStateMessage
+  | WebviewCreateModeMessage
+  | WebviewDeleteModeMessage
+  | WebviewUpdateModeSkillsMessage
+  | WebviewSwitchModeMessage
   | WebviewInstallCatalogEntryMessage
   | WebviewInstallCatalogGroupMessage
   | WebviewCompactMessage
@@ -450,6 +485,21 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       case "getCatalogState":
         void this.postCatalogState();
         break;
+      case "getModeState":
+        void this.postModeState();
+        break;
+      case "createMode":
+        void this.controller.createMode(msg.name);
+        break;
+      case "deleteMode":
+        void this.controller.deleteMode(msg.name);
+        break;
+      case "updateModeSkills":
+        void this.controller.updateModeSkills(msg.name, msg.skills);
+        break;
+      case "switchMode":
+        void this.controller.switchMode(msg.name);
+        break;
       case "installCatalogEntry":
       case "installCatalogGroup":
         void (async () => {
@@ -561,6 +611,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       this.post({ type: "catalogState", entries });
     } catch {
       // 扫描异常：不弹 notice（弹层空列表即可），仅忽略
+    }
+  }
+
+  /** 读模式状态并回发（模式弹层数据源；每次打开实时扫描，失败弹层空列表）。 */
+  private async postModeState(): Promise<void> {
+    try {
+      const state = await this.controller.getModeState();
+      this.post({ type: "modeState", state });
+    } catch {
+      // 扫描异常：不弹 notice，仅忽略
     }
   }
 

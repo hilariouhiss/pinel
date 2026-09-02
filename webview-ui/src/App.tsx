@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionUpdateEntry, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelMcp, PinelPluginState, PinelPrompt, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionUpdateEntry, FileItem, ForkMessageItem, HostMessage, ModeState, ModelInfo, PinelMcp, PinelPluginState, PinelPrompt, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
 import { ExtensionPopover } from "./components/ExtensionPopover";
+import { ModePopover } from "./components/ModePopover";
 import { SessionListPopover } from "./components/SessionListPopover";
 import { ForkPopover } from "./components/ForkPopover";
 import { SessionStatsBar } from "./components/SessionStatsBar";
@@ -43,7 +44,7 @@ const initialStatus: ChatStatus = {
 let noticeSeq = 0;
 
 /** 弹窗互斥：任一时刻只开一个（⚙ 设置面板 / 扩展管理 / 会话历史 / 分支选择器）。 */
-type PopoverKind = "config" | "session" | "fork" | "ext" | "model" | "thinking" | null;
+type PopoverKind = "config" | "session" | "fork" | "ext" | "model" | "thinking" | "mode" | null;
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -73,8 +74,12 @@ export default function App() {
   /** 模型/思考 chip 元素引用（ModelPopover 锚定）。 */
   const modelChipRef = useRef<HTMLButtonElement>(null);
   const thinkingChipRef = useRef<HTMLButtonElement>(null);
+  /** 模式 chip 元素引用（ModePopover 开关信号 + 焦点还原锚；chip 在 Composer 渲染）。 */
+  const modeChipRef = useRef<HTMLButtonElement>(null);
   /** 可 fork 的历史用户消息（getForkMessages 响应填充；打开时拉取）。 */
   const [forkMessages, setForkMessages] = useState<ForkMessageItem[]>([]);
+  /** 模式状态（getModeState 响应填充；打开弹层拉取，操作后宿主重发）。 */
+  const [modeState, setModeState] = useState<ModeState | null>(null);
   /** 扩展列表（getExtensionList 响应填充；挂载预热 + 打开管理弹层拉取，启停/卸载后宿主重发）。 */
   const [extensions, setExtensions] = useState<ExtensionItem[]>([]);
   /** 扩展弹层当前视图（All/Catalog 切换；All 时重拉列表）。 */
@@ -413,6 +418,9 @@ export default function App() {
         setCatalog(msg.entries);
         setInstalling(new Set()); // 安装回执已到：清除 busy 标记
         break;
+      case "modeState":
+        setModeState(msg.state);
+        break;
       case "triggerEditPrompt":
         setEditPromptTrigger((v) => v + 1);
         break;
@@ -571,6 +579,19 @@ export default function App() {
   };
 
   const openConfig = () => setPopover((prev) => (prev === "config" ? null : "config"));
+
+  // 模式弹层：打开时拉取模式状态（实时扫描本地 skills + 读 pinel.modes）
+  const openModes = () => {
+    setPopover((prev) => (prev === "mode" ? null : "mode")); // 已开则关闭（toggle）
+    vscode.postMessage({ type: "getModeState" });
+  };
+  const switchMode = (name: string | null) => {
+    vscode.postMessage({ type: "switchMode", name });
+  };
+  const createMode = (name: string) => vscode.postMessage({ type: "createMode", name });
+  const deleteMode = (name: string) => vscode.postMessage({ type: "deleteMode", name });
+  const updateModeSkills = (name: string, skills: string[]) =>
+    vscode.postMessage({ type: "updateModeSkills", name, skills });
 
   // 会话历史弹层：打开时拉取最新列表（每次打开实时扫描）
   const openSessionList = () => {
@@ -849,6 +870,10 @@ export default function App() {
           thinkingOpen={popover === "thinking"}
           onOpenThinking={openThinking}
           thinkingChipRef={thinkingChipRef}
+          modeName={status.modeName}
+          modesOpen={popover === "mode"}
+          onOpenModes={openModes}
+          modeChipRef={modeChipRef}
           fileList={fileList}
         />
         {status.showSessionStats && (
@@ -895,6 +920,15 @@ export default function App() {
         currentSessionFile={status.sessionFile}
         switching={switching}
         onSelect={selectSession}
+        onClose={() => setPopover(null)}
+      />
+      <ModePopover
+        anchor={popover === "mode" ? modeChipRef.current : null}
+        state={modeState}
+        onSwitch={switchMode}
+        onCreate={createMode}
+        onDelete={deleteMode}
+        onUpdateSkills={updateModeSkills}
         onClose={() => setPopover(null)}
       />
       <ForkPopover

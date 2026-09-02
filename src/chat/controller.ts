@@ -87,9 +87,26 @@ import {
   type UpdateStatus,
 } from "./extension-updates";
 import { catalogInstallState, getCatalog, installedIdentities, type CatalogEntry } from "./catalog";
+import {
+  mergeSkillsEntries,
+  modeExclusions,
+  readModesState,
+  scanLocalSkills,
+  writeModesState,
+  type AgentMode,
+  type ModeSkill,
+  type ModesState,
+} from "./modes";
 
 /** 目录项 + 安装态（webview 协议镜像；字段定义见 webview-ui/src/types.ts）。 */
 export type CatalogItemState = CatalogEntry & { state: "installed" | "available" };
+
+/** 模式状态载荷（webview modeState 消息/弹层数据源镜像；字段定义见 webview-ui/src/types.ts）。 */
+export interface ModeStatePayload {
+  active: string | null;
+  modes: AgentMode[];
+  skills: ModeSkill[];
+}
 import {
   inputResponseFor,
   parseQuestionnaireAnswer,
@@ -119,6 +136,8 @@ export interface ChatStatus {
   autoCompactPercent: number | null;
   /** 自动提交（pinel.autoCommit 设置镜像；写入 pi settings.json，插件按轮注入提示词）。 */
   autoCommitEnabled: boolean;
+  /** 当前模式名（pinel.modes.active 镜像；undefined = Default，全部本地 skills 生效）。 */
+  modeName?: string;
   /** 会话信息条开关（pinel.showSessionStats 配置镜像；UI 偏好不依赖 pi 运行）。 */
   showSessionStats?: boolean;
   /** 当前会话文件路径（get_state.sessionFile；会话历史列表高亮用）。 */
@@ -175,6 +194,7 @@ export type OutMessage =
   | { type: "extensionList"; items: ExtensionItem[] }
   | { type: "extensionUpdates"; entries: ExtensionUpdateEntry[] }
   | { type: "catalogState"; entries: CatalogItemState[] }
+  | { type: "modeState"; state: ModeStatePayload }
   | { type: "pinelWorkflow"; workflow: PinelWorkflowPayload | null }
   | { type: "pinelPrompt"; prompt: PinelPromptPayload | null }
   | { type: "pinelPluginState"; state: PinelPluginState }
@@ -438,6 +458,8 @@ export class ChatController {
     }
     // 自动提交开关：每次启动回读 settings.json（restart 重置 status 后恢复）
     void this.refreshAutoCommit();
+    // 当前模式名：每次启动回读（restart 重置 status 后恢复 chip 显示）
+    void this.refreshModeName();
 
     const client = this.client;
     if (!client) {
@@ -2032,6 +2054,183 @@ export class ChatController {
     return getCatalog().map((e) => ({ ...e, state: catalogInstallState(e, installed) }));
   }
 
+  // -------------------------------------------------------------------------
+  // 智能体模式（pinel.modes；生效原理与存储见 modes.ts 头注释）
+  // -------------------------------------------------------------------------
+
+  /** 读全局 settings 的模式状态（缺失/损坏 → 空态：模式功能降级，不影响其他链路）。 */
+  private async readModesFromDisk(): Promise<ModesState> {
+    try {
+      return readModesState(await readSettings(agentSettingsPath(os.homedir())));
+    } catch {
+      return { active: null, modes: [] };
+    }
+  }
+
+  /** 启动回读当前模式名到 status（镜像 refreshAutoCommit：restart 重置后恢复）。 */
+  private async refreshModeName(): Promise<void> {
+    const name = (await this.readModesFromDisk()).active ?? undefined;
+    if (this.status.modeName !== name) {
+      this.status = { ...this.status, modeName: name };
+      this.fire({ type: "status", status: this.status });
+    }
+  }
+
+  /** 合并写全局 settings 的 pinel.modes（readSettings 损坏抛错 → 调用方 notice，绝不覆盖）。 */
+  private async persistModes(state: ModesState): Promise<void> {
+    const settingsPath = agentSettingsPath(os.homedir());
+    const settings = await readSettings(settingsPath);
+    writeModesState(settings, state);
+    await writeSettings(settingsPath, settings);
+  }
+
+  /**
+   * 应用激活模式的排除段：扫描本地 skills，未选中项按 scope 写 `!id` 到
+   * 对应 settings.json 的 skills 数组（非 `!` 条目恒保留，见 mergeSkillsEntries）。
+   * 文件不存在且无需排除时跳过（不无谓创建 .pi/settings.json）。
+   */
+  private async applyActiveMode(state: ModesState): Promise<void> {
+    const agentDir = defaultAgentDir();
+    const skills = await scanLocalSkills(agentDir, os.homedir(), this.workspaceRoot);
+    // Default（active = null）= 无排除（全部本地 skills 生效），决策纯函数见 modeExclusions
+    const exclusions = modeExclusions(state, skills);
+    const writes: Array<{ file: string; ids: string[] }> = [
+      { file: agentSettingsPath(os.homedir()), ids: exclusions.global },
+    ];
+    if (this.workspaceRoot) {
+      writes.push({
+        file: path.join(projectConfigDir(this.workspaceRoot), "settings.json"),
+        ids: exclusions.project,
+      });
+    }
+    for (const w of writes) {
+      const settings = await readSettings(w.file);
+      if (w.ids.length === 0 && settings.skills === undefined) {
+        continue;
+      }
+      settings.skills = mergeSkillsEntries(settings.skills, w.ids);
+      await writeSettings(w.file, settings);
+    }
+  }
+
+  /** 模式状态载荷（webview modeState 消息/弹层数据源镜像）。 */
+  async getModeState(): Promise<ModeStatePayload> {
+    const state = await this.readModesFromDisk();
+    const skills = await scanLocalSkills(defaultAgentDir(), os.homedir(), this.workspaceRoot);
+    return { active: state.active, modes: state.modes, skills };
+  }
+
+  /** 新建模式（空名静默忽略；重名 notice；不切换激活项）。 */
+  async createMode(name: string): Promise<void> {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return;
+    }
+    const state = await this.readModesFromDisk();
+    if (state.modes.some((m) => m.name === trimmed)) {
+      this.notice("warning", `Mode "${trimmed}" already exists`);
+      return;
+    }
+    state.modes.push({ name: trimmed, skills: [] });
+    await this.persistModesOrNotify(state);
+    await this.fireModeState();
+  }
+
+  /** 删除模式；删激活项 = 回 Default（清空排除段）并提示 reload。 */
+  async deleteMode(name: string): Promise<void> {
+    const state = await this.readModesFromDisk();
+    if (!state.modes.some((m) => m.name === name)) {
+      return;
+    }
+    state.modes = state.modes.filter((m) => m.name !== name);
+    const wasActive = state.active === name;
+    if (wasActive) {
+      state.active = null;
+    }
+    await this.persistModesOrNotify(state);
+    await this.applyActiveModeOrNotify(state);
+    if (wasActive) {
+      this.updateModeName(undefined);
+    }
+    await this.fireModeState();
+    if (wasActive && (await confirmModeApply())) {
+      await this.restart();
+    }
+  }
+
+  /** 更新模式 skill 集（顺带剔除已卸载的 id）；改激活项 = 重算排除段 + notice 提示
+   *  reload（不弹框：勾选是连续小步操作，弹框会刷屏；switchMode 才走确认弹窗）。 */
+  async updateModeSkills(name: string, skills: string[]): Promise<void> {
+    const state = await this.readModesFromDisk();
+    const mode = state.modes.find((m) => m.name === name);
+    if (!mode) {
+      return;
+    }
+    const scanned = await scanLocalSkills(defaultAgentDir(), os.homedir(), this.workspaceRoot);
+    const ids = new Set(scanned.map((s) => s.id));
+    mode.skills = skills.filter((s) => ids.has(s));
+    await this.persistModesOrNotify(state);
+    const activeEdit = state.active === name;
+    if (activeEdit) {
+      await this.applyActiveModeOrNotify(state);
+    }
+    await this.fireModeState();
+    if (activeEdit) {
+      this.notice("info", "Skills changed — reload pi to apply");
+    }
+  }
+
+  /**
+   * 切换模式（null = Default）：置激活项、写两个 scope 的排除段、更新 chip、
+   * 提示 reload（点 Reload 才重启 pi——与扩展启停一致，写盘已完成）。
+   */
+  async switchMode(name: string | null): Promise<void> {
+    const state = await this.readModesFromDisk();
+    if (name !== null && !state.modes.some((m) => m.name === name)) {
+      return;
+    }
+    state.active = name;
+    await this.persistModesOrNotify(state);
+    await this.applyActiveModeOrNotify(state);
+    this.updateModeName(name ?? undefined);
+    await this.fireModeState();
+    if (await confirmModeApply()) {
+      await this.restart();
+    }
+  }
+
+  /** persist 失败（settings 损坏等）：notice 并抛给调用方中止链路。 */
+  private async persistModesOrNotify(state: ModesState): Promise<void> {
+    try {
+      await this.persistModes(state);
+    } catch (err) {
+      this.notice("error", `Save modes failed: ${(err as Error).message}`);
+      throw err;
+    }
+  }
+
+  /** 排除段写入失败：notice（激活态已持久化，仅生效失败）。 */
+  private async applyActiveModeOrNotify(state: ModesState): Promise<void> {
+    try {
+      await this.applyActiveMode(state);
+    } catch (err) {
+      this.notice("error", `Apply mode exclusions failed: ${(err as Error).message}`);
+    }
+  }
+
+  /** 广播最新模式状态（弹层与 chip 的权威刷新通道）。 */
+  private async fireModeState(): Promise<void> {
+    this.fire({ type: "modeState", state: await this.getModeState() });
+  }
+
+  /** status.modeName 更新 + 广播（值不变时跳过）。 */
+  private updateModeName(name: string | undefined): void {
+    if (this.status.modeName !== name) {
+      this.status = { ...this.status, modeName: name };
+      this.fire({ type: "status", status: this.status });
+    }
+  }
+
   /**
    * 目录安装（显式按钮触发，非静默）：逐个 spawn `pi install <spec>`（全局 settings，
    * 120s 超时对齐 installPinelPlugin 先例；顺序执行防 settings.json 并发写竞态）。
@@ -3101,6 +3300,18 @@ export async function confirmExtensionUninstall(name: string): Promise<boolean> 
 export async function confirmExtensionReload(): Promise<boolean> {
   const pick = await vscode.window.showInformationMessage(
     "Extension changed. Reload pi to apply changes?",
+    "Reload",
+  );
+  return pick === "Reload";
+}
+
+/**
+ * 模式切换/修改后的 reload 提示（与 confirmExtensionReload 同款 seam）。
+ * 独立导出以便集成测试 stub showInformationMessage 后直调覆盖两条路径。
+ */
+export async function confirmModeApply(): Promise<boolean> {
+  const pick = await vscode.window.showInformationMessage(
+    "Mode changed. Reload pi to apply skills?",
     "Reload",
   );
   return pick === "Reload";
