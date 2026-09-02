@@ -10,8 +10,10 @@ import leafIcon from "lucide-static/icons/leaf.svg";
 import zapIcon from "lucide-static/icons/zap.svg";
 import flameIcon from "lucide-static/icons/flame.svg";
 import powerIcon from "lucide-static/icons/power.svg";
-import circleIcon from "lucide-static/icons/circle.svg";
-import circleDotIcon from "lucide-static/icons/circle-dot.svg";
+import toggleRightIcon from "lucide-static/icons/toggle-right.svg";
+import toggleLeftIcon from "lucide-static/icons/toggle-left.svg";
+// 自绘 lucide 风格小马（无官方马图标；stroke=currentColor 随容器 color）
+import ponyIcon from "../ponytail.svg";
 
 interface Props {
   /** 会话统计（宿主 parseSessionStats 结果）；null = 尚未拉取（占位）。 */
@@ -152,11 +154,18 @@ export function SessionStatsBar({ stats, env, ponytailStatus }: Props) {
               title={`Ponytail: ${ponytailStatus.mode.toUpperCase()}${ponytailStatus.active ? "" : " (idle)"} — click to cycle`}
               onClick={() => vscode.postMessage({ type: "cyclePonytail" })}
             >
-              <span className={`ponytail-dot${ponytailStatus.active ? " ponytail-dot-active" : ""}`}>
-                <span
-                  dangerouslySetInnerHTML={{ __html: ponytailStatus.active ? circleDotIcon : circleIcon }}
-                />
-              </span>{" "}
+              <span
+                className={`session-stats-icon ponytail-toggle${ponytailStatus.active ? " on" : ""}`}
+                title={`Ponytail ${ponytailStatus.active ? "ON" : "OFF"}`}
+                dangerouslySetInnerHTML={{
+                  __html: ponytailStatus.active ? toggleRightIcon : toggleLeftIcon,
+                }}
+              />
+              <span
+                className="session-stats-icon ponytail-horse"
+                title="Ponytail"
+                dangerouslySetInnerHTML={{ __html: ponyIcon }}
+              />
               <span
                 className="session-stats-icon"
                 dangerouslySetInnerHTML={{

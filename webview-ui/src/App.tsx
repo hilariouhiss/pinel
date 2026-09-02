@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionUpdateEntry, FileItem, ForkMessageItem, HostMessage, ModeState, ModelInfo, PinelMcp, PinelPluginState, PinelPrompt, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionUpdateEntry, FileItem, ForkMessageItem, HostMessage, ModeState, ModelDefaults, ModelInfo, PinelMcp, PinelPluginState, PinelPrompt, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
@@ -64,6 +64,7 @@ export default function App() {
   const [modelLoading, setModelLoading] = useState(false);
   /** 思考强度列表数据与加载态。 */
   const [thinkingLevels, setThinkingLevels] = useState<string[]>([]);
+  const [modelDefaults, setModelDefaults] = useState<ModelDefaults | null>(null);
   const [thinkingLoading, setThinkingLoading] = useState(false);
   /** 会话历史按钮元素引用（SessionListPopover 锚定）。 */
   const historyBtnRef = useRef<HTMLButtonElement>(null);
@@ -354,6 +355,9 @@ export default function App() {
           setThinkingLoading(false);
         }
         break;
+      case "modelDefaults":
+        setModelDefaults(msg.defaults);
+        break;
       case "questionnaire":
         setQuestionnaire(msg.questionnaire);
         setQnaFocusVersion((v) => v + 1); // 新问卷推送：触发聚焦（快照恢复不触发）
@@ -582,7 +586,12 @@ export default function App() {
     vscode.postMessage({ type: "setThinkingLevel", level });
   };
 
-  const openConfig = () => setPopover((prev) => (prev === "config" ? null : "config"));
+  const openConfig = () => {
+    setPopover((prev) => (prev === "config" ? null : "config"));
+    // 设置页 Models 区需要清单：打开时拉取（复用模型/思考 chip 的缓存）
+    vscode.postMessage({ type: "getModels" });
+    vscode.postMessage({ type: "getThinkingLevels" });
+  };
 
   // 模式弹层：打开时拉取模式状态（实时扫描本地 skills + 读 pinel.modes）
   const openModes = () => {
@@ -902,6 +911,9 @@ export default function App() {
       <ConfigPopover
         key={popover === "config" ? "cfg-open" : "cfg-closed"}
         status={status}
+        models={models}
+        thinkingLevels={thinkingLevels}
+        modelDefaults={modelDefaults}
         open={popover === "config"}
         onClose={() => setPopover(null)}
       />

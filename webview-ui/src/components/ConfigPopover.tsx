@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { vscode } from "../index";
-import type { ChatStatus } from "../types";
+import type { ChatStatus, ModelDefaults, ModelInfo } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
 import xIcon from "lucide-static/icons/x.svg";
 
 interface Props {
   status: ChatStatus;
+  /** 可用模型/思考清单（App 打开设置时拉取；未到则下拉为空）。 */
+  models: ModelInfo[];
+  thinkingLevels: string[];
+  /** 模型默认配置（宿主 modelDefaults 消息；null = 未拉取）。 */
+  modelDefaults: ModelDefaults | null;
   open: boolean;
   onClose: () => void;
 }
@@ -21,7 +26,7 @@ type ModeValue = "all" | "one-at-a-time";
  * 点击外部/Esc 关闭（Esc 在 window capture 阶段拦截，让位于 Composer 的
  * abort/清空分支）；非 running 时切换区禁用。
  */
-export function ConfigPopover({ status, open, onClose }: Props) {
+export function ConfigPopover({ status, models, thinkingLevels, modelDefaults, open, onClose }: Props) {
   const [busyKeys, setBusyKeys] = useState<ReadonlySet<string>>(new Set());
   const panelRef = useRef<HTMLDivElement>(null);
   const running = status.processState === "running";
@@ -105,6 +110,46 @@ export function ConfigPopover({ status, open, onClose }: Props) {
     }
     vscode.postMessage({ type: "setCompactionThreshold", percent: pct });
   };
+
+  /** 模型复合键（provider:id；与 ModelPopover 的 modelKey 一致）。 */
+  const modelKey = (m: ModelInfo) => `${m.provider ?? ""}:${m.id ?? ""}`;
+  const modelOptions = models
+    .filter((m) => m.provider && m.id)
+    .map((m) => ({ key: modelKey(m), label: `${m.name ?? m.id} (${m.provider})` }));
+  /** select 值 → setDefaultModel / setModelRole 消息。 */
+  const postModelKey = (type: "setDefaultModel" | "setModelRole", role: "strong" | "weak" | null, key: string) => {
+    if (!key) {
+      return;
+    }
+    const i = key.indexOf(":");
+    const provider = i > 0 ? key.slice(0, i) : "";
+    const modelId = i > 0 ? key.slice(i + 1) : key;
+    if (type === "setDefaultModel") {
+      vscode.postMessage({ type, provider, modelId });
+    } else if (role) {
+      vscode.postMessage({ type, role, key });
+    }
+  };
+  const modelSelect = (
+    value: string | null,
+    label: string,
+    onChange: (key: string) => void,
+    emptyLabel: string,
+  ) => (
+    <select
+      className="config-popover-select"
+      aria-label={label}
+      value={value ?? ""}
+      onChange={(e) => onChange(e.currentTarget.value)}
+    >
+      <option value="">{emptyLabel}</option>
+      {modelOptions.map((o) => (
+        <option key={o.key} value={o.key}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
 
   return (
     <>
@@ -234,6 +279,61 @@ export function ConfigPopover({ status, open, onClose }: Props) {
                 )
               }
             />
+          </div>
+        </div>
+        <div className="config-popover-section">
+          <div className="config-popover-title">Models</div>
+          {/* 纯设置写（pi settings.json）：不设 running 门控，下一会话起生效 */}
+          <div className="config-popover-row">
+            <span className="config-popover-label">Default model</span>
+            {modelSelect(
+              modelDefaults?.defaultModelKey ?? null,
+              "Default model",
+              (key) => postModelKey("setDefaultModel", null, key),
+              "(pi default)",
+            )}
+          </div>
+          <div className="config-popover-row">
+            <span className="config-popover-label">Default thinking</span>
+            <select
+              className="config-popover-select"
+              aria-label="Default thinking level"
+              value={modelDefaults?.defaultThinkingLevel ?? ""}
+              onChange={(e) => {
+                if (e.currentTarget.value) {
+                  vscode.postMessage({ type: "setDefaultThinkingLevel", level: e.currentTarget.value });
+                }
+              }}
+            >
+              <option value="">(pi default)</option>
+              {thinkingLevels.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="config-popover-row">
+            <span className="config-popover-label" title="Strong (expensive) model preset">
+              Strong model
+            </span>
+            {modelSelect(
+              modelDefaults?.strongKey ?? null,
+              "Strong model preset",
+              (key) => postModelKey("setModelRole", "strong", key),
+              "—",
+            )}
+          </div>
+          <div className="config-popover-row">
+            <span className="config-popover-label" title="Weak (cheap) model preset">
+              Weak model
+            </span>
+            {modelSelect(
+              modelDefaults?.weakKey ?? null,
+              "Weak model preset",
+              (key) => postModelKey("setModelRole", "weak", key),
+              "—",
+            )}
           </div>
         </div>
         </div>{/* /popover-body */}

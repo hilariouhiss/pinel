@@ -56,6 +56,7 @@ import { buildSubagentCard, applySubagentDetails, type SubagentCardInfo } from "
 import { parseCommands } from "./commands";
 import { parseForkMessages } from "./fork-messages";
 import { parseModels, parseThinkingLevels } from "./models";
+import { readModelDefaults, writeDefaultModel, writeDefaultThinkingLevel, writeModelRole, type ModelDefaults } from "./model-defaults";
 import type { SessionListItem } from "./session-history";
 import {
   defaultAgentDir,
@@ -199,6 +200,7 @@ export type OutMessage =
   | { type: "extensionUpdates"; entries: ExtensionUpdateEntry[] }
   | { type: "catalogState"; entries: CatalogItemState[] }
   | { type: "modeState"; state: ModeStatePayload }
+  | { type: "modelDefaults"; defaults: ModelDefaults }
   | { type: "pinelWorkflow"; workflow: PinelWorkflowPayload | null }
   | { type: "pinelPrompt"; prompt: PinelPromptPayload | null }
   | { type: "pinelPluginState"; state: PinelPluginState }
@@ -462,6 +464,7 @@ export class ChatController {
     }
     // 自动提交开关：每次启动回读 settings.json（restart 重置 status 后恢复）
     void this.refreshAutoCommit();
+    void this.refreshModelDefaults();
     // 当前模式名：每次启动回读（restart 重置 status 后恢复 chip 显示）
     void this.refreshModeName();
 
@@ -1787,6 +1790,75 @@ export class ChatController {
     if (this.status.autoCommitEnabled !== enabled) {
       this.status = { ...this.status, autoCommitEnabled: enabled };
       this.fire({ type: "status", status: this.status });
+    }
+  }
+
+  /**
+   * 模型默认配置（设置面板 Models 区）：读/写 pi 全局 settings.json。
+   * 默认模型/思考强度 = pi 启动键（下一会话生效）；强/弱 = pinel.modelRoles 预设。
+   * 读失败静默（空态）；写失败 notice 不广播。
+   */
+  private async readModelDefaultsFromDisk(): Promise<ModelDefaults | null> {
+    try {
+      return readModelDefaults(await readSettings(agentSettingsPath(os.homedir())));
+    } catch {
+      return null;
+    }
+  }
+
+  /** 启动回读模型默认配置（镜像 refreshAutoCommit：restart 重置后恢复）。 */
+  private async refreshModelDefaults(): Promise<void> {
+    const defaults = await this.readModelDefaultsFromDisk();
+    if (defaults) {
+      this.fire({ type: "modelDefaults", defaults });
+    }
+  }
+
+  async setDefaultModel(provider: string, modelId: string): Promise<void> {
+    const path = agentSettingsPath(os.homedir());
+    try {
+      const settings = await readSettings(path);
+      writeDefaultModel(settings, provider, modelId);
+      await writeSettings(path, settings);
+    } catch (err) {
+      this.notice("error", `Save default model failed: ${(err as Error).message}`);
+      return;
+    }
+    const defaults = await this.readModelDefaultsFromDisk();
+    if (defaults) {
+      this.fire({ type: "modelDefaults", defaults });
+    }
+  }
+
+  async setDefaultThinkingLevel(level: string): Promise<void> {
+    const path = agentSettingsPath(os.homedir());
+    try {
+      const settings = await readSettings(path);
+      writeDefaultThinkingLevel(settings, level);
+      await writeSettings(path, settings);
+    } catch (err) {
+      this.notice("error", `Save default thinking level failed: ${(err as Error).message}`);
+      return;
+    }
+    const defaults = await this.readModelDefaultsFromDisk();
+    if (defaults) {
+      this.fire({ type: "modelDefaults", defaults });
+    }
+  }
+
+  async setModelRole(role: "strong" | "weak", key: string): Promise<void> {
+    const path = agentSettingsPath(os.homedir());
+    try {
+      const settings = await readSettings(path);
+      writeModelRole(settings, role, key);
+      await writeSettings(path, settings);
+    } catch (err) {
+      this.notice("error", `Save ${role} model preset failed: ${(err as Error).message}`);
+      return;
+    }
+    const defaults = await this.readModelDefaultsFromDisk();
+    if (defaults) {
+      this.fire({ type: "modelDefaults", defaults });
     }
   }
 

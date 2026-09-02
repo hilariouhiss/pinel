@@ -248,6 +248,17 @@ export interface ModeState {
   extensions: ModeExtension[];
 }
 
+/** 模型默认配置（宿主 ModelDefaults 镜像）。 */
+export interface ModelDefaults {
+  /** 默认模型复合键 "provider:id"（未配置为 null）。 */
+  defaultModelKey: string | null;
+  defaultThinkingLevel: string | null;
+  /** 强（贵）模型预设键。 */
+  strongKey: string | null;
+  /** 弱（便宜）模型预设键。 */
+  weakKey: string | null;
+}
+
 /** 插件目录兼容性判定（宿主 catalog 镜像）。 */
 export type CatalogCompat = "ok" | "limited" | "tui-only";
 
@@ -402,6 +413,7 @@ export type HostMessage =
   | { type: "extensionUpdates"; entries: ExtensionUpdateEntry[] }
   | { type: "catalogState"; entries: CatalogItem[] }
   | { type: "modeState"; state: ModeState }
+  | { type: "modelDefaults"; defaults: ModelDefaults }
   | { type: "pinelWorkflow"; workflow: PinelWorkflow | null }
   | { type: "pinelPrompt"; prompt: PinelPrompt | null }
   | { type: "pinelPluginState"; state: PinelPluginState }

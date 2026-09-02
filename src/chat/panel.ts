@@ -129,6 +129,23 @@ interface WebviewToggleSessionStatsMessage {
   type: "toggleSessionStats";
 }
 
+interface WebviewSetDefaultModelMessage {
+  type: "setDefaultModel";
+  provider: string;
+  modelId: string;
+}
+
+interface WebviewSetDefaultThinkingLevelMessage {
+  type: "setDefaultThinkingLevel";
+  level: string;
+}
+
+interface WebviewSetModelRoleMessage {
+  type: "setModelRole";
+  role: "strong" | "weak";
+  key: string;
+}
+
 interface WebviewSwitchSessionMessage {
   type: "switchSession";
   path: string;
@@ -292,6 +309,9 @@ type WebviewInMessage =
   | WebviewRenameSessionMessage
   | WebviewDeleteSessionMessage
   | WebviewToggleSessionStatsMessage
+  | WebviewSetDefaultModelMessage
+  | WebviewSetDefaultThinkingLevelMessage
+  | WebviewSetModelRoleMessage
   | WebviewSwitchSessionMessage
   | WebviewNewSessionMessage
   | WebviewGetForkMessagesMessage
@@ -571,6 +591,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       case "toggleSessionStats":
         // 开关是 pinel UI 偏好（不依赖 pi 运行）：取当前 status 值翻转
         void this.controller.setShowSessionStats(!this.controller.getStatus().showSessionStats);
+        break;
+      case "setDefaultModel":
+        void this.controller.setDefaultModel(msg.provider, msg.modelId);
+        break;
+      case "setDefaultThinkingLevel":
+        void this.controller.setDefaultThinkingLevel(msg.level);
+        break;
+      case "setModelRole":
+        void this.controller.setModelRole(msg.role, msg.key);
         break;
     }
   }

@@ -1751,6 +1751,22 @@ body {
   outline: none;
 }
 
+/* 模型/思考强度下拉（设置页 Models 区；对齐 input 风格，宽自适应行尾） */
+.config-popover-select {
+  flex: 1;
+  min-width: 0;
+  max-width: 200px;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  background: var(--vscode-input-background, transparent);
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+}
+
 .config-popover-input:focus {
   border-color: var(--vscode-focusBorder);
 }
@@ -2997,12 +3013,12 @@ body {
   vertical-align: -1px;
 }
 
-/* ponytail 状态点：实心=激活（agent 运行中），空心=已启用空闲（对齐 ponytail 自身状态行） */
-.ponytail-dot {
+/* ponytail 三图标：toggle 开关（ON/OFF 着色）+ 小马 + 档位图标 */
+.ponytail-toggle {
   color: var(--vscode-descriptionForeground);
 }
 
-.ponytail-dot-active {
+.ponytail-toggle.on {
   color: var(--vscode-textLink-foreground);
 }
 
@@ -3020,8 +3036,7 @@ body {
   cursor: pointer;
 }
 
-.session-stats-ponytail:hover .session-stats-icon,
-.session-stats-ponytail:hover .ponytail-dot {
+.session-stats-ponytail:hover .session-stats-icon {
   color: var(--vscode-textLink-foreground);
 }
 
@@ -3075,12 +3090,6 @@ body {
   display: inline-block;
   vertical-align: -2px;
   margin-left: 3px;
-}
-
-.ponytail-dot .lucide {
-  width: 9px;
-  height: 9px;
-  display: block;
 }
 
 .session-stats-marker-icon .lucide {
