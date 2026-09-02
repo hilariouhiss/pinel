@@ -1,9 +1,9 @@
 /* Pinel webview 样式 —— 全部使用 VS Code CSS 变量，自动适配主题 */
 
 :root {
-  /* 全扩展统一字体：Maple Mono NF（panel.ts @font-face 注入），回退 VS Code 字体 */
-  --pinel-font-family: "Maple Mono NF", var(--vscode-font-family);
-  --pinel-mono-font-family: "Maple Mono NF", var(--vscode-editor-font-family, monospace);
+  /* 字体跟随 VS Code：编辑器字体（editor.fontFamily）优先，回退 UI 字体 */
+  --pinel-font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
+  --pinel-mono-font-family: var(--vscode-editor-font-family, monospace);
 }
 
 * {
