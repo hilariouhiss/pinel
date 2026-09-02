@@ -116,6 +116,29 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
         </div>
         <div className="popover-body">
           <div className="extension-popover-section">
+            <div className="extension-popover-title">New mode</div>
+            <div className="mode-create-row">
+              <input
+                className="mode-create-input"
+                placeholder="Mode name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitCreate();
+                  }
+                }}
+              />
+              <button className="catalog-group-install" disabled={!newName.trim()} onClick={submitCreate}>
+                Add
+              </button>
+            </div>
+            {modes.length > 0 && (
+              <div className="mode-hint">Click a mode name below to edit its resources.</div>
+            )}
+          </div>
+          <div className="extension-popover-section">
             <div className="extension-popover-title">Active mode</div>
             <label className="mode-row">
               <input
@@ -125,7 +148,7 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
                 onChange={() => onSwitch(null)}
               />
               <span className="mode-row-name">Default</span>
-              <span className="mode-row-desc">All local skills</span>
+              <span className="mode-row-desc">All resources active</span>
             </label>
             {modes.map((m) => (
               <div key={m.name} className={`mode-row${editing === m.name ? " editing" : ""}`}>
@@ -219,29 +242,6 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
               </div>
             </>
           )}
-          <div className="extension-popover-section">
-            <div className="extension-popover-title">New mode</div>
-            <div className="mode-create-row">
-              <input
-                className="mode-create-input"
-                placeholder="Mode name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    submitCreate();
-                  }
-                }}
-              />
-              <button className="catalog-group-install" disabled={!newName.trim()} onClick={submitCreate}>
-                Add
-              </button>
-            </div>
-            {modes.length > 0 && (
-              <div className="mode-hint">Click a mode name above to edit its skills.</div>
-            )}
-          </div>
         </div>
       </div>
     </>
