@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "../index";
+import { buildSessionTree } from "../session-tree";
 import type { SessionListItem } from "../types";
 import { formatRelativeTime } from "../utils";
 import { SearchBox } from "./SearchBox";
@@ -33,7 +34,8 @@ const MIN_BELOW = 160;
  *   让位于 Composer 的中断/清空分支）；列表项点击即切换
  * - 焦点：打开时移入弹层，关闭时还原到触发按钮
  * - 搜索：顶部 SearchBox 本地过滤（name/预览）；弹层为常驻挂载（anchor null 仅
- *   return null），打开时显式重置搜索词
+ *   return null），打开时显式重置搜索词；列表按 fork 血缘树形展示（缩进挂父，
+ *   见 session-tree.ts）
  * - 列表项复用主侧边栏 history-item 结构与样式（全局类，未作用域化）
  */
 export function SessionListPopover({
@@ -59,14 +61,17 @@ export function SessionListPopover({
     }
   }, [anchor]);
 
-  // 本地过滤：名称/预览包含关键词（大小写不敏感）
+  // 会话树：与侧边栏 HistoryApp 同构（缩进挂父、根按子树最新活动排序）
+  const rows = useMemo(() => buildSessionTree(items), [items]);
+  // 本地过滤：名称/预览包含关键词（大小写不敏感）；命中行保留 depth 缩进
   const keyword = query.trim().toLowerCase();
   const filtered = keyword
-    ? items.filter(
-        (i) =>
-          i.name?.toLowerCase().includes(keyword) || i.preview?.toLowerCase().includes(keyword),
+    ? rows.filter(
+        (r) =>
+          r.item.name?.toLowerCase().includes(keyword) ||
+          r.item.preview?.toLowerCase().includes(keyword),
       )
-    : items;
+    : rows;
 
   // 锚定定位：渲染后按按钮实际位置计算；窗口尺寸变化时重算
   useLayoutEffect(() => {
@@ -170,11 +175,15 @@ export function SessionListPopover({
               <div className="history-empty-hint">Try a different keyword</div>
             </div>
           ) : (
-            filtered.map((item) => {
+            filtered.map(({ item, depth }) => {
               const active = item.path === currentSessionFile;
               const editing = editingPath === item.path;
               return (
-                <div key={item.path} className={`history-item${active ? " active" : ""}`}>
+                <div
+                  key={item.path}
+                  className={`history-item${active ? " active" : ""}${depth > 0 ? " history-item-forked" : ""}`}
+                  style={depth > 0 ? { marginLeft: Math.min(depth, 4) * 14 } : undefined}
+                >
                   {editing ? (
                     // 编辑态渲染 div 而非 button：input 嵌套于 button 内时，浏览器隐式
                     // 激活会让输入框里的 Enter（含中文输入法选词确认）click 父按钮 →
