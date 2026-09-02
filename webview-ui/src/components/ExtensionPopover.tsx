@@ -323,6 +323,8 @@ export function ExtensionPopover({
             ×
           </button>
         </div>
+        {/* 内容独立滚动区：关闭按钮行留在滚动区外（见 styles.css .popover-body） */}
+        <div className="popover-body">
         <div className="extension-view-switch" role="tablist" aria-label="Extension scope">
           {VIEW_OPTIONS.map((opt) => (
             <button
@@ -365,6 +367,7 @@ export function ExtensionPopover({
             {renderSection("Packages", packages)}
           </>
         )}
+        </div>{/* /popover-body */}
       </div>
     </>
   );

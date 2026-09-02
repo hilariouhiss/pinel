@@ -1607,13 +1607,10 @@ body {
   z-index: 90;
 }
 
-/* 居中模态公共标题栏（config/extension 弹层共用）；sticky 钉在滚动面板顶，
-   内容滚动时关闭按钮行不随之滚走；不透明背景盖住滚过的内容 */
+/* 居中模态公共标题栏（config/extension 弹层共用）；滚动发生在下方
+   .popover-body，标题栏（关闭按钮行）固定在滚动区外不随内容滚走 */
 .popover-titlebar {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: inherit;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1627,6 +1624,12 @@ body {
   font-weight: 600;
   color: var(--vscode-foreground);
   margin-right: auto; /* 按钮组（Update all/刷新/关闭）靠右 */
+}
+
+/* 弹层内容滚动区：标题栏之下唯一滚动容器（标题栏固定在滚动区外） */
+.popover-body {
+  min-height: 0; /* flex 子项须可收缩，overflow 才生效 */
+  overflow-y: auto;
 }
 
 .popover-close {
@@ -1657,9 +1660,10 @@ body {
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 100;
+  display: flex;
+  flex-direction: column;
   width: min(360px, calc(100% - 16px));
   max-height: 70vh;
-  overflow-y: auto;
   background: var(--vscode-menu-background, var(--vscode-editor-background));
   border: 1px solid var(--vscode-menu-border, var(--vscode-input-border));
   border-radius: 6px;
@@ -2235,9 +2239,10 @@ body {
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 100;
+  display: flex;
+  flex-direction: column;
   width: min(420px, calc(100% - 16px));
   max-height: 60vh;
-  overflow-y: auto;
   background: var(--vscode-menu-background, var(--vscode-editor-background));
   border: 1px solid var(--vscode-menu-border, var(--vscode-input-border));
   border-radius: 6px;

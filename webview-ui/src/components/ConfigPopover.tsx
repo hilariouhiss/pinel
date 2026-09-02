@@ -114,6 +114,8 @@ export function ConfigPopover({ status, open, onClose }: Props) {
             ×
           </button>
         </div>
+        {/* 内容独立滚动区：关闭按钮行留在滚动区外（见 styles.css .popover-body） */}
+        <div className="popover-body">
         <div className="config-popover-section">
           <div className="config-popover-title">Queue mode (send while streaming)</div>
           <div className="config-popover-row">
@@ -232,6 +234,7 @@ export function ConfigPopover({ status, open, onClose }: Props) {
             />
           </div>
         </div>
+        </div>{/* /popover-body */}
       </div>
     </>
   );
