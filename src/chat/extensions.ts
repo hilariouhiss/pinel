@@ -234,7 +234,7 @@ export async function scanLocalExtensions(
 }
 
 /** 扫描单个扩展目录（镜像 pi collectAutoExtensionEntries 的硬跳过 + ignore 过滤）。 */
-async function collectLocalExtensions(dir: string, scope: ExtensionScope): Promise<ExtensionItem[]> {
+export async function collectLocalExtensions(dir: string, scope: ExtensionScope): Promise<ExtensionItem[]> {
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });

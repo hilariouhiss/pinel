@@ -22,7 +22,7 @@ interface Props {
   onSwitch: (name: string | null) => void;
   onCreate: (name: string) => void;
   onDelete: (name: string) => void;
-  onUpdateSkills: (name: string, skills: string[]) => void;
+  onUpdateSkills: (name: string, skills: string[], extensions: string[]) => void;
   onClose: () => void;
 }
 
@@ -74,18 +74,24 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
 
   const modes = state ? [...state.modes].sort((a, b) => a.name.localeCompare(b.name)) : [];
   const editingMode = editing ? modes.find((m) => m.name === editing) : undefined;
-  // 编辑区 skill 清单：字母序；模式 skills 里已卸载的 id 不展示（保存时宿主顺带剔除）
+  // 编辑区清单：字母序；模式配置里已卸载的 id 不展示（保存时宿主顺带剔除）
   const skillList = state ? [...state.skills].sort((a, b) => a.name.localeCompare(b.name)) : [];
-  const editingIds = new Set(editingMode?.skills ?? []);
+  const extList = state ? [...state.extensions].sort((a, b) => a.name.localeCompare(b.name)) : [];
+  const editingSkills = new Set(editingMode?.skills ?? []);
+  const editingExts = new Set(editingMode?.extensions ?? []);
 
-  const toggleSkill = (id: string) => {
+  const toggle = (list: "skills" | "extensions", id: string) => {
     if (!editingMode) {
       return;
     }
-    const next = editingIds.has(id)
-      ? editingMode.skills.filter((s) => s !== id)
-      : [...editingMode.skills, id];
-    onUpdateSkills(editingMode.name, next);
+    const current = list === "skills" ? editingMode.skills : editingMode.extensions;
+    const selected = list === "skills" ? editingSkills : editingExts;
+    const next = selected.has(id) ? current.filter((s) => s !== id) : [...current, id];
+    onUpdateSkills(
+      editingMode.name,
+      list === "skills" ? next : editingMode.skills,
+      list === "extensions" ? next : editingMode.extensions,
+    );
   };
 
   const submitCreate = () => {
@@ -157,30 +163,61 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
             ))}
           </div>
           {editingMode && (
-            <div className="extension-popover-section">
-              <div className="extension-popover-title">Skills in “{editingMode.name}”</div>
-              {skillList.length === 0 ? (
-                <div className="extension-popover-empty">No local skills found</div>
-              ) : (
-                skillList.map((s) => (
-                  <label key={`${s.scope}:${s.id}`} className="mode-skill-row">
-                    <input
-                      type="checkbox"
-                      checked={editingIds.has(s.id)}
-                      onChange={() => toggleSkill(s.id)}
-                    />
-                    <span className="mode-skill-name" title={s.id}>
-                      {s.name}
-                    </span>
-                    <span className="extension-item-badge">{s.scope}</span>
-                    {s.description && <span className="mode-skill-desc">{s.description}</span>}
-                  </label>
-                ))
-              )}
-              <div className="mode-hint">
-                Changing skills in the active mode takes effect after reload.
+            <>
+              <div className="extension-popover-section">
+                <div className="extension-popover-title">Skills in “{editingMode.name}”</div>
+                {skillList.length === 0 ? (
+                  <div className="extension-popover-empty">No skills found</div>
+                ) : (
+                  skillList.map((s) => (
+                    <label key={s.id} className="mode-skill-row">
+                      <input
+                        type="checkbox"
+                        checked={editingSkills.has(s.id)}
+                        onChange={() => toggle("skills", s.id)}
+                      />
+                      <span className="mode-skill-name" title={s.package ? `${s.package} · ${s.id}` : s.id}>
+                        {s.name}
+                      </span>
+                      <span
+                        className="extension-item-badge"
+                        title={s.package}
+                      >
+                        {s.scope === "package" ? "pkg" : s.scope}
+                      </span>
+                      {s.description && <span className="mode-skill-desc">{s.description}</span>}
+                    </label>
+                  ))
+                )}
               </div>
-            </div>
+              <div className="extension-popover-section">
+                <div className="extension-popover-title">Extensions in “{editingMode.name}”</div>
+                {extList.length === 0 ? (
+                  <div className="extension-popover-empty">No extensions found</div>
+                ) : (
+                  extList.map((e) => (
+                    <label key={e.id} className="mode-skill-row">
+                      <input
+                        type="checkbox"
+                        checked={editingExts.has(e.id)}
+                        onChange={() => toggle("extensions", e.id)}
+                      />
+                      <span className="mode-skill-name" title={e.package ? `${e.package} · ${e.id}` : e.id}>
+                        {e.name}
+                      </span>
+                      <span className="extension-item-badge" title={e.package}>
+                        {e.scope === "package" ? "pkg" : e.scope}
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+              <div className="extension-popover-section">
+                <div className="mode-hint">
+                  Changing resources in the active mode takes effect after reload.
+                </div>
+              </div>
+            </>
           )}
           <div className="extension-popover-section">
             <div className="extension-popover-title">New mode</div>

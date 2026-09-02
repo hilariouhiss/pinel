@@ -214,18 +214,30 @@ export interface ExtensionUpdateEntry {
   latestVersion?: string;
 }
 
-/** 模式配置（宿主 AgentMode 镜像；skills = 排除键 id 集）。 */
+/** 模式配置（宿主 AgentMode 镜像；skills/extensions = 资源 id 集）。 */
 export interface AgentMode {
   name: string;
   skills: string[];
+  extensions: string[];
 }
 
-/** 扫描出的本地 skill（宿主 ModeSkill 镜像；id = 排除键，name = 展示名）。 */
+/** 扫描出的 skill（宿主 ModeSkill 镜像；id = 模式配置键，包资源带 package/identity）。 */
 export interface ModeSkill {
   id: string;
   name: string;
   description?: string;
-  scope: "global" | "project";
+  scope: "global" | "project" | "package";
+  package?: string;
+  identity?: string;
+}
+
+/** 扫描出的扩展（宿主 ModeExtension 镜像）。 */
+export interface ModeExtension {
+  id: string;
+  name: string;
+  scope: "global" | "project" | "package";
+  package?: string;
+  identity?: string;
 }
 
 /** 模式状态（宿主 modeState 消息/弹层数据源镜像）。 */
@@ -233,6 +245,7 @@ export interface ModeState {
   active: string | null;
   modes: AgentMode[];
   skills: ModeSkill[];
+  extensions: ModeExtension[];
 }
 
 /** 插件目录兼容性判定（宿主 catalog 镜像）。 */

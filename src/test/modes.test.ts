@@ -4,16 +4,17 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, suite, test } from "mocha";
 import {
-  computeExclusions,
   mergeSkillsEntries,
-  modeExclusions,
+  modeApplyPlan,
   parseSkillFrontmatter,
+  planPackageEntries,
   readModesState,
-  scanLocalSkills,
+  scanModeInventory,
   writeModesState,
+  type ModeInventory,
 } from "../chat/modes";
 
-/** 递归建目录 + 写文件（\n 结尾）。 */
+/** 递归建目录 + 写文件。 */
 function mkdirp(p: string): void {
   fs.mkdirSync(p, { recursive: true });
 }
@@ -22,6 +23,8 @@ function write(p: string, body: string): void {
   mkdirp(path.dirname(p));
   fs.writeFileSync(p, body, "utf8");
 }
+
+const EMPTY_SCAN: ModeInventory = { skills: [], extensions: [] };
 
 suite("modes 纯函数", function () {
   this.timeout(10000);
@@ -43,13 +46,13 @@ suite("modes 纯函数", function () {
       assert.deepStrictEqual(readModesState({ pinel: { autoCommit: true } }), { active: null, modes: [] });
     });
 
-    test("形状容缺：坏条目跳过、skills 非字符串过滤", () => {
+    test("形状容缺：坏条目跳过、skills/extensions 非字符串过滤", () => {
       const state = readModesState({
         pinel: {
           modes: {
             active: "code",
             modes: [
-              { name: "code", skills: ["a", 42, null, "b"] },
+              { name: "code", skills: ["a", 42, null, "b"], extensions: ["x", 7] },
               { name: "" },
               null,
               { skills: ["x"] },
@@ -61,21 +64,28 @@ suite("modes 纯函数", function () {
       assert.strictEqual(state.active, "code");
       // 仅 code 合法：空名/缺名/非对象/字符串条目全部跳过
       assert.strictEqual(state.modes.length, 1);
-      assert.deepStrictEqual(state.modes[0], { name: "code", skills: ["a", "b"] });
+      assert.deepStrictEqual(state.modes[0], { name: "code", skills: ["a", "b"], extensions: ["x"] });
     });
 
-    test("write → read 往返 + 保留 pinel 节其余键", () => {
+    test("write → read 往返 + 保留 pinel 节其余键 + packageBaseline 一并写入", () => {
       const settings: Record<string, unknown> = { pinel: { autoCommit: true, other: 1 }, theme: "dark" };
-      writeModesState(settings, { active: "docs", modes: [{ name: "docs", skills: ["a.md"] }] });
+      writeModesState(settings, {
+        active: "docs",
+        modes: [{ name: "docs", skills: ["local|global|a"], extensions: [] }],
+        packageBaseline: { "npm:x": "npm:x" },
+      });
       assert.strictEqual((settings.pinel as Record<string, unknown>).autoCommit, true);
       assert.strictEqual(settings.theme, "dark");
       const back = readModesState(settings as never);
       assert.strictEqual(back.active, "docs");
-      assert.deepStrictEqual(back.modes, [{ name: "docs", skills: ["a.md"] }]);
+      assert.deepStrictEqual(back.modes, [{ name: "docs", skills: ["local|global|a"], extensions: [] }]);
+      assert.deepStrictEqual(back.packageBaseline, { "npm:x": "npm:x" });
     });
 
-    test("active 空白字符串归一为 null", () => {
-      assert.strictEqual(readModesState({ pinel: { modes: { active: "  " } } }).active, null);
+    test("active 空白字符串归一为 null；无基线 → packageBaseline undefined", () => {
+      const state = readModesState({ pinel: { modes: { active: "  " } } });
+      assert.strictEqual(state.active, null);
+      assert.strictEqual(state.packageBaseline, undefined);
     });
   });
 
@@ -86,106 +96,164 @@ suite("modes 纯函数", function () {
       assert.strictEqual(fm.description, "Does things");
     });
 
-    test("无块/缺字段 → undefined", () => {
+    test("无块/缺字段 → 键缺省", () => {
       assert.deepStrictEqual(parseSkillFrontmatter("# no frontmatter"), {});
-      assert.deepStrictEqual(parseSkillFrontmatter("---\nname: only\n---\nbody"), {
-        name: "only",
-      });
+      assert.deepStrictEqual(parseSkillFrontmatter("---\nname: only\n---\nbody"), { name: "only" });
     });
   });
 
-  suite("scanLocalSkills", () => {
-    test("四根扫描：SKILL.md 目录、嵌套分组、根 .md（仅 pi 式）、跳过 dotfiles/符号规则", async () => {
+  suite("scanModeInventory", () => {
+    test("本地四根 + 包约定目录：id/pattern/scope/identity", async () => {
       const agentDir = path.join(tmp, "agent");
       const home = path.join(tmp, "home");
       const root = path.join(tmp, "ws");
-      // 全局 pi 式：根 .md skill + 顶层 skill 目录 + 分组文件夹嵌套 skill
+      // 本地 skills：全局 pi 式（根 .md + SKILL.md 目录）+ 项目
       write(path.join(agentDir, "skills", "notes.md"), "---\nname: notes\ndescription: root md skill\n---\n");
       write(path.join(agentDir, "skills", "colgrep", "SKILL.md"), "---\ndescription: top skill\n---\n");
-      write(
-        path.join(agentDir, "skills", "group", "deep-skill", "SKILL.md"),
-        "---\nname: deep\ndescription: nested skill\n---\n",
-      );
-      // 跳过：dotfile 目录、无 SKILL.md 的裸目录、根 .md 无 description
-      write(path.join(agentDir, "skills", ".hidden", "SKILL.md"), "---\ndescription: nope\n---\n");
-      mkdirp(path.join(agentDir, "skills", "bare"));
-      write(path.join(agentDir, "skills", "invalid.md"), "# no frontmatter");
-      // 全局 agents 式：SKILL.md 目录算，根 .md 忽略
-      write(path.join(home, ".agents", "skills", "agents-skill", "SKILL.md"), "---\ndescription: from agents\n---\n");
-      write(path.join(home, ".agents", "skills", "ignored.md"), "---\ndescription: nope\n---\n");
-      // 项目 .pi/skills
       write(path.join(root, ".pi", "skills", "proj-skill", "SKILL.md"), "---\ndescription: project skill\n---\n");
-      // 项目 .agents/skills
-      write(path.join(root, ".agents", "skills", "proj-agents", "SKILL.md"), "---\ndescription: proj agents\n---\n");
+      // 本地扩展：全局散文件 + 目录式（index.ts）+ 项目
+      write(path.join(agentDir, "extensions", "foo.ts"), "export {};\n");
+      write(path.join(agentDir, "extensions", "myext", "index.ts"), "export {};\n");
+      write(path.join(root, ".pi", "extensions", "bar.js"), "export {};\n");
+      // 包：已装（skills 目录 + extensions 目录）+ 未安装（settings 里有但磁盘无）
+      const pkgRoot = path.join(agentDir, "npm", "node_modules", "pi-skills");
+      write(path.join(pkgRoot, "skills", "brave", "SKILL.md"), "---\nname: brave-search\ndescription: pkg skill\n---\n");
+      write(path.join(pkgRoot, "extensions", "tool.ts"), "export {};\n");
 
-      const skills = await scanLocalSkills(agentDir, home, root);
-      const byId = new Map(skills.map((s) => [`${s.scope}:${s.id}`, s]));
-      // 命中集
-      assert.ok(byId.get("global:notes.md")?.name === "notes");
-      assert.ok(byId.get("global:colgrep")?.name === "colgrep"); // frontmatter 无 name → 目录名
-      assert.ok(byId.get("global:deep-skill")?.name === "deep");
-      assert.ok(byId.get("global:agents-skill")?.description === "from agents");
-      assert.ok(byId.get("project:proj-skill")?.description === "project skill");
-      assert.ok(byId.get("project:proj-agents")?.description === "proj agents");
-      // 跳过集
-      assert.ok(!byId.has("global:.hidden"));
-      assert.ok(!byId.has("global:bare"));
-      assert.ok(!byId.has("global:invalid.md"));
-      assert.ok(!byId.has("global:ignored.md"));
+      const inv = await scanModeInventory(agentDir, home, root, [
+        { source: "npm:pi-skills", scope: "global" },
+        { source: "npm:ghost", scope: "global" },
+      ]);
+      const s = new Map(inv.skills.map((x) => [x.id, x]));
+      const e = new Map(inv.extensions.map((x) => [x.id, x]));
+      // 本地 skills
+      assert.deepStrictEqual(s.get("local|global|notes.md"), {
+        id: "local|global|notes.md",
+        pattern: "notes.md",
+        name: "notes",
+        description: "root md skill",
+        scope: "global",
+      });
+      assert.strictEqual(s.get("local|global|colgrep")?.pattern, "colgrep");
+      assert.strictEqual(s.get("local|project|proj-skill")?.scope, "project");
+      // 本地扩展：目录式 pattern = baseDir 相对完整路径（防 index.ts 碰撞）
+      assert.strictEqual(e.get("local|global|extensions/foo.ts")?.pattern, "extensions/foo.ts");
+      assert.strictEqual(e.get("local|global|extensions/myext/index.ts")?.name, "myext");
+      assert.strictEqual(e.get("local|project|extensions/bar.js")?.scope, "project");
+      // 包资源：identity 分组、pattern = 包根相对路径、未装包零贡献
+      const pkgSkill = s.get("pkg|npm:pi-skills|skills/brave");
+      assert.ok(pkgSkill);
+      assert.strictEqual(pkgSkill.name, "brave-search");
+      assert.strictEqual(pkgSkill.pattern, "skills/brave");
+      assert.strictEqual(pkgSkill.package, "pi-skills");
+      assert.strictEqual(pkgSkill.identity, "npm:pi-skills");
+      const pkgExt = e.get("pkg|npm:pi-skills|extensions/tool.ts");
+      assert.ok(pkgExt);
+      assert.strictEqual(pkgExt.pattern, "extensions/tool.ts");
+      assert.ok(![...s.keys()].some((k) => k.startsWith("pkg|npm:ghost")));
       // 字母序
-      const names = skills.map((s) => s.name);
+      const names = inv.skills.map((x) => x.name);
       assert.deepStrictEqual([...names].sort((a, b) => a.localeCompare(b)), names);
     });
 
-    test("无项目根：只扫全局两根", async () => {
-      const agentDir = path.join(tmp, "agent2");
-      const home = path.join(tmp, "home2");
-      write(path.join(agentDir, "skills", "g", "SKILL.md"), "---\ndescription: g\n---\n");
-      const skills = await scanLocalSkills(agentDir, home);
-      assert.strictEqual(skills.length, 1);
-      assert.strictEqual(skills[0].scope, "global");
-    });
-
-    test("目录不存在：返回空数组不抛错", async () => {
-      assert.deepStrictEqual(await scanLocalSkills(path.join(tmp, "nope"), path.join(tmp, "nope2")), []);
+    test("目录不存在：返回空清单不抛错", async () => {
+      assert.deepStrictEqual(await scanModeInventory(path.join(tmp, "no"), path.join(tmp, "no2"), undefined, []), {
+        skills: [],
+        extensions: [],
+      });
     });
   });
 
-  suite("computeExclusions", () => {
-    const skills = [
-      { id: "a", name: "a", scope: "global" as const },
-      { id: "b", name: "b", scope: "global" as const },
-      { id: "p", name: "p", scope: "project" as const },
-    ];
-    test("未选中项按 scope 分组", () => {
-      assert.deepStrictEqual(computeExclusions(skills, new Set(["a"])), { global: ["b"], project: ["p"] });
+  suite("modeApplyPlan", () => {
+    const scan: ModeInventory = {
+      skills: [
+        { id: "local|global|a", pattern: "a", name: "a", scope: "global" },
+        { id: "local|project|p", pattern: "p", name: "p", scope: "project" },
+        { id: "pkg|npm:x|skills/s", pattern: "skills/s", name: "s", scope: "package", package: "x", identity: "npm:x" },
+      ],
+      extensions: [
+        { id: "local|global|extensions/e.ts", pattern: "extensions/e.ts", name: "e", scope: "global" },
+        { id: "pkg|npm:x|extensions/t.ts", pattern: "extensions/t.ts", name: "t", scope: "package", package: "x", identity: "npm:x" },
+      ],
+    };
+
+    test("Default（active=null）→ 全空", () => {
+      const plan = modeApplyPlan({ active: null, modes: [] }, scan);
+      assert.deepStrictEqual(plan.localSkills, { global: [], project: [] });
+      assert.deepStrictEqual(plan.localExtensions, { global: [], project: [] });
+      assert.strictEqual(plan.packageExclusions.size, 0);
     });
-    test("全选 → 双空（Default 模式）", () => {
-      assert.deepStrictEqual(computeExclusions(skills, new Set(["a", "b", "p"])), { global: [], project: [] });
+
+    test("激活模式 → 本地按 scope 分组 + 包按 identity 分组", () => {
+      const state = {
+        active: "m",
+        modes: [
+          {
+            name: "m",
+            skills: ["local|global|a"],
+            extensions: ["pkg|npm:x|extensions/t.ts"],
+          },
+        ],
+      };
+      const plan = modeApplyPlan(state, scan);
+      assert.deepStrictEqual(plan.localSkills, { global: [], project: ["p"] });
+      assert.deepStrictEqual(plan.localExtensions, { global: ["extensions/e.ts"], project: [] });
+      assert.deepStrictEqual(plan.packageExclusions.get("npm:x"), { skills: ["skills/s"], extensions: [] });
+    });
+
+    test("active 指向已删模式 → 全空（等同 Default）", () => {
+      const plan = modeApplyPlan({ active: "gone", modes: [] }, scan);
+      assert.deepStrictEqual(plan.localSkills, { global: [], project: [] });
+      assert.strictEqual(plan.packageExclusions.size, 0);
     });
   });
 
-  suite("modeExclusions（applyActiveMode 决策层）", () => {
-    const skills = [
-      { id: "a", name: "a", scope: "global" as const },
-      { id: "b", name: "b", scope: "global" as const },
-      { id: "p", name: "p", scope: "project" as const },
-    ];
-    test("Default（active=null）→ 无排除", () => {
-      assert.deepStrictEqual(modeExclusions({ active: null, modes: [] }, skills), {
-        global: [],
-        project: [],
-      });
+  suite("planPackageEntries", () => {
+    const ex = new Map([["npm:x", { skills: ["skills/s"], extensions: [] }]]);
+
+    test("首覆写快照基线；其余键保留；空类型省略键", () => {
+      const { packages, baseline } = planPackageEntries(
+        ["npm:y", { source: "npm:x", prompts: ["prompts/r.md"] }],
+        ex,
+        {},
+        "/base",
+      );
+      assert.deepStrictEqual(packages[0], "npm:y");
+      assert.deepStrictEqual(packages[1], {
+        source: "npm:x",
+        prompts: ["prompts/r.md"],
+        skills: ["!skills/s"],
+      }); // extensions 空数组 → 省略键
+      assert.deepStrictEqual(baseline, { "npm:x": { source: "npm:x", prompts: ["prompts/r.md"] } });
     });
-    test("激活模式 → 未选中项排除", () => {
-      const state = { active: "m", modes: [{ name: "m", skills: ["a", "p"] }] };
-      assert.deepStrictEqual(modeExclusions(state, skills), { global: ["b"], project: [] });
+
+    test("免过滤 → 还原基线并出基线", () => {
+      const baseline = { "npm:x": "npm:x" };
+      const { packages, baseline: next } = planPackageEntries(
+        [{ source: "npm:x", skills: ["!skills/s"] }],
+        new Map(),
+        baseline,
+        "/base",
+      );
+      assert.deepStrictEqual(packages, ["npm:x"]);
+      assert.deepStrictEqual(next, {});
     });
-    test("active 指向已删模式 → 无排除（等同 Default）", () => {
-      assert.deepStrictEqual(modeExclusions({ active: "gone", modes: [] }, skills), {
-        global: [],
-        project: [],
-      });
+
+    test("二次覆写不重复快照（基线保持最原值）", () => {
+      const baseline = { "npm:x": "npm:x" };
+      const { baseline: next } = planPackageEntries(
+        [{ source: "npm:x", skills: ["!skills/s"] }],
+        ex,
+        baseline,
+        "/base",
+      );
+      assert.deepStrictEqual(next, { "npm:x": "npm:x" });
+    });
+
+    test("基线中已不存在的 identity 修剪；损坏条目原样保留", () => {
+      const { packages, baseline } = planPackageEntries(["npm:y", 42], new Map(), { "npm:gone": "npm:gone" }, "/base");
+      assert.deepStrictEqual(packages, ["npm:y", 42]);
+      assert.deepStrictEqual(baseline, {});
     });
   });
 

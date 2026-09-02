@@ -89,11 +89,14 @@ import {
 import { catalogInstallState, getCatalog, installedIdentities, type CatalogEntry } from "./catalog";
 import {
   mergeSkillsEntries,
-  modeExclusions,
+  modeApplyPlan,
+  planPackageEntries,
   readModesState,
-  scanLocalSkills,
+  scanModeInventory,
   writeModesState,
   type AgentMode,
+  type ModeExtension,
+  type ModeInventory,
   type ModeSkill,
   type ModesState,
 } from "./modes";
@@ -106,6 +109,7 @@ export interface ModeStatePayload {
   active: string | null;
   modes: AgentMode[];
   skills: ModeSkill[];
+  extensions: ModeExtension[];
 }
 import {
   inputResponseFor,
@@ -2085,39 +2089,92 @@ export class ChatController {
   }
 
   /**
-   * 应用激活模式的排除段：扫描本地 skills，未选中项按 scope 写 `!id` 到
-   * 对应 settings.json 的 skills 数组（非 `!` 条目恒保留，见 mergeSkillsEntries）。
-   * 文件不存在且无需排除时跳过（不无谓创建 .pi/settings.json）。
+   * 应用激活模式的排除段（v2：本地 skills/扩展 + 包 skills/扩展）：
+   * 1. 扫描全量清单 → modeApplyPlan 决策（Default = 全空）；
+   * 2. 全局/项目 settings 的 skills/extensions 数组写本地 `!` 排除段（非 `!` 条目保留）；
+   * 3. 包条目按 identity 应用对象过滤（首覆写快照基线，免过滤还原），
+   *    基线变更回写 pinel.modes（合并写，单文件原子替换）。
    */
   private async applyActiveMode(state: ModesState): Promise<void> {
     const agentDir = defaultAgentDir();
-    const skills = await scanLocalSkills(agentDir, os.homedir(), this.workspaceRoot);
-    // Default（active = null）= 无排除（全部本地 skills 生效），决策纯函数见 modeExclusions
-    const exclusions = modeExclusions(state, skills);
-    const writes: Array<{ file: string; ids: string[] }> = [
-      { file: agentSettingsPath(os.homedir()), ids: exclusions.global },
-    ];
-    if (this.workspaceRoot) {
-      writes.push({
-        file: path.join(projectConfigDir(this.workspaceRoot), "settings.json"),
-        ids: exclusions.project,
-      });
-    }
-    for (const w of writes) {
-      const settings = await readSettings(w.file);
-      if (w.ids.length === 0 && settings.skills === undefined) {
+    const root = this.workspaceRoot;
+    const plan = modeApplyPlan(state, await this.scanInventory());
+    const globalPath = agentSettingsPath(os.homedir());
+    const projectPath = root ? path.join(projectConfigDir(root), "settings.json") : undefined;
+    // 1) 本地 overrides（文件无排除且无既有键时跳过，不无谓创建 .pi/settings.json）
+    for (const [file, scope] of [
+      [globalPath, "global"],
+      [projectPath, "project"],
+    ] as const) {
+      if (!file) {
         continue;
       }
-      settings.skills = mergeSkillsEntries(settings.skills, w.ids);
-      await writeSettings(w.file, settings);
+      const skillEx = plan.localSkills[scope];
+      const extEx = plan.localExtensions[scope];
+      const settings = await readSettings(file);
+      if (
+        skillEx.length === 0 &&
+        extEx.length === 0 &&
+        settings.skills === undefined &&
+        settings.extensions === undefined
+      ) {
+        continue;
+      }
+      settings.skills = mergeSkillsEntries(settings.skills, skillEx);
+      settings.extensions = mergeSkillsEntries(settings.extensions, extEx);
+      await writeSettings(file, settings);
     }
+    // 2) 包过滤：全局 + 项目 packages 数组顺序处理，基线贯通（同 identity 双条目共用快照）
+    let baseline = state.packageBaseline ?? {};
+    let baselineChanged = false;
+    for (const file of projectPath ? [globalPath, projectPath] : [globalPath]) {
+      const settings = await readSettings(file);
+      if (!Array.isArray(settings.packages)) {
+        continue;
+      }
+      const result = planPackageEntries(settings.packages, plan.packageExclusions, baseline, path.dirname(file));
+      if (JSON.stringify(result.baseline) !== JSON.stringify(baseline)) {
+        baseline = result.baseline;
+        baselineChanged = true;
+      }
+      settings.packages = result.packages;
+      await writeSettings(file, settings);
+    }
+    if (baselineChanged) {
+      state.packageBaseline = baseline;
+      const settings = await readSettings(globalPath);
+      writeModesState(settings, state);
+      await writeSettings(globalPath, settings);
+    }
+  }
+
+  /** 全量资源清单扫描（本地 + dedupe 后包条目；模式弹层与应用共用的数据源）。 */
+  private async scanInventory(): Promise<ModeInventory> {
+    const agentDir = defaultAgentDir();
+    const root = this.workspaceRoot;
+    const projectDir = root ? projectConfigDir(root) : undefined;
+    const pkgItems = dedupeExtensionItems(
+      await scanPackages(
+        path.join(agentDir, "settings.json"),
+        projectDir ? path.join(projectDir, "settings.json") : undefined,
+        { agentDir, projectRoot: root ?? undefined },
+      ),
+      agentDir,
+      projectDir,
+    ).filter((i) => i.kind === "package");
+    return scanModeInventory(
+      agentDir,
+      os.homedir(),
+      root,
+      pkgItems.map((i) => ({ source: i.source, scope: i.scope })),
+    );
   }
 
   /** 模式状态载荷（webview modeState 消息/弹层数据源镜像）。 */
   async getModeState(): Promise<ModeStatePayload> {
     const state = await this.readModesFromDisk();
-    const skills = await scanLocalSkills(defaultAgentDir(), os.homedir(), this.workspaceRoot);
-    return { active: state.active, modes: state.modes, skills };
+    const inventory = await this.scanInventory();
+    return { active: state.active, modes: state.modes, skills: inventory.skills, extensions: inventory.extensions };
   }
 
   /** 新建模式（空名静默忽略；重名 notice；不切换激活项）。 */
@@ -2131,7 +2188,7 @@ export class ChatController {
       this.notice("warning", `Mode "${trimmed}" already exists`);
       return;
     }
-    state.modes.push({ name: trimmed, skills: [] });
+    state.modes.push({ name: trimmed, skills: [], extensions: [] });
     await this.persistModesOrNotify(state);
     await this.fireModeState();
   }
@@ -2160,15 +2217,17 @@ export class ChatController {
 
   /** 更新模式 skill 集（顺带剔除已卸载的 id）；改激活项 = 重算排除段 + notice 提示
    *  reload（不弹框：勾选是连续小步操作，弹框会刷屏；switchMode 才走确认弹窗）。 */
-  async updateModeSkills(name: string, skills: string[]): Promise<void> {
+  async updateModeSkills(name: string, skills: string[], extensions: string[] = []): Promise<void> {
     const state = await this.readModesFromDisk();
     const mode = state.modes.find((m) => m.name === name);
     if (!mode) {
       return;
     }
-    const scanned = await scanLocalSkills(defaultAgentDir(), os.homedir(), this.workspaceRoot);
-    const ids = new Set(scanned.map((s) => s.id));
-    mode.skills = skills.filter((s) => ids.has(s));
+    const inventory = await this.scanInventory();
+    const skillIds = new Set(inventory.skills.map((s) => s.id));
+    const extIds = new Set(inventory.extensions.map((e) => e.id));
+    mode.skills = skills.filter((s) => skillIds.has(s));
+    mode.extensions = extensions.filter((e) => extIds.has(e));
     await this.persistModesOrNotify(state);
     const activeEdit = state.active === name;
     if (activeEdit) {
@@ -2176,7 +2235,7 @@ export class ChatController {
     }
     await this.fireModeState();
     if (activeEdit) {
-      this.notice("info", "Skills changed — reload pi to apply");
+      this.notice("info", "Resources changed — reload pi to apply");
     }
   }
 

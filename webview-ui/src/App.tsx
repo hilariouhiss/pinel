@@ -590,8 +590,8 @@ export default function App() {
   };
   const createMode = (name: string) => vscode.postMessage({ type: "createMode", name });
   const deleteMode = (name: string) => vscode.postMessage({ type: "deleteMode", name });
-  const updateModeSkills = (name: string, skills: string[]) =>
-    vscode.postMessage({ type: "updateModeSkills", name, skills });
+  const updateModeSkills = (name: string, skills: string[], extensions: string[]) =>
+    vscode.postMessage({ type: "updateModeSkills", name, skills, extensions });
 
   // 会话历史弹层：打开时拉取最新列表（每次打开实时扫描）
   const openSessionList = () => {
