@@ -44,8 +44,6 @@ const RESOURCE_TYPES = ["extensions", "skills", "prompts", "themes"] as const;
 export type ExtensionScope = "global" | "project";
 /** 扩展类型。 */
 export type ExtensionKind = "local" | "package";
-/** 弹层视图（对齐 pi config 的全局/项目切换）。 */
-export type ExtensionView = "all" | "global" | "project";
 
 /** 扩展列表项（webview 协议镜像；字段定义见 types.ts）。 */
 export interface ExtensionItem {
@@ -65,8 +63,6 @@ export interface ExtensionItem {
   version?: string;
   /** 卸载目标：本地 = 文件或目录绝对路径；包 = source spec。 */
   source: string;
-  /** project 视图中的继承行：真实来源全局、项目未覆盖；scope 已重写为 project（开关写项目 settings）。 */
-  inherited?: boolean;
 }
 
 /**
@@ -402,37 +398,17 @@ function packageState(pkg: unknown): { enabled: boolean; filtered: boolean } {
 }
 
 /**
- * 按视图过滤/合成扩展列表（纯函数）：
- * - all：本地扩展不去重（双 scope 是不同文件）；包按 identity 去重（project 条目优先，对齐 pi dedupe）
- * - global：仅全局条目
- * - project：项目条目 + 全局包中未被项目同 identity 覆盖者（inherited，scope 重写为
- *   project——开关操作经 setExtensionEnabled 天然写项目 settings，H1 路由机制）
- * identity 基准：global 条目 = globalBase；project 条目 = projectBase（对齐 pi scope baseDir）。
+ * 合并扫描结果（纯函数）：本地扩展不去重（双 scope 是不同文件）；包按 identity 去重
+ * （project 条目优先，对齐 pi dedupe）。identity 基准：global 条目 = globalBase；
+ * project 条目 = projectBase（对齐 pi scope baseDir）。
  */
-export function filterExtensionView(
+export function dedupeExtensionItems(
   items: ExtensionItem[],
-  view: ExtensionView,
   globalBase: string,
   projectBase?: string,
 ): ExtensionItem[] {
   const identity = (i: ExtensionItem): string =>
     packageIdentity(i.id, i.scope === "project" ? projectBase : globalBase);
-  if (view === "global") {
-    return items.filter((i) => i.scope === "global");
-  }
-  if (view === "project") {
-    const projectItems = items.filter((i) => i.scope === "project");
-    const covered = new Set(
-      projectItems.filter((i) => i.kind === "package").map((i) => packageIdentity(i.id, projectBase)),
-    );
-    const inherited = items
-      .filter(
-        (i) => i.scope === "global" && i.kind === "package" && !covered.has(packageIdentity(i.id, globalBase)),
-      )
-      .map((i) => ({ ...i, scope: "project" as const, inherited: true }));
-    return [...projectItems, ...inherited];
-  }
-  // all：本地不动；包按 identity 去重（project 优先）
   const locals = items.filter((i) => i.kind === "local");
   const pkgs = new Map<string, ExtensionItem>();
   for (const i of items) {

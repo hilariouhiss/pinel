@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { vscode } from "./index";
-import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionUpdateEntry, ExtensionView, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelMcp, PinelPluginState, PinelPrompt, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
+import type { CatalogItem, ChatMessage, ChatStatus, ContentBlock, ExtensionItem, ExtensionUpdateEntry, FileItem, ForkMessageItem, HostMessage, ModelInfo, PinelMcp, PinelPluginState, PinelPrompt, PinelWorkflow, PonytailStatus, QuestionnaireView, SessionEnv, SessionListItem, SessionStats, SlashCommand, StreamBlock, TodoTask, ToolCard, UiRequest } from "./types";
 import { Composer } from "./components/Composer";
 import { ConfigPopover } from "./components/ConfigPopover";
 import { ModelPopover } from "./components/ModelPopover";
@@ -78,7 +78,7 @@ export default function App() {
   /** 扩展列表（getExtensionList 响应填充；挂载预热 + 打开管理弹层拉取，启停/卸载后宿主重发）。 */
   const [extensions, setExtensions] = useState<ExtensionItem[]>([]);
   /** 扩展弹层当前视图（All/Catalog 切换；All 时重拉列表）。 */
-  const [extensionView, setExtensionView] = useState<ExtensionView | "catalog">("all");
+  const [extensionView, setExtensionView] = useState<"all" | "catalog">("all");
   /** 更新检查条目（extensionUpdates 消息填充；与 extensions 经 useMemo 合并渲染）。 */
   const [updateEntries, setUpdateEntries] = useState<ExtensionUpdateEntry[]>([]);
   /** 更新中的行键（乐观置忙；extensionList/extensionUpdates 到达即清）。 */
@@ -432,7 +432,7 @@ export default function App() {
     // 不预热的场景（无 atTrigger 击键）fileList 可能为空导致引用静默丢失
     vscode.postMessage({ type: "getFileList" });
     // 预热拉取扩展列表：信息条 Extensions chip 常驻显示计数（装/卸/启停后宿主重推）
-    vscode.postMessage({ type: "getExtensionList", view: "all" });
+    vscode.postMessage({ type: "getExtensionList" });
     return () => window.removeEventListener("message", handleMessage);
   }, [handleMessage]);
 
@@ -586,29 +586,25 @@ export default function App() {
     setPopover((prev) => (prev === "ext" ? null : "ext")); // 已开则关闭（toggle）
     // 不清空 extensions：信息条 chip 常驻显示，宿主重扫后整体替换
     // catalog 为本地视图：宿主按 all 刷新扩展列表（背景），目录状态单独拉
-    vscode.postMessage({ type: "getExtensionList", view: extensionView === "catalog" ? "all" : extensionView });
-    vscode.postMessage({ type: "checkExtensionUpdates", view: extensionView === "catalog" ? "all" : extensionView, force: false });
+    vscode.postMessage({ type: "getExtensionList" });
+    vscode.postMessage({ type: "checkExtensionUpdates", force: false });
     vscode.postMessage({ type: "getCatalogState" });
   };
 
-  // 扩展弹层视图切换：catalog 本地视图只拉目录；其余发宿主按视图重拉
-  const changeExtensionView = (view: ExtensionView | "catalog") => {
+  // 扩展弹层视图切换：catalog 本地视图只拉目录；All 发宿主重拉
+  const changeExtensionView = (view: "all" | "catalog") => {
     setExtensionView(view);
     if (view === "catalog") {
       vscode.postMessage({ type: "getCatalogState" });
     } else {
-      vscode.postMessage({ type: "getExtensionList", view });
-      vscode.postMessage({ type: "checkExtensionUpdates", view, force: false });
+      vscode.postMessage({ type: "getExtensionList" });
+      vscode.postMessage({ type: "checkExtensionUpdates", force: false });
     }
   };
 
   // 更新检查：弹层打开/视图切换自动（force=false）；标题栏刷新按钮 force=true 绕过缓存
   const checkExtensionUpdates = (force: boolean) => {
-    vscode.postMessage({
-      type: "checkExtensionUpdates",
-      view: extensionView === "catalog" ? "all" : extensionView,
-      force,
-    });
+    vscode.postMessage({ type: "checkExtensionUpdates", force });
   };
 
   // 单行 / 批量更新：乐观置忙，结果经 extensionList + extensionUpdates 回流清除
@@ -620,7 +616,6 @@ export default function App() {
       kind: item.kind,
       scope: item.scope,
       source: item.source,
-      inherited: item.inherited === true,
     });
   };
 
@@ -637,7 +632,6 @@ export default function App() {
         kind: i.kind,
         scope: i.scope,
         source: i.source,
-        inherited: i.inherited === true,
       })),
     });
   };

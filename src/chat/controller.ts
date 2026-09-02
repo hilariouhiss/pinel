@@ -59,7 +59,7 @@ import { parseModels, parseThinkingLevels } from "./models";
 import type { SessionListItem } from "./session-history";
 import {
   defaultAgentDir,
-  filterExtensionView,
+  dedupeExtensionItems,
   gitRef,
   installedPackageRoot,
   packageDisplayName,
@@ -76,7 +76,6 @@ import {
   type ExtensionItem,
   type ExtensionKind,
   type ExtensionScope,
-  type ExtensionView,
   writeSettings,
 } from "./extensions";
 import {
@@ -173,7 +172,7 @@ export type OutMessage =
   | { type: "fileList"; items: FileItem[]; truncated: boolean }
   | { type: "sessionList"; items: SessionListItem[]; currentSessionFile?: string }
   | { type: "forkMessages"; messages: ForkMessage[] }
-  | { type: "extensionList"; items: ExtensionItem[]; projectAvailable: boolean }
+  | { type: "extensionList"; items: ExtensionItem[] }
   | { type: "extensionUpdates"; entries: ExtensionUpdateEntry[] }
   | { type: "catalogState"; entries: CatalogItemState[] }
   | { type: "pinelWorkflow"; workflow: PinelWorkflowPayload | null }
@@ -1010,11 +1009,10 @@ export class ChatController {
   // -------------------------------------------------------------------------
 
   /**
-   * 扫描 pi 智能体扩展列表（本地扩展 + settings.json packages），按视图过滤：
-   * all（包去重 project 优先）/ global / project（含继承行 inherited）。
-   * 纯文件操作，不依赖 pi 进程状态（pi 未启动时也能浏览/管理）。
+   * 扫描 pi 智能体扩展列表（本地扩展 + settings.json packages），包按 identity 去重
+   * （project 条目优先）。纯文件操作，不依赖 pi 进程状态（pi 未启动时也能浏览/管理）。
    */
-  async getExtensionList(view: ExtensionView = "all"): Promise<ExtensionItem[]> {
+  async getExtensionList(): Promise<ExtensionItem[]> {
     const agentDir = defaultAgentDir();
     const root = this.workspaceRoot;
     const projectDir = root ? projectConfigDir(root) : undefined;
@@ -1027,7 +1025,7 @@ export class ChatController {
       projectDir ? path.join(projectDir, "settings.json") : undefined,
       { agentDir, projectRoot: root ?? undefined },
     );
-    return filterExtensionView([...local, ...packages], view, agentDir, projectDir);
+    return dedupeExtensionItems([...local, ...packages], agentDir, projectDir);
   }
 
   /**
@@ -1099,16 +1097,16 @@ export class ChatController {
 
   /**
    * 更新检查（扩展弹层数据）：包条目并发检查（npm view / git ls-remote），带 TTL 缓存。
-   * inherited 行实际装在全局 → effectiveScope=global。失败 → unknown（不抛）。
+   * 失败 → unknown（不抛）。
    * ponytail: Promise.all 无并发上限——典型 N < 30，超限再加分批。
    */
-  async checkExtensionUpdates(view: ExtensionView, force: boolean): Promise<ExtensionUpdateEntry[]> {
-    const items = (await this.getExtensionList(view)).filter((i) => i.kind === "package");
+  async checkExtensionUpdates(force: boolean): Promise<ExtensionUpdateEntry[]> {
+    const items = (await this.getExtensionList()).filter((i) => i.kind === "package");
     const agentDir = defaultAgentDir();
     const projectRoot = this.workspaceRoot ?? undefined;
     return Promise.all(
       items.map(async (item): Promise<ExtensionUpdateEntry> => {
-        const effectiveScope: ExtensionScope = item.inherited ? "global" : item.scope;
+        const effectiveScope: ExtensionScope = item.scope;
         const key = `${effectiveScope}:${item.source}`;
         const cached = force ? undefined : this.updateCache.get(key);
         const result = cached ?? (await this.checkPackageUpdate(item, effectiveScope, agentDir, projectRoot));
@@ -1140,22 +1138,19 @@ export class ChatController {
 
   /**
    * 单包更新：官方 `pi update <source>`（scope 无关，会同时更新两个 settings 里匹配的安装；
-   * 安装布局/依赖由 pi 维护）。inherited 行实际装在全局 → cwd=agentDir；
-   * project → cwd=workspace root，让 pi 看到对应 .pi/settings.json。
+   * 安装布局/依赖由 pi 维护）。project → cwd=workspace root，让 pi 看到对应 .pi/settings.json。
    */
   async updateExtension(
     id: string,
     kind: ExtensionKind,
     scope: ExtensionScope,
     source: string,
-    inherited: boolean,
   ): Promise<void> {
     if (kind !== "package") return;
-    const effectiveScope = inherited ? "global" : scope;
     try {
       const command = this.resolvePiCommand();
       const args = ["update", source];
-      const cwd = effectiveScope === "project" ? (this.workspaceRoot ?? defaultAgentDir()) : defaultAgentDir();
+      const cwd = scope === "project" ? (this.workspaceRoot ?? defaultAgentDir()) : defaultAgentDir();
       await runPiCommand(command, args, cwd, 120000);
       this.updateCache.clear();
       this.notice("info", `Updated ${packageDisplayName(source)}. Restart pi to activate.`);
@@ -1166,10 +1161,10 @@ export class ChatController {
 
   /** 批量更新：串行（同一 npm prefix 并发 install 不安全），单包失败继续。 */
   async updateAllExtensions(
-    entries: Array<{ id: string; kind: ExtensionKind; scope: ExtensionScope; source: string; inherited: boolean }>,
+    entries: Array<{ id: string; kind: ExtensionKind; scope: ExtensionScope; source: string }>,
   ): Promise<void> {
     for (const e of entries) {
-      await this.updateExtension(e.id, e.kind, e.scope, e.source, e.inherited);
+      await this.updateExtension(e.id, e.kind, e.scope, e.source);
     }
   }
 

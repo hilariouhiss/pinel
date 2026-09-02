@@ -2842,7 +2842,7 @@ suite("Pinel 集成测试（假 pi）", () => {
       }
     });
 
-    test("getExtensionList 视图合成：project 继承行 / global 过滤 / all 包去重", async function () {
+    test("getExtensionList 合并列表：包去重 project 优先，本地不去重", async function () {
       this.timeout(30000);
       const projectSettings = path.join(vscode.workspace.workspaceFolders![0].uri.fsPath, ".pi", "settings.json");
       if (fs.existsSync(projectSettings)) {
@@ -2868,49 +2868,29 @@ suite("Pinel 集成测试（假 pi）", () => {
         }),
       );
       try {
-        // project：项目条目 + 继承全局包（inherited，scope 重写 project）；全局本地扩展不列出
-        const proj = await api.getExtensionList("project");
-        const byName = new Map(proj.map((i) => [i.name, i]));
-        assert.strictEqual(proj.length, 3, `project 视图应含 3 条，实际 ${JSON.stringify(proj.map((i) => i.name))}`);
-        assert.strictEqual(byName.get("project-only")?.scope, "project");
-        assert.strictEqual(byName.get("project-only")?.inherited, undefined);
-        assert.strictEqual(byName.get("shared")?.scope, "project");
-        assert.strictEqual(byName.get("shared")?.inherited, undefined);
+        // 合并列表：本地不去重（foo=全局散文件）；包按 identity 去重（project 条目优先）
+        const all = await api.getExtensionList();
+        const byName = new Map(all.map((i) => [i.name, i]));
+        assert.strictEqual(all.length, 4, `应含 4 条，实际 ${JSON.stringify(all.map((i) => i.name))}`);
+        assert.strictEqual(byName.get("foo")?.kind, "local");
+        assert.strictEqual(byName.get("foo")?.scope, "global");
+        assert.strictEqual(byName.get("a")?.scope, "global", "无项目覆盖的包保留全局条目");
+        assert.strictEqual(byName.get("shared")?.scope, "project", "同包 project 优先");
         assert.strictEqual(byName.get("shared")?.enabled, false);
-        assert.strictEqual(byName.get("a")?.scope, "project", "继承行 scope 应重写为 project");
-        assert.strictEqual(byName.get("a")?.inherited, true);
-        assert.strictEqual(byName.get("a")?.enabled, true);
-        assert.ok(!byName.has("foo"), "全局本地扩展不应出现在 project 视图");
-
-        // global：仅全局条目，无 inherited
-        const glob = await api.getExtensionList("global");
-        const gNames = new Map(glob.map((i) => [i.name, i]));
-        assert.strictEqual(glob.length, 3);
-        assert.ok(gNames.has("foo") && gNames.has("a") && gNames.has("shared"));
-        for (const i of glob) {
-          assert.strictEqual(i.scope, "global");
-          assert.strictEqual(i.inherited, undefined);
-        }
-
-        // all：包按 identity 去重（project 优先）；本地不去重
-        const all = await api.getExtensionList("all");
-        const aNames = new Map(all.map((i) => [i.name, i]));
-        assert.strictEqual(all.length, 4);
-        assert.strictEqual(aNames.get("foo")?.kind, "local");
-        assert.strictEqual(aNames.get("a")?.scope, "global");
-        assert.strictEqual(aNames.get("shared")?.scope, "project", "同包 project 优先");
-        assert.strictEqual(aNames.get("project-only")?.scope, "project");
+        assert.strictEqual(byName.get("project-only")?.scope, "project");
       } finally {
         await fs.promises.rm(projectSettings, { force: true }); // 测试前不存在 → 删除还原
       }
     });
 
-    test("setExtensionEnabled 项目覆盖：inherited 包 upsert 写 .pi/settings.json", async function () {
+    test("setExtensionEnabled 项目覆盖：包 upsert 写 .pi/settings.json", async function () {
       this.timeout(30000);
       const projectSettings = path.join(vscode.workspace.workspaceFolders![0].uri.fsPath, ".pi", "settings.json");
       if (fs.existsSync(projectSettings)) {
         this.skip(); // 仓库 .pi/settings.json 已存在（非测试场景），避免污染真实配置
       }
+      // 隔离：清理前序测试残留的全局本地扩展（合并列表含本地条目）
+      await fs.promises.rm(path.join(agentDir, "extensions"), { recursive: true, force: true });
       await fs.promises.writeFile(path.join(agentDir, "settings.json"), JSON.stringify({ packages: ["npm:a"] }));
       try {
         // 项目级禁用全局包（upsert append 对象空数组）
@@ -2923,12 +2903,11 @@ suite("Pinel 集成测试（假 pi）", () => {
         await api.setExtensionEnabled("npm:a", "package", "project", true);
         parsed = JSON.parse(await fs.promises.readFile(projectSettings, "utf8"));
         assert.deepStrictEqual(parsed.packages, ["npm:a"]);
-        // project 视图：a 为项目条目（非继承行）
-        const proj = await api.getExtensionList("project");
-        assert.strictEqual(proj.length, 1);
-        assert.strictEqual(proj[0].name, "a");
-        assert.strictEqual(proj[0].scope, "project");
-        assert.strictEqual(proj[0].inherited, undefined);
+        // 合并列表：a 为项目条目（项目覆盖后保留 project scope）
+        const merged = await api.getExtensionList();
+        assert.strictEqual(merged.length, 1);
+        assert.strictEqual(merged[0].name, "a");
+        assert.strictEqual(merged[0].scope, "project");
       } finally {
         await fs.promises.rm(projectSettings, { force: true }); // 测试前不存在 → 删除还原
       }

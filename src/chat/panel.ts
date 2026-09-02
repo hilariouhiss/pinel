@@ -157,8 +157,6 @@ interface WebviewGetFileListMessage {
 
 interface WebviewGetExtensionListMessage {
   type: "getExtensionList";
-  /** 弹层视图（默认 all 兼容旧客户端）。 */
-  view?: "all" | "global" | "project";
 }
 
 interface WebviewSetExtensionEnabledMessage {
@@ -180,8 +178,6 @@ interface WebviewUninstallExtensionMessage {
 
 interface WebviewCheckExtensionUpdatesMessage {
   type: "checkExtensionUpdates";
-  /** 弹层视图（默认沿用最近请求）。 */
-  view?: "all" | "global" | "project";
   /** 手动刷新：绕过 TTL 缓存。 */
   force?: boolean;
 }
@@ -192,8 +188,6 @@ interface WebviewUpdateExtensionMessage {
   kind: "local" | "package";
   scope: "global" | "project";
   source: string;
-  /** inherited 行实际装在全局（更新走全局）。 */
-  inherited?: boolean;
 }
 
 interface WebviewUpdateAllExtensionsMessage {
@@ -203,7 +197,6 @@ interface WebviewUpdateAllExtensionsMessage {
     kind: "local" | "package";
     scope: "global" | "project";
     source: string;
-    inherited?: boolean;
   }>;
 }
 
@@ -299,9 +292,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "pinel.chatView";
 
   private view: vscode.WebviewView | undefined;
-
-  /** 扩展弹层最近请求的视图（启停/卸载后刷新沿用，M1）。 */
-  private lastExtensionView: "all" | "global" | "project" = "all";
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -455,7 +445,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         void this.postFileList();
         break;
       case "getExtensionList":
-        this.lastExtensionView = msg.view ?? "all";
         void this.postExtensionList();
         break;
       case "getCatalogState":
@@ -506,13 +495,13 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         })();
         break;
       case "checkExtensionUpdates":
-        void this.postExtensionUpdates(msg.view ?? this.lastExtensionView, msg.force === true);
+        void this.postExtensionUpdates(msg.force === true);
         break;
       case "updateExtension":
         void (async () => {
-          await this.controller.updateExtension(msg.id, msg.kind, msg.scope, msg.source, msg.inherited === true);
+          await this.controller.updateExtension(msg.id, msg.kind, msg.scope, msg.source);
           await this.postExtensionList();
-          await this.postExtensionUpdates(this.lastExtensionView, true);
+          await this.postExtensionUpdates(true);
           if (await confirmExtensionReload()) {
             await this.controller.restart();
           }
@@ -520,11 +509,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "updateAllExtensions":
         void (async () => {
-          await this.controller.updateAllExtensions(
-            msg.entries.map((e) => ({ ...e, inherited: e.inherited === true })),
-          );
+          await this.controller.updateAllExtensions(msg.entries);
           await this.postExtensionList();
-          await this.postExtensionUpdates(this.lastExtensionView, true);
+          await this.postExtensionUpdates(true);
           if (await confirmExtensionReload()) {
             await this.controller.restart();
           }
@@ -547,24 +534,20 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** 扫描扩展列表并回发（扩展管理弹层数据源；每次打开/操作后实时扫描，沿用最近请求视图）。 */
+  /** 扫描扩展列表并回发（扩展管理弹层数据源；每次打开/操作后实时扫描）。 */
   private async postExtensionList(): Promise<void> {
     try {
-      const items = await this.controller.getExtensionList(this.lastExtensionView);
-      this.post({
-        type: "extensionList",
-        items,
-        projectAvailable: (vscode.workspace.workspaceFolders?.length ?? 0) > 0,
-      });
+      const items = await this.controller.getExtensionList();
+      this.post({ type: "extensionList", items });
     } catch {
       // 扫描异常：不弹 notice（弹层空列表即可），仅忽略
     }
   }
 
   /** 更新检查结果回发（打开弹层/手动刷新/更新完成后；force 绕过缓存）。 */
-  private async postExtensionUpdates(view: "all" | "global" | "project", force: boolean): Promise<void> {
+  private async postExtensionUpdates(force: boolean): Promise<void> {
     try {
-      const entries = await this.controller.checkExtensionUpdates(view, force);
+      const entries = await this.controller.checkExtensionUpdates(force);
       this.post({ type: "extensionUpdates", entries });
     } catch {
       // 检查异常：静默（行保持 unknown/旧值，不弹 notice）

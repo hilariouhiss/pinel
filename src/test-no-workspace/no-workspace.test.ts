@@ -61,7 +61,7 @@ suite("未打开文件夹：友好状态（空窗口实例）", () => {
     );
   });
 
-  test("扩展列表：空窗口 all 仅全局条目，project 视图全部为继承行（不崩溃）", async () => {
+  test("扩展列表：空窗口仅全局条目（不崩溃）", async () => {
     const ext = vscode.extensions.getExtension<PinelTestApi>("hilariouhiss.pinel");
     assert.ok(ext, "扩展 hilariouhiss.pinel 必须存在");
     const api = await ext.activate();
@@ -78,19 +78,9 @@ suite("未打开文件夹：友好状态（空窗口实例）", () => {
     );
     try {
       const all = await api.getExtensionList();
-      assert.strictEqual(all.length, 2, `all 应含本地扩展+包，实际 ${JSON.stringify(all.map((i) => i.name))}`);
+      assert.strictEqual(all.length, 2, `应含本地扩展+包，实际 ${JSON.stringify(all.map((i) => i.name))}`);
       for (const i of all) {
-        assert.strictEqual(i.scope, "global", "无 workspace 时 all 视图不得有项目条目");
-      }
-      const proj = await api.getExtensionList("project");
-      assert.strictEqual(proj.length, 1, "project 视图应含继承全局包（无项目条目）");
-      assert.strictEqual(proj[0].name, "a");
-      assert.strictEqual(proj[0].scope, "project", "继承行 scope 重写为 project");
-      assert.strictEqual(proj[0].inherited, true);
-      const glob = await api.getExtensionList("global");
-      assert.strictEqual(glob.length, 2);
-      for (const i of glob) {
-        assert.strictEqual(i.scope, "global");
+        assert.strictEqual(i.scope, "global", "无 workspace 时不得有项目条目");
       }
     } finally {
       if (prevEnv === undefined) {

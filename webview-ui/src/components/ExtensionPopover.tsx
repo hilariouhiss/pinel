@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
-import type { CatalogItem, ExtensionItem, ExtensionView, PinelPluginState } from "../types";
+import type { CatalogItem, ExtensionItem, PinelPluginState } from "../types";
 import { extensionRowKey, updatableItems } from "../extension-updates";
 // SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
 import deleteIcon from "lucide-static/icons/trash-2.svg";
 import refreshIcon from "lucide-static/icons/refresh-cw.svg";
 
 /** 视图选项（顺序 = UI 顺序；catalog = 插件目录，本地视图不请求宿主扩展列表）。 */
-const VIEW_OPTIONS: { value: ExtensionView | "catalog"; label: string }[] = [
+const VIEW_OPTIONS: { value: "all" | "catalog"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "catalog", label: "Catalog" },
 ];
@@ -16,7 +16,7 @@ interface Props {
   anchor: HTMLElement | null;
   items: ExtensionItem[];
   /** 当前视图（catalog 为本地视图；all 由宿主拉取合并列表）。 */
-  view: ExtensionView | "catalog";
+  view: "all" | "catalog";
   /** Pinel 插件安装态（null=未检测）；offer 显示安装区（仅管理视图）。 */
   pinelPluginState: PinelPluginState | null;
   /** 插件目录项（含安装态；宿主 catalogState 消息）。 */
@@ -36,7 +36,7 @@ interface Props {
   onInstallCatalogEntry: (spec: string) => void;
   /** 目录按组默认集安装（group + 实际 installSpec 列表，供 busy 标记）。 */
   onInstallCatalogGroup: (group: "pi-packages" | "rpiv-mono" | "recommended", specs: string[]) => void;
-  onChangeView: (view: ExtensionView | "catalog") => void;
+  onChangeView: (view: "all" | "catalog") => void;
   onToggle: (item: ExtensionItem, enabled: boolean) => void;
   onUninstall: (item: ExtensionItem) => void;
   onClose: () => void;
