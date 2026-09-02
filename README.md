@@ -8,4 +8,6 @@ Pinel —— 为 Pi 编码智能体（`@earendil-works/pi-coding-agent`）提供
 - `pi/` —— Pinel Pi 插件包（npm 包 `@hilariouhiss/pinel`，`pi install` 安装；独立发布：`cd pi && npm publish`）。
 
 两子项目工具链互引（`vscode/` 内命令以 `../pi` 相对路径引用插件源），构建/测试/发布均在各自目录内进行。
-本仓由两个独立仓库经 `git subtree` 整合而成，双方完整历史保留（`git log --follow` 可溯源）。
+本仓由两个独立仓库经 `git subtree` 整合而成，双方完整历史保留为祖先提交（共 290 提交全可达）；
+注：subtree 边界内旧提交路径为根相对（如 `src/…`），逐文件深潮源经源引用：
+`git log vscode/main --oneline -- src/chat/session-history.ts`（或 `git log pi/main -- pi/pinel.ts`）。
