@@ -4,6 +4,7 @@ import { extensionRowKey, updatableItems } from "../extension-updates";
 // SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
 import deleteIcon from "lucide-static/icons/trash-2.svg";
 import refreshIcon from "lucide-static/icons/refresh-cw.svg";
+import xIcon from "lucide-static/icons/x.svg";
 
 /** 视图选项（顺序 = UI 顺序；catalog = 插件目录，本地视图不请求宿主扩展列表）。 */
 const VIEW_OPTIONS: { value: "all" | "catalog"; label: string }[] = [
@@ -285,7 +286,7 @@ export function ExtensionPopover({
             dangerouslySetInnerHTML={{ __html: refreshIcon }}
           />
           <button className="popover-close" aria-label="Close extensions" onClick={onClose}>
-            ×
+            <span dangerouslySetInnerHTML={{ __html: xIcon }} />
           </button>
         </div>
         {/* 内容独立滚动区：关闭按钮行留在滚动区外（见 styles.css .popover-body） */}

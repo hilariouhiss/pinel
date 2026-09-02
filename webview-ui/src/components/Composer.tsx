@@ -17,6 +17,7 @@ import type { Attachment, ChatStatus, FileItem, SlashCommand } from "../types";
 import sendIcon from "lucide-static/icons/send.svg";
 import stopIcon from "lucide-static/icons/square.svg";
 import settingsIcon from "lucide-static/icons/settings.svg";
+import xIcon from "lucide-static/icons/x.svg";
 
 interface Props {
   status: ChatStatus;
@@ -523,7 +524,7 @@ export function Composer({
                 title="Remove"
                 onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
               >
-                ✕
+                <span dangerouslySetInnerHTML={{ __html: xIcon }} />
               </button>
             </div>
           ))}

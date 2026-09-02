@@ -3061,6 +3061,72 @@ body {
   stroke-width: 2.5;
 }
 
+/* 图标换 lucide 后的尺寸槽（2026-09 全量替换文本/emoji 图标） */
+.popover-close .lucide {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.notice-close .lucide {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.status-banner-icon .lucide {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  vertical-align: -2px;
+}
+
+.composer-attachment-remove .lucide {
+  width: 10px;
+  height: 10px;
+  display: block;
+  margin: 0 auto;
+}
+
+.subagent-caret .lucide,
+.config-popover-check .lucide,
+.mode-group-chevron .lucide,
+.qna-collapsed-check .lucide,
+.qna-tab-check .lucide {
+  width: 11px;
+  height: 11px;
+  display: block;
+}
+
+.qna-next-icon .lucide {
+  width: 11px;
+  height: 11px;
+  display: inline-block;
+  vertical-align: -2px;
+  margin-left: 3px;
+}
+
+.ponytail-dot .lucide {
+  width: 9px;
+  height: 9px;
+  display: block;
+}
+
+.session-stats-marker-icon .lucide {
+  width: 9px;
+  height: 9px;
+  display: inline-block;
+  vertical-align: -1px;
+}
+
+.recent-round-bar-icon .lucide {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 2px;
+}
+
 /* ------------------------------------------------------------ 上下文状态条 */
 /* 输入卡（.composer-stack）顶部状态条（ContextBar）：Context/Skills/Prompts/Extensions/MCP
    计数 chip 行（对齐 pi tui 启动头段名）；次要信息层级——小字号 + 降透明度，hover/展开恢复；

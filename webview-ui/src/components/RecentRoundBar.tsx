@@ -1,8 +1,12 @@
 import type { KeyboardEvent } from "react";
+// SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
+import paperclipIcon from "lucide-static/icons/paperclip.svg";
 
 interface Props {
-  /** 最近用户输入文本（已含 📎 引用替换）；空串 → 不渲染（空会话/仅图片兜底由 App 处理）。 */
+  /** 最近用户输入文本（已含引用替换）；空串 → 不渲染（空会话/仅图片兜底由 App 处理）。 */
   lastUserText: string;
+  /** 仅图片消息：文案为兜底 "图片"，前置回形针图标。 */
+  imageOnly?: boolean;
   /** 点击滚回原用户消息位置。 */
   onLocate: () => void;
 }
@@ -13,7 +17,7 @@ interface Props {
  * 纯显示最近一次用户发送的消息（最多 3 行、超出 ellipsis 截断，CSS clamp），
  * 滚动查看历史时始终可见当前回合输入。点击滚回原消息位置。
  */
-export function RecentRoundBar({ lastUserText, onLocate }: Props) {
+export function RecentRoundBar({ lastUserText, imageOnly = false, onLocate }: Props) {
   if (!lastUserText) {
     return null;
   }
@@ -33,7 +37,12 @@ export function RecentRoundBar({ lastUserText, onLocate }: Props) {
       onClick={onLocate}
       onKeyDown={onKeyDown}
     >
-      <span className="recent-round-bar-text">{lastUserText}</span>
+      <span className="recent-round-bar-text">
+        {imageOnly && (
+          <span className="recent-round-bar-icon" dangerouslySetInnerHTML={{ __html: paperclipIcon }} />
+        )}{" "}
+        {lastUserText}
+      </span>
     </div>
   );
 }

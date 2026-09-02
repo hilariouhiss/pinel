@@ -24,6 +24,8 @@ import historyIcon from "lucide-static/icons/history.svg";
 import newSessionIcon from "lucide-static/icons/plus.svg";
 import forkIcon from "lucide-static/icons/git-fork.svg";
 import reloadIcon from "lucide-static/icons/rotate-cw.svg";
+import xIcon from "lucide-static/icons/x.svg";
+import alertIcon from "lucide-static/icons/triangle-alert.svg";
 
 const initialStatus: ChatStatus = {
   processState: "stopped",
@@ -164,9 +166,11 @@ export default function App() {
   }, [messages]);
   /** 悬浮条当前显示的用户消息索引（null = 隐藏；computeVisible 未跑过时保持 null，首帧不闪现）。 */
   const [visibleUserIndex, setVisibleUserIndex] = useState<number | null>(null);
-  /** 悬浮条文案：仅图片用户消息兕底 "📎 图片"；无显示索引 → 空串（组件不渲染）。 */
-  const roundBarText =
-    visibleUserIndex !== null ? userText(messages[visibleUserIndex]?.content) || "📎 图片" : "";
+  /** 悬浮条文案：仅图片用户消息兕底 "图片"（icon 由 RecentRoundBar 渲染）；无显示索引 → 空串。 */
+  const roundBarUserText =
+    visibleUserIndex !== null ? userText(messages[visibleUserIndex]?.content) : "";
+  const roundBarText = roundBarUserText || (visibleUserIndex !== null ? "图片" : "");
+  const roundBarImageOnly = visibleUserIndex !== null && roundBarUserText === "";
 
   // 按当前滚动位置重算悬浮条应显示的用户消息（规则见 roundbar-rule.ts 纯函数）。
   // 同时维护隐藏态重现：点击滚回后 hidden，仅当应显示的消息离开视口才重现。
@@ -703,21 +707,30 @@ export default function App() {
   const banner =
     status.processState === "error" ? (
       <div className="status-banner status-banner-error">
-        <span className="status-banner-text">✕ {status.error ?? "pi process error"}</span>
+        <span className="status-banner-text">
+          <span className="status-banner-icon" dangerouslySetInnerHTML={{ __html: xIcon }} />{" "}
+          {status.error ?? "pi process error"}
+        </span>
         <button className="status-banner-btn" onClick={() => vscode.postMessage({ type: "restart" })}>
           Restart
         </button>
       </div>
     ) : status.processState === "no-workspace" ? (
       <div className="status-banner status-banner-warn">
-        <span className="status-banner-text">⚠ {status.error ?? "No folder open"}</span>
+        <span className="status-banner-text">
+          <span className="status-banner-icon" dangerouslySetInnerHTML={{ __html: alertIcon }} />{" "}
+          {status.error ?? "No folder open"}
+        </span>
         <button className="status-banner-btn" onClick={() => vscode.postMessage({ type: "restart" })}>
           Retry
         </button>
       </div>
     ) : status.processState === "running" && status.model === null ? (
       <div className="status-banner status-banner-warn">
-        <span className="status-banner-text">⚠ No model available, check pi auth then retry</span>
+        <span className="status-banner-text">
+          <span className="status-banner-icon" dangerouslySetInnerHTML={{ __html: alertIcon }} />{" "}
+          No model available, check pi auth then retry
+        </span>
         <button className="status-banner-btn" onClick={() => vscode.postMessage({ type: "restart" })}>
           Restart
         </button>
@@ -804,7 +817,11 @@ export default function App() {
             宽度 = 滚动内容区宽 → 与消息卡片结构级严格同宽（见 styles.css
             .recent-round-anchor） */}
         <div className="recent-round-anchor">
-          <RecentRoundBar lastUserText={!roundBarHidden ? roundBarText : ""} onLocate={locateLastUser} />
+          <RecentRoundBar
+            lastUserText={!roundBarHidden ? roundBarText : ""}
+            imageOnly={roundBarImageOnly}
+            onLocate={locateLastUser}
+          />
         </div>
         {!hasConversation && (
           <div className="pinel-empty">

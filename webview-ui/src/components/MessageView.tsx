@@ -7,6 +7,8 @@ import botIcon from "lucide-static/icons/bot.svg";
 import checkIcon from "lucide-static/icons/check.svg";
 import xIcon from "lucide-static/icons/x.svg";
 import copyIcon from "lucide-static/icons/copy.svg";
+import chevronRightIcon from "lucide-static/icons/chevron-right.svg";
+import chevronDownIcon from "lucide-static/icons/chevron-down.svg";
 import { vscode } from "../index";
 import { useSmoothText } from "../use-smooth-text";
 
@@ -637,7 +639,13 @@ function SubagentCard({
           <span className="subagent-robot" dangerouslySetInnerHTML={{ __html: botIcon }} /> {card.description}
         </span>
         <span className="toolresult-len">{meta.join(" · ")}</span>
-        {canExpand && <span className="subagent-caret">{open ? "▾" : "▸"}</span>}
+        {canExpand && (
+          <span className="subagent-caret">
+            <span
+              dangerouslySetInnerHTML={{ __html: open ? chevronDownIcon : chevronRightIcon }}
+            />
+          </span>
+        )}
       </button>
       {stats.length > 0 && <div className="subagent-stats">{stats.join(" · ")}</div>}
       {open && displayText.trim() && (

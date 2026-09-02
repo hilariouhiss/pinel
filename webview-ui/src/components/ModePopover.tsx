@@ -3,6 +3,9 @@ import type { ModeState } from "../types";
 import { groupCheckState, groupResources, type GroupableResource } from "../mode-groups";
 // SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
 import deleteIcon from "lucide-static/icons/trash-2.svg";
+import chevronRightIcon from "lucide-static/icons/chevron-right.svg";
+import chevronDownIcon from "lucide-static/icons/chevron-down.svg";
+import xIcon from "lucide-static/icons/x.svg";
 
 /**
  * 模式管理弹层（屏幕居中模态，同 extension-popover 模式）：
@@ -150,7 +153,9 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
                 aria-label={`${folded ? "Expand" : "Collapse"} ${group.label}`}
                 onClick={() => toggleCollapse(group.key)}
               >
-                {folded ? "▸" : "▾"}
+                <span
+                  dangerouslySetInnerHTML={{ __html: folded ? chevronRightIcon : chevronDownIcon }}
+                />
               </button>
             )}
             {!isLocal && (
@@ -214,7 +219,7 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
         <div className="popover-titlebar">
           <span className="popover-titlebar-title">Modes</span>
           <button className="popover-close" aria-label="Close modes" onClick={onClose}>
-            ×
+            <span dangerouslySetInnerHTML={{ __html: xIcon }} />
           </button>
         </div>
         <div className="popover-body">

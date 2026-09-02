@@ -10,6 +10,8 @@ import leafIcon from "lucide-static/icons/leaf.svg";
 import zapIcon from "lucide-static/icons/zap.svg";
 import flameIcon from "lucide-static/icons/flame.svg";
 import powerIcon from "lucide-static/icons/power.svg";
+import circleIcon from "lucide-static/icons/circle.svg";
+import circleDotIcon from "lucide-static/icons/circle-dot.svg";
 
 interface Props {
   /** 会话统计（宿主 parseSessionStats 结果）；null = 尚未拉取（占位）。 */
@@ -59,9 +61,11 @@ const PONYTAIL_LEVEL_ICONS: Record<string, string> = {
   off: powerIcon,
 };
 
-/** git 状态符号串 `[!?↑↓]`（仅在有指示时返回，否则空串）。 */
-function gitMarkers(git: NonNullable<SessionEnv["git"]>): string {
-  const parts: string[] = [];
+/** git 状态标记令牌（顺序 = 展示序；up/down 渲染为 lucide 箭头，其余为文本）。 */
+type GitMarkerToken = "!" | "?" | "up" | "down";
+
+function gitMarkers(git: NonNullable<SessionEnv["git"]>): GitMarkerToken[] {
+  const parts: GitMarkerToken[] = [];
   if (git.trackedChanges) {
     parts.push("!");
   }
@@ -69,12 +73,12 @@ function gitMarkers(git: NonNullable<SessionEnv["git"]>): string {
     parts.push("?");
   }
   if (git.ahead > 0) {
-    parts.push("↑");
+    parts.push("up");
   }
   if (git.behind > 0) {
-    parts.push("↓");
+    parts.push("down");
   }
-  return parts.length > 0 ? `[${parts.join("")}]` : "";
+  return parts;
 }
 
 /**
@@ -101,9 +105,9 @@ export function SessionStatsBar({ stats, env, ponytailStatus }: Props) {
     : "—";
   const git = env?.git ?? null;
   const folderName = env?.folderName ?? null;
-  const markers = git ? gitMarkers(git) : "";
+  const markers = git ? gitMarkers(git) : [];
   const envTitle = git
-    ? `${git.branch}${markers ? ` ${markers}` : ""}`
+    ? `${git.branch}${markers.length > 0 ? ` [${markers.map((m) => (m === "up" ? "↑" : m === "down" ? "↓" : m)).join("")}]` : ""}`
     : folderName ?? undefined;
   return (
     <div className="session-stats-bar">
@@ -119,7 +123,24 @@ export function SessionStatsBar({ stats, env, ponytailStatus }: Props) {
               />
               {" "}
               {git.branch}
-              {markers && <> {markers}</>}
+              {markers.length > 0 && (
+                <>
+                  {" "}
+                  [
+                  {markers.map((m, i) =>
+                    m === "up" || m === "down" ? (
+                      <span
+                        key={i}
+                        className="session-stats-icon session-stats-marker-icon"
+                        dangerouslySetInnerHTML={{ __html: m === "up" ? upArrowIcon : downArrowIcon }}
+                      />
+                    ) : (
+                      m
+                    ),
+                  )}
+                  ]
+                </>
+              )}
             </>
           )}
         </span>
@@ -132,7 +153,9 @@ export function SessionStatsBar({ stats, env, ponytailStatus }: Props) {
               onClick={() => vscode.postMessage({ type: "cyclePonytail" })}
             >
               <span className={`ponytail-dot${ponytailStatus.active ? " ponytail-dot-active" : ""}`}>
-                {ponytailStatus.active ? "●" : "○"}
+                <span
+                  dangerouslySetInnerHTML={{ __html: ponytailStatus.active ? circleDotIcon : circleIcon }}
+                />
               </span>{" "}
               <span
                 className="session-stats-icon"

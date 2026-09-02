@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import checkSquareIcon from "lucide-static/icons/check-square.svg";
 import squareIcon from "lucide-static/icons/square.svg";
+import checkIcon from "lucide-static/icons/check.svg";
+import arrowRightIcon from "lucide-static/icons/arrow-right.svg";
 import { vscode } from "../index";
 import type { QuestionnaireAnswer, QuestionnaireQuestion, QuestionnaireView } from "../types";
 import { Markdown } from "./Markdown";
@@ -176,7 +178,7 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
   if (q.phase === "submitting" || q.phase === "submitted") {
     return (
       <div className="qna qna-collapsed">
-        <span className="qna-collapsed-check">✓</span>
+        <span className="qna-collapsed-check" dangerouslySetInnerHTML={{ __html: checkIcon }} />
         Questionnaire answered
       </div>
     );
@@ -224,7 +226,9 @@ export function Questionnaire({ questionnaire: q, focusVersion }: Props) {
             onClick={() => selectTab(i, "question")}
           >
             <span className="qna-tab-label">{tabLabel(question, i)}</span>
-            {q.answers[i] && <span className="qna-tab-check">✓</span>}
+            {q.answers[i] && (
+              <span className="qna-tab-check" dangerouslySetInnerHTML={{ __html: checkIcon }} />
+            )}
           </button>
         ))}
         {showConfirmTab && (
@@ -391,7 +395,8 @@ function QuestionCard({
       {question.multiSelect && showNext && (
         <div className="qna-next-row">
           <button className="uidialog-btn uidialog-btn-ghost qna-next" disabled={locked} onClick={onNext}>
-            Next →
+            Next
+            <span className="qna-next-icon" dangerouslySetInnerHTML={{ __html: arrowRightIcon }} />
           </button>
         </div>
       )}

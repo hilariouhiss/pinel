@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { vscode } from "../index";
 import type { ChatStatus } from "../types";
+// SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
+import xIcon from "lucide-static/icons/x.svg";
 
 interface Props {
   status: ChatStatus;
@@ -111,7 +113,7 @@ export function ConfigPopover({ status, open, onClose }: Props) {
         <div className="popover-titlebar">
           <span className="popover-titlebar-title">Settings</span>
           <button className="popover-close" aria-label="Close settings" onClick={onClose}>
-            ×
+            <span dangerouslySetInnerHTML={{ __html: xIcon }} />
           </button>
         </div>
         {/* 内容独立滚动区：关闭按钮行留在滚动区外（见 styles.css .popover-body） */}

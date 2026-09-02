@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ModelInfo } from "../types";
+// SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
+import checkIcon from "lucide-static/icons/check.svg";
 
 interface Props {
   /** 锚定元素（footer chip 按钮）；null 不渲染（组件常驻挂载，开关由 App 弹层枚举驱动）。 */
@@ -151,7 +153,9 @@ export function ModelPopover({
                 }}
               >
                 <span className="config-popover-option-label">{m.name ?? m.id ?? ""}</span>
-                {selected && <span className="config-popover-check">✓</span>}
+                {selected && (
+                  <span className="config-popover-check" dangerouslySetInnerHTML={{ __html: checkIcon }} />
+                )}
                 {m.provider && <span className="config-popover-option-detail">{m.provider}</span>}
               </button>
             );
@@ -166,7 +170,9 @@ export function ModelPopover({
               onClick={() => onSelectThinkingLevel(level)}
             >
               <span className="config-popover-option-label">{level}</span>
-              {level === currentThinkingLevel && <span className="config-popover-check">✓</span>}
+              {level === currentThinkingLevel && (
+                <span className="config-popover-check" dangerouslySetInnerHTML={{ __html: checkIcon }} />
+              )}
             </button>
           ))
         )}

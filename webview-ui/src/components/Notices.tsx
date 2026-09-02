@@ -1,4 +1,6 @@
 import { useEffect } from "react";
+// SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
+import xIcon from "lucide-static/icons/x.svg";
 
 interface Notice {
   id: number;
@@ -31,7 +33,7 @@ export function Notices({ notices, onDismiss }: Props) {
         <div key={n.id} className={`notice notice-${n.level}`} role="status">
           <span className="notice-text">{n.text}</span>
           <button className="notice-close" onClick={() => onDismiss(n.id)}>
-            ✕
+            <span dangerouslySetInnerHTML={{ __html: xIcon }} />
           </button>
         </div>
       ))}
