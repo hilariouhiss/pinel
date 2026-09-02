@@ -1609,7 +1609,7 @@ export class ChatController {
   }
 
   /**
-   * 循环切换 ponytail 档位（lite→full→ultra→lite；off/未知→full 重新启用）。
+   * 循环切换 ponytail 档位（off→lite→full→ultra→off；未知→full）。
    * `/ponytail <mode>` 是 ponytail 插件扩展命令：RPC prompt 立即执行（流式中亦然）、
    * 不写会话条目（/pinel-* 同机制实证）；新档位经 statusKey "ponytail" 帧回推刷新，
    * 无需本地乐观更新。
@@ -1620,7 +1620,7 @@ export class ChatController {
       this.notice("warning", "pi process unavailable, cannot switch ponytail mode");
       return;
     }
-    const order = ["lite", "full", "ultra"];
+    const order = ["off", "lite", "full", "ultra"];
     const idx = order.indexOf(this.ponytailStatusCache?.mode ?? "");
     const next = idx >= 0 ? order[(idx + 1) % order.length] : "full";
     try {

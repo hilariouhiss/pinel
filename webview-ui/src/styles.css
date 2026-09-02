@@ -3013,20 +3013,10 @@ body {
   vertical-align: -1px;
 }
 
-/* ponytail 三图标：toggle 开关（ON/OFF 着色）+ 小马 + 档位图标 */
-.ponytail-toggle {
-  color: var(--vscode-descriptionForeground);
-}
-
-.ponytail-toggle.on {
-  color: var(--vscode-textLink-foreground);
-}
-
-/* ponytail 档位切换按钮：点击循环档位（lite/full/ultra） */
+/* ponytail 档位文本：ponytail:<level>，点击循环切换 off/lite/full/ultra */
 .session-stats-ponytail {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
   margin: 0;
   padding: 0;
   border: none;
@@ -3036,7 +3026,7 @@ body {
   cursor: pointer;
 }
 
-.session-stats-ponytail:hover .session-stats-icon {
+.session-stats-ponytail:hover {
   color: var(--vscode-textLink-foreground);
 }
 

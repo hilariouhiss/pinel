@@ -46,7 +46,7 @@ export interface PinelTestApi {
   cycleModel(): Promise<void>;
   /** 循环切换思考强度（cycle_thinking_level）。 */
   cycleThinkingLevel(): Promise<void>;
-  /** 循环切换 ponytail 档位（/ponytail <next>；lite→full→ultra→lite）。 */
+  /** 循环切换 ponytail 档位（/ponytail <next>；off→lite→full→ultra→off）。 */
   cyclePonytail(): Promise<void>;
   /** 拉取可用模型列表（get_available_models；模型下拉列表）。 */
   getModels(): Promise<void>;

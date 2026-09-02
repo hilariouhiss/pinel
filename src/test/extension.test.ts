@@ -464,21 +464,28 @@ suite("Pinel 集成测试（假 pi）", () => {
       10000,
       "ponytail 档位必须切到 ultra",
     );
-    // ultra → lite（循环回绕）
+    // ultra → off（全档位循环含 off）
+    await api.cyclePonytail();
+    await waitFor(
+      () => api.getPonytailStatusCache()?.mode === "off",
+      10000,
+      "ponytail 档位必须切到 off",
+    );
+    // off → lite（重新启用，循环回绕）
     await api.cyclePonytail();
     await waitFor(
       () => api.getPonytailStatusCache()?.mode === "lite",
       10000,
-      "ponytail 档位必须循环到 lite",
+      "ponytail 档位必须切到 lite",
     );
-    // 假 pi 收到的命令序列：marker prompt + 两次扩展命令
+    // 假 pi 收到的命令序列：marker prompt + 三次扩展命令
     const records = recordsAfterPrompt(readFakePiLog(logPath), marker);
     const prompts = (
       logRecordsWith(records, "in", "prompt") as Array<{ record?: { record?: { message?: string } } }>
     ).map((rec) => rec.record?.record?.message);
     assert.deepStrictEqual(
       prompts,
-      [marker, "/ponytail ultra", "/ponytail lite"],
+      [marker, "/ponytail ultra", "/ponytail off", "/ponytail lite"],
       "点击循环必须发出对应扩展命令",
     );
   });
