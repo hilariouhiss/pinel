@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { vscode } from "./index";
+import { buildSessionTree } from "./session-tree";
 import type { HostMessage, SessionListItem } from "./types";
 import { formatRelativeTime } from "./utils";
 import { SearchBox } from "./components/SearchBox";
@@ -11,7 +12,8 @@ import deleteIcon from "lucide-static/icons/trash-2.svg";
 /**
  * 会话历史视图（主侧边栏）。
  * 顶部新会话按钮（lucide plus 图标）+ 搜索框 + 会话列表
- * （名称/首条消息摘要/相对时间/当前高亮）。
+ * （名称/首条消息摘要/相对时间/当前高亮；按 fork 血缘树形展示，
+ * 子会话缩进挂父下，见 session-tree.ts）。
  * 点击会话 → switchSession；点击新会话 → newSession（宿主切换成功后
  * 自动打开次侧边栏聊天视图）。
  * 行右侧操作：lucide pencil 行内编辑重命名（Enter 提交/Esc/blur 取消，提交后
@@ -72,14 +74,17 @@ export default function HistoryApp() {
     vscode.postMessage({ type: "renameSession", path, name: rawName });
   };
 
-  // 本地过滤：名称/预览包含关键词（大小写不敏感）
+  // 会话树：fork 子会话缩进挂父下；根按子树最新活动排序（活跃 fork 所在树浮顶）
+  const rows = useMemo(() => buildSessionTree(items), [items]);
+  // 本地过滤：名称/预览包含关键词（大小写不敏感）；命中行保留 depth 缩进显示血缘
   const keyword = query.trim().toLowerCase();
   const filtered = keyword
-    ? items.filter(
-        (i) =>
-          i.name?.toLowerCase().includes(keyword) || i.preview?.toLowerCase().includes(keyword),
+    ? rows.filter(
+        (r) =>
+          r.item.name?.toLowerCase().includes(keyword) ||
+          r.item.preview?.toLowerCase().includes(keyword),
       )
-    : items;
+    : rows;
 
   return (
     <div className="history-root">
@@ -113,11 +118,15 @@ export default function HistoryApp() {
             <div className="history-empty-hint">Try a different keyword</div>
           </div>
         ) : (
-          filtered.map((item) => {
+          filtered.map(({ item, depth }) => {
             const active = item.path === currentSessionFile;
             const editing = editingPath === item.path;
             return (
-              <div key={item.path} className={`history-item${active ? " active" : ""}`}>
+              <div
+                key={item.path}
+                className={`history-item${active ? " active" : ""}${depth > 0 ? " history-item-forked" : ""}`}
+                style={depth > 0 ? { marginLeft: Math.min(depth, 4) * 14 } : undefined}
+              >
                 {editing ? (
                   // 编辑态渲染 div 而非 button：input 嵌套于 button 内时，浏览器隐式
                   // 激活会让输入框里的 Enter（含中文输入法选词确认）click 父按钮 →
