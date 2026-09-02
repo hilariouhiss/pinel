@@ -39,7 +39,7 @@ export function spawnRunner(cmd: string, args: string[], opts: { cwd?: string; t
     const done = (finish: () => void) => {
       if (!settled) {
         settled = true;
-        if (timer) clearTimeout(timer);
+        if (timer) { clearTimeout(timer); }
         finish();
       }
     };
@@ -63,14 +63,14 @@ export async function checkNpmUpdate(
   installedVersion: string | undefined,
   run: CommandRunner,
 ): Promise<UpdateCheckResult> {
-  if (isPinnedNpmSpec(source)) return { status: "current" };
-  if (!installedVersion) return { status: "unknown" };
+  if (isPinnedNpmSpec(source)) { return { status: "current" }; }
+  if (!installedVersion) { return { status: "unknown" }; }
   try {
     const stdout = await run("npm", ["view", parseNpmSpec(source).name, "version", "--json"], { timeoutMs: 15000 });
     const raw = stdout.trim();
-    if (!raw) return { status: "unknown" };
+    if (!raw) { return { status: "unknown" }; }
     const parsed = JSON.parse(raw) as unknown;
-    if (typeof parsed !== "string" || !parsed) return { status: "unknown" };
+    if (typeof parsed !== "string" || !parsed) { return { status: "unknown" }; }
     return parsed === installedVersion ? { status: "current" } : { status: "available", latestVersion: parsed };
   } catch {
     return { status: "unknown" };
@@ -95,11 +95,11 @@ async function getRemoteGitHead(installPath: string, run: CommandRunner): Promis
     const remoteHead = await run("git", ["ls-remote", "origin", upstreamRef], { cwd: installPath, timeoutMs: 20000 });
     // pi 用 {40}；测试 fixture 用短哈希（aaa/bbb）→ 放宽为任意长度 hex（真实 ls-remote 恒为 40 位）
     const match = remoteHead.match(/^([0-9a-f]+)\s/m);
-    if (match?.[1]) return match[1];
+    if (match?.[1]) { return match[1]; }
   }
   const remoteHead = await run("git", ["ls-remote", "origin", "HEAD"], { cwd: installPath, timeoutMs: 20000 });
   const match = remoteHead.match(/^([0-9a-f]+)\s+HEAD$/m);
-  if (!match?.[1]) throw new Error("Failed to determine remote HEAD");
+  if (!match?.[1]) { throw new Error("Failed to determine remote HEAD"); }
   return match[1];
 }
 
@@ -107,7 +107,7 @@ async function getRemoteGitHead(installPath: string, run: CommandRunner): Promis
 async function getGitUpstreamRef(installPath: string, run: CommandRunner): Promise<string | undefined> {
   try {
     const upstream = (await run("git", ["rev-parse", "--abbrev-ref", "@{upstream}"], { cwd: installPath, timeoutMs: 10000 })).trim();
-    if (!upstream.startsWith("origin/")) return undefined;
+    if (!upstream.startsWith("origin/")) { return undefined; }
     const branch = upstream.slice("origin/".length);
     return branch ? `refs/heads/${branch}` : undefined;
   } catch {
@@ -126,7 +126,7 @@ export class UpdateCheckCache {
 
   get(key: string): UpdateCheckResult | undefined {
     const e = this.entries.get(key);
-    if (!e) return undefined;
+    if (!e) { return undefined; }
     if (this.now() >= e.expiresAt) {
       this.entries.delete(key);
       return undefined;

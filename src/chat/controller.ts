@@ -1150,13 +1150,13 @@ export class ChatController {
     projectRoot?: string,
   ): Promise<UpdateCheckResult> {
     const root = installedPackageRoot(item.source, scope, agentDir, projectRoot);
-    if (!root) return { status: "unknown" };
+    if (!root) { return { status: "unknown" }; }
     const kind = packageSourceKind(item.source);
     if (kind === "npm") {
       return checkNpmUpdate(item.source, item.version ?? (await readPackageVersion(root)), spawnRunner);
     }
     if (kind === "git") {
-      if (gitRef(item.source)) return { status: "current" }; // ref-pinned：更新只会重装同一 ref，无意义
+      if (gitRef(item.source)) { return { status: "current" }; } // ref-pinned：更新只会重装同一 ref，无意义
       return checkGitUpdate(root, spawnRunner);
     }
     return { status: "unknown" }; // 本地路径包：无远端概念
@@ -1172,7 +1172,7 @@ export class ChatController {
     scope: ExtensionScope,
     source: string,
   ): Promise<void> {
-    if (kind !== "package") return;
+    if (kind !== "package") { return; }
     try {
       const command = this.resolvePiCommand();
       const args = ["update", source];

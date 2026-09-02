@@ -114,8 +114,8 @@ export type PackageSourceKind = "npm" | "git" | "path";
 
 /** 来源 spec → 类型徽标。 */
 export function packageSourceKind(source: string): PackageSourceKind {
-  if (source.startsWith("npm:")) return "npm";
-  if (source.startsWith("git:") || /^(https?|ssh|git):\/\//.test(source)) return "git";
+  if (source.startsWith("npm:")) { return "npm"; }
+  if (source.startsWith("git:") || /^(https?|ssh|git):\/\//.test(source)) { return "git"; }
   return "path";
 }
 
@@ -156,7 +156,7 @@ export function gitHostPath(source: string): { host: string; path: string } | un
     return undefined;
   }
   const p = u.pathname.replace(/^\/+/, "").replace(/\.git$/, "").replace(/@[^/]*$/, "");
-  if (!u.hostname || !p) return undefined;
+  if (!u.hostname || !p) { return undefined; }
   return { host: u.hostname, path: p };
 }
 
@@ -172,7 +172,7 @@ export function installedPackageRoot(
   projectRoot?: string,
 ): string | undefined {
   const base = scope === "project" ? (projectRoot ? path.join(projectRoot, ".pi") : undefined) : agentDir;
-  if (!base) return undefined;
+  if (!base) { return undefined; }
   const kind = packageSourceKind(source);
   if (kind === "npm") {
     return path.join(base, "npm", "node_modules", ...parseNpmSpec(source).name.split("/"));

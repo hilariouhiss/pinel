@@ -7,7 +7,7 @@ function fakeRunner(script: Array<{ match: string; stdout?: string; error?: Erro
     const key = `${cmd} ${args.join(" ")}`;
     const step = script.find((s) => key.startsWith(s.match));
     assert.ok(step, `unexpected command: ${key}`);
-    if (step.error) return Promise.reject(step.error);
+    if (step.error) { return Promise.reject(step.error); }
     return Promise.resolve(step.stdout ?? "");
   };
 }
