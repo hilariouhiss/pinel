@@ -701,6 +701,12 @@ body {
   border-color: var(--vscode-focusBorder);
 }
 
+/* 禁用态：问卷 Submit 未答完时的视觉反馈（功能门控在 disabled 属性 + 宿主 phase 校验） */
+.uidialog-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .uidialog-btn-ghost {
   background: transparent;
   color: var(--vscode-descriptionForeground);
@@ -1005,11 +1011,14 @@ body {
 /* 展开收起动画：grid 0fr↔1fr（插值到精确内容高度，无 JS 测量；
    Chromium 107+ 原生支持，VSCode webview 环境满足）。
    min-height:0 两层链路：面板 flex 子项可收缩（30vh 封顶时约束网格行）
-   → grid 行内 body 可收缩，超出时 body 内部滚动 */
+   → grid 行内 body 可收缩，超出时 body 内部滚动。
+   overflow:hidden：0fr 时 item 的 padding/border 仍会溢出轨道（content-box
+   + 容器不裁剪的已知陷阱），显式裁剪到轨道——修收起后残留首条 todo 文字顶端细条 */
 .todopanel-collapse {
   display: grid;
   grid-template-rows: 1fr;
   min-height: 0;
+  overflow: hidden;
   transition: grid-template-rows 0.15s ease;
 }
 
@@ -1019,6 +1028,8 @@ body {
 
 .todopanel-body {
   min-height: 0;
+  /* border-box：行高归零时 padding 一并坍缩（配合上方 overflow:hidden 双保险） */
+  box-sizing: border-box;
   padding: 4px 8px;
   /* 折叠态 border 随色过渡隐去（否则 0 高时残留 1px 线）+ 裁剪内容不显滚动条 */
   border-top: 1px solid transparent;
@@ -3110,6 +3121,8 @@ body {
 .context-bar {
   position: relative;
   display: flex;
+  /* 窄面板下 chip 换行而非溢出输入框右边界 */
+  flex-wrap: wrap;
   gap: 4px;
   align-items: center;
   padding: 6px 10px 0; /* 与 footer-card 8px 内边距对齐，视觉贴卡片顶 */
@@ -3158,13 +3171,19 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* 隐藏用 visibility 而非仅 opacity：opacity:0 的绝对定位盒仍参与滚动溢出，
+     窄面板下会把视口撑出水平滚动条（右滚一片空白）；visibility:hidden
+     不参与滚动溢出。visibility 延迟切隐藏 = 淡出动画结束后才从溢出计算移除 */
+  visibility: hidden;
   opacity: 0;
-  transition: opacity 120ms ease 200ms;
+  transition: opacity 120ms ease 200ms, visibility 0s linear 320ms;
   pointer-events: none;
 }
 
 .ctx-chip-wrap:hover .ctx-hover-tip {
+  visibility: visible;
   opacity: 0.9;
+  transition: opacity 120ms ease 200ms;
 }
 
 .context-bar.lifted .ctx-hover-tip {
