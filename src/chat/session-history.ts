@@ -29,6 +29,8 @@ export const MAX_PREVIEW_CHARS = 120;
 /** 会话列表项（webview 协议镜像；时间用 epoch ms 便于 JSON 序列化）。 */
 export interface SessionListItem {
   path: string;
+  /** header.parentSession 原始值：常规 fork = 父会话文件绝对路径；任务会话 = 父会话 id。 */
+  parentSession?: string;
   id: string;
   created?: number;
   modified: number;
@@ -56,6 +58,7 @@ export function resolveSessionsRoot(
 export function toItem(m: SessionMeta): SessionListItem {
   return {
     path: m.path,
+    parentSession: m.parentSession,
     id: m.id,
     created: m.created?.getTime(),
     modified: m.modified.getTime(),
@@ -72,6 +75,8 @@ export type SessionLayout = "default" | "custom";
 export interface SessionMeta {
   /** 会话文件绝对路径（switch_session 的 sessionPath 即此值）。 */
   path: string;
+  /** header.parentSession 原始值（路径或 id，webview 侧树构建兼容解析）。 */
+  parentSession?: string;
   /** header.id（uuid）。 */
   id: string;
   /** header.timestamp（无效时缺省）。 */
@@ -89,6 +94,8 @@ export interface SessionMeta {
 /** parseSessionMeta 的解析产物。 */
 export interface ParsedSessionMeta {
   id: string;
+  /** header.parentSession 原始值（fork 父文件路径或父会话 id）。 */
+  parentSession?: string;
   created?: Date;
   name?: string;
   preview?: string;
@@ -172,6 +179,7 @@ export function parseSessionMeta(content: string): ParsedSessionMeta | null {
   }
   return {
     id,
+    parentSession: typeof header.parentSession === "string" && header.parentSession ? header.parentSession : undefined,
     created: parseDate(header.timestamp),
     name,
     preview,
@@ -252,6 +260,7 @@ async function loadSessionMeta(file: string): Promise<SessionMeta | null> {
     }
     return {
       path: file,
+      parentSession: parsed.parentSession,
       id: parsed.id,
       created: parsed.created,
       modified: stat.mtime,

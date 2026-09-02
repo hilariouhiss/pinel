@@ -128,6 +128,29 @@ suite("parseSessionMeta 单元测试", () => {
     ].join("\n");
     assert.strictEqual(parseSessionMeta(content)!.preview, "第一个问题");
   });
+
+  test("header 带 parentSession（fork 路径形态）：原样透传", () => {
+    const parent = "C:\\Users\\x\\.pi\\agent\\sessions\\--x--\\2026-01-01T00-00-00-000Z_uuid.jsonl";
+    const meta = parseSessionMeta(
+      JSON.stringify({ type: "session", version: 3, id: "u1", timestamp: "2026-08-18T01:00:00.000Z", cwd: "/p", parentSession: parent }),
+    );
+    assert.strictEqual(meta!.parentSession, parent);
+  });
+
+  test("header 带 parentSession（会话 id 形态，任务会话）：原样透传", () => {
+    const meta = parseSessionMeta(
+      JSON.stringify({ type: "session", version: 3, id: "u1", timestamp: "2026-08-18T01:00:00.000Z", cwd: "/p", parentSession: "01a04c48-305f-7437-bfe1-72f2fc9eecf7" }),
+    );
+    assert.strictEqual(meta!.parentSession, "01a04c48-305f-7437-bfe1-72f2fc9eecf7");
+  });
+
+  test("header 无 parentSession / 非字符串：undefined", () => {
+    assert.strictEqual(parseSessionMeta(header())!.parentSession, undefined);
+    assert.strictEqual(
+      parseSessionMeta(JSON.stringify({ type: "session", version: 3, id: "u2", timestamp: "2026-08-18T01:00:00.000Z", cwd: "/p", parentSession: 42 }))!.parentSession,
+      undefined,
+    );
+  });
 });
 
 suite("scanSessions 单元测试（临时目录）", () => {

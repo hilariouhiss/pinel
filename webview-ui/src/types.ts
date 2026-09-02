@@ -164,6 +164,8 @@ export interface SessionListItem {
   modified: number;
   name?: string;
   preview?: string;
+  /** header.parentSession 原始值（fork 父文件路径或父会话 id）；宿主镜像。 */
+  parentSession?: string;
   truncated: boolean;
 }
 
