@@ -1327,40 +1327,6 @@ body {
   overflow: hidden;
 }
 
-/* 当前模式 chip：固定显示在输入框开头（绝对定位首行左缘）；文本区（textarea +
-   渲染层）恒定 padding-left 让位，行首不与 chip 重叠 */
-.composer-mode-chip {
-  position: absolute;
-  top: 7px;
-  left: 2px;
-  z-index: 1;
-  max-width: 84px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 6px;
-  border: 1px solid var(--vscode-input-border);
-  border-radius: 4px;
-  background: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
-  font-family: var(--pinel-font-family);
-  font-size: 10px;
-  line-height: 16px;
-  cursor: pointer;
-}
-
-.composer-mode-chip.open {
-  border-color: var(--vscode-focusBorder);
-}
-
-.composer-with-mode .composer-input {
-  padding-left: 92px;
-}
-
-.composer-with-mode .composer-md {
-  left: 92px;
-}
-
 /* 输入框渲染层：纯文本显示，与 textarea 完全同构的字体度量（等宽字体 → 像素级对齐），
    仅高亮反引号 @file 引用（颜色/背景不改变字形宽度）；scrollTop 由 textarea onScroll 同步 */
 .composer-md {

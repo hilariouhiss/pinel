@@ -43,14 +43,6 @@ interface Props {
   onOpenThinking?: () => void;
   /** 思考 chip 元素引用（App 持有，ModelPopover 锚定用）。 */
   thinkingChipRef?: RefObject<HTMLButtonElement | null>;
-  /** 当前模式名（undefined = Default；chip 常驻输入框开头，点击打开模式弹层）。 */
-  modeName?: string;
-  /** 模式 chip 开合态（锚定 ModePopover）。 */
-  modesOpen?: boolean;
-  /** 模式 chip 点击（toggle 打开模式弹层）。 */
-  onOpenModes?: () => void;
-  /** 模式 chip 元素引用（App 持有，ModePopover 锚定/开关信号用）。 */
-  modeChipRef?: RefObject<HTMLButtonElement | null>;
   /** 工作区文件列表（@ 添加文件数据；App 持有，getFileList 响应填充）。 */
   fileList?: FileItem[];
 }
@@ -133,10 +125,6 @@ export function Composer({
   thinkingOpen = false,
   onOpenThinking,
   thinkingChipRef,
-  modeName,
-  modesOpen = false,
-  onOpenModes,
-  modeChipRef,
   fileList = [],
 }: Props) {
   const [text, setText] = useState("");
@@ -541,20 +529,7 @@ export function Composer({
           ))}
         </div>
       )}
-      <div className={`composer-input-wrap composer-with-mode${isComposing ? " composing" : ""}`}>
-        {/* 当前模式 chip：固定显示在输入框开头（绝对定位，文本区恒定 padding-left 让位），
-            点击打开模式弹层（唯一切换/管理入口） */}
-        <button
-          ref={modeChipRef}
-          className={`composer-mode-chip${modesOpen ? " open" : ""}`}
-          title={modeName ? `Mode: ${modeName}` : "Mode: Default"}
-          aria-haspopup="dialog"
-          aria-expanded={modesOpen}
-          onClick={onOpenModes}
-          disabled={!onOpenModes}
-        >
-          {modeName ?? "Default"}
-        </button>
+      <div className={`composer-input-wrap${isComposing ? " composing" : ""}`}>
         <ComposerMarkdown content={text} mdRef={mdRef} />
         <textarea
           ref={inputRef}

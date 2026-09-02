@@ -17,6 +17,14 @@ interface Props {
   extensionsOpen: boolean;
   /** Extensions chip 元素引用（App 持有，ExtensionPopover 开关信号 + 焦点还原锚）。 */
   extensionChipRef: RefObject<HTMLButtonElement | null>;
+  /** 当前模式名（宿主 pinel.modes.active 镜像；undefined = Default）。 */
+  modeName?: string;
+  /** 模式弹层开启态（chip 高亮 + aria-expanded）。 */
+  modesOpen?: boolean;
+  /** 模式 chip 点击 → 打开 App 侧模式管理弹层（popover "mode"）。 */
+  onOpenModes?: () => void;
+  /** 模式 chip 元素引用（App 持有，ModePopover 开关信号 + 焦点还原锚）。 */
+  modeChipRef?: RefObject<HTMLButtonElement | null>;
 }
 
 /** 弹层种类（与四个内部弹层 chip 一一对应；null=关闭；Extensions chip 走 App 侧管理弹层不在此列）。 */
@@ -58,6 +66,10 @@ export function ContextBar({
   onOpenExtensions,
   extensionsOpen,
   extensionChipRef,
+  modeName,
+  modesOpen = false,
+  onOpenModes,
+  modeChipRef,
 }: Props) {
   const prompts = commands.filter((c) => c.source === "prompt");
   const skills = commands.filter((c) => c.source === "skill");
@@ -405,6 +417,29 @@ export function ContextBar({
   return (
     <>
       <div className={`context-bar${open !== null ? " lifted" : ""}`}>
+        {/* 模式 chip 常驻（Context 之前，对齐 pi tui 启动头段顺序的最前位）：
+            点击走 App 侧模式管理弹层；先收内部弹层防双浮层 */}
+        <span className="ctx-chip-wrap">
+          <button
+            ref={modeChipRef}
+            className={`composer-chip context-chip${modesOpen ? " open" : ""}`}
+            aria-haspopup="dialog"
+            aria-expanded={modesOpen}
+            aria-label="Agent mode"
+            title={modeName ? `Mode: ${modeName}` : "Mode: Default"}
+            onClick={() => {
+              setOpen(null);
+              setExpanded(null);
+              onOpenModes?.();
+            }}
+            disabled={!onOpenModes}
+          >
+            {modeName ?? "Default"}
+          </button>
+          <span className="ctx-hover-tip" role="tooltip">
+            {modeName ? `Mode: ${modeName}（点击切换/管理）` : "Mode: Default（全部资源生效，点击管理）"}
+          </span>
+        </span>
         {renderChip(
           "context",
           pinelPrompt ? `Context ${contextCount}` : "Context –",

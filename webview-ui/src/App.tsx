@@ -71,11 +71,11 @@ export default function App() {
   const forkBtnRef = useRef<HTMLButtonElement>(null);
   /** Extensions chip 元素引用（ExtensionPopover 开关信号 + 焦点还原锚；chip 在 ContextBar 渲染）。 */
   const extensionChipRef = useRef<HTMLButtonElement>(null);
+  /** 模式 chip 元素引用（ModePopover 开关信号 + 焦点还原锚；chip 在 ContextBar 渲染）。 */
+  const modeChipRef = useRef<HTMLButtonElement>(null);
   /** 模型/思考 chip 元素引用（ModelPopover 锚定）。 */
   const modelChipRef = useRef<HTMLButtonElement>(null);
   const thinkingChipRef = useRef<HTMLButtonElement>(null);
-  /** 模式 chip 元素引用（ModePopover 开关信号 + 焦点还原锚；chip 在 Composer 渲染）。 */
-  const modeChipRef = useRef<HTMLButtonElement>(null);
   /** 可 fork 的历史用户消息（getForkMessages 响应填充；打开时拉取）。 */
   const [forkMessages, setForkMessages] = useState<ForkMessageItem[]>([]);
   /** 模式状态（getModeState 响应填充；打开弹层拉取，操作后宿主重发）。 */
@@ -855,6 +855,10 @@ export default function App() {
           onOpenExtensions={openExtensions}
           extensionsOpen={popover === "ext"}
           extensionChipRef={extensionChipRef}
+          modeName={status.modeName}
+          modesOpen={popover === "mode"}
+          onOpenModes={openModes}
+          modeChipRef={modeChipRef}
         />
         <Composer
           status={status}
@@ -870,10 +874,6 @@ export default function App() {
           thinkingOpen={popover === "thinking"}
           onOpenThinking={openThinking}
           thinkingChipRef={thinkingChipRef}
-          modeName={status.modeName}
-          modesOpen={popover === "mode"}
-          onOpenModes={openModes}
-          modeChipRef={modeChipRef}
           fileList={fileList}
         />
         {status.showSessionStats && (
