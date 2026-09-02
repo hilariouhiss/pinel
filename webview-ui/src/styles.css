@@ -1607,8 +1607,13 @@ body {
   z-index: 90;
 }
 
-/* 居中模态公共标题栏（config/extension 弹层共用） */
+/* 居中模态公共标题栏（config/extension 弹层共用）；sticky 钉在滚动面板顶，
+   内容滚动时关闭按钮行不随之滚走；不透明背景盖住滚过的内容 */
 .popover-titlebar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: inherit;
   display: flex;
   align-items: center;
   justify-content: space-between;
