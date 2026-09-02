@@ -1,0 +1,169 @@
+import { vscode } from "../index";
+import type { PonytailStatus, SessionEnv, SessionStats } from "../types";
+// SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题自适应）
+import upArrowIcon from "lucide-static/icons/arrow-up.svg";
+import downArrowIcon from "lucide-static/icons/arrow-down.svg";
+import dollarIcon from "lucide-static/icons/dollar-sign.svg";
+import cacheIcon from "lucide-static/icons/database.svg";
+import branchIcon from "lucide-static/icons/git-branch.svg";
+
+interface Props {
+  /** 会话统计（宿主 parseSessionStats 结果）；null = 尚未拉取（占位）。 */
+  stats: SessionStats | null;
+  /** 会话信息条环境段（folderName + git 状态）；null = 尚未广播。 */
+  env: SessionEnv | null;
+  /** ponytail 状态（当前档位 + active 空闲标记；null=未收到/未装 → 不显示）。 */
+  ponytailStatus: PonytailStatus | null;
+}
+
+/**
+ * 缓存命中率（对齐 pi CLI /session-info：cacheRead/(input+cacheRead+cacheWrite)）。
+ * 无缓存活动（cacheRead==0 && cacheWrite==0）或 promptTokens<=0 时回 0（常显）。
+ */
+function cacheHitRate(s: SessionStats): number {
+  const { input, cacheRead, cacheWrite } = s.tokens;
+  const promptTokens = input + cacheRead + cacheWrite;
+  if (promptTokens <= 0 || (cacheRead <= 0 && cacheWrite <= 0)) {
+    return 0;
+  }
+  return (cacheRead / promptTokens) * 100;
+}
+
+/** 紧凑数字（K/M/B，1 位小数）：1,000,000 → "1.0M"、200,000 → "200.0K"。 */
+function compact(n: number): string {
+  if (n >= 1e9) {
+    return (n / 1e9).toFixed(1) + "B";
+  }
+  if (n >= 1e6) {
+    return (n / 1e6).toFixed(1) + "M";
+  }
+  if (n >= 1e3) {
+    return (n / 1e3).toFixed(1) + "K";
+  }
+  return n.toLocaleString();
+}
+
+function fmt(n: number): string {
+  return n.toLocaleString();
+}
+
+/** git 状态标记令牌（顺序 = 展示序；up/down 渲染为 lucide 箭头，其余为文本）。 */
+type GitMarkerToken = "!" | "?" | "up" | "down";
+
+function gitMarkers(git: NonNullable<SessionEnv["git"]>): GitMarkerToken[] {
+  const parts: GitMarkerToken[] = [];
+  if (git.trackedChanges) {
+    parts.push("!");
+  }
+  if (git.untracked) {
+    parts.push("?");
+  }
+  if (git.ahead > 0) {
+    parts.push("up");
+  }
+  if (git.behind > 0) {
+    parts.push("down");
+  }
+  return parts;
+}
+
+/**
+ * 会话信息条（输入卡正后方、从背后探出；设置面板「显示会话信息」开关开启时显示）。
+ * 左侧环境段：`folderName on  branch [!?↑↓]`（p10k 风格）；
+ * 右侧指标段：ponytail 档位文本（ponytail:<level>，点击循环切换 off/lite/full/ultra）、上下文占用/窗口、
+ * 输入↑、输出↓、缓存命中率、成本$——↑↓ 对齐 pi CLI footer 语义（缓存读/写不再单列）。
+ * 纯展示组件；各元素经 title 提供悬浮语义。
+ * （Tree 导航/双击 Esc 入口与 Fork 弹层重叠已移除、手动压缩改设置面板 Compact now，2026-08 移除按钮。）
+ */
+export function SessionStatsBar({ stats, env, ponytailStatus }: Props) {
+  if (!stats) {
+    return (
+      <div className="session-stats-bar">
+        <span className="session-stats-empty">Loading…</span>
+      </div>
+    );
+  }
+  const cu = stats.contextUsage;
+  const hitRate = cacheHitRate(stats);
+  const { input, output } = stats.tokens;
+  const contextText = cu
+    ? `${cu.percent !== null ? cu.percent.toFixed(1) + "%" : "—"}/${compact(cu.contextWindow)}`
+    : "—";
+  const git = env?.git ?? null;
+  const folderName = env?.folderName ?? null;
+  const markers = git ? gitMarkers(git) : [];
+  const envTitle = git
+    ? `${git.branch}${markers.length > 0 ? ` [${markers.map((m) => (m === "up" ? "↑" : m === "down" ? "↓" : m)).join("")}]` : ""}`
+    : folderName ?? undefined;
+  return (
+    <div className="session-stats-bar">
+      <div className="session-stats-row">
+        <span className="session-stats-env" title={envTitle}>
+          {folderName}
+          {git && (
+            <>
+              {" on "}
+              <span
+                className="session-stats-branch-icon"
+                dangerouslySetInnerHTML={{ __html: branchIcon }}
+              />
+              {" "}
+              {git.branch}
+              {markers.length > 0 && (
+                <>
+                  {" "}
+                  [
+                  {markers.map((m, i) =>
+                    m === "up" || m === "down" ? (
+                      <span
+                        key={i}
+                        className="session-stats-icon session-stats-marker-icon"
+                        dangerouslySetInnerHTML={{ __html: m === "up" ? upArrowIcon : downArrowIcon }}
+                      />
+                    ) : (
+                      m
+                    ),
+                  )}
+                  ]
+                </>
+              )}
+            </>
+          )}
+        </span>
+        <span className="session-stats-metrics">
+          {ponytailStatus && (
+            <button
+              type="button"
+              className="session-stats-ponytail"
+              title={`ponytail:${ponytailStatus.mode}${ponytailStatus.active ? "" : " (idle)"} — click to cycle`}
+              onClick={() => vscode.postMessage({ type: "cyclePonytail" })}
+            >
+              ponytail:{ponytailStatus.mode}
+            </button>
+          )}
+          <span className="session-stats-value" title="Context usage / window">
+            {contextText}
+          </span>
+          <span className="session-stats-item" title="Input tokens">
+            <span className="session-stats-icon" dangerouslySetInnerHTML={{ __html: upArrowIcon }} />{" "}
+            {fmt(input)}
+          </span>
+          <span className="session-stats-item" title="Output tokens">
+            <span className="session-stats-icon" dangerouslySetInnerHTML={{ __html: downArrowIcon }} />{" "}
+            {fmt(output)}
+          </span>
+          <span className="session-stats-item" title="Cache hit rate">
+            <span className="session-stats-icon" dangerouslySetInnerHTML={{ __html: cacheIcon }} />{" "}
+            {hitRate.toFixed(1)}%
+          </span>
+          {typeof stats.cost === "number" && stats.cost > 0 && (
+            <span className="session-stats-item" title="Cost">
+              <span className="session-stats-icon" dangerouslySetInnerHTML={{ __html: dollarIcon }} />{" "}
+              <span className="session-stats-value">{stats.cost.toFixed(3)}</span>
+            </span>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}

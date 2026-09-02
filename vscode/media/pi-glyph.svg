@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="24" height="24">
+  <!-- π 品牌字形（对齐 media/pi-icon.svg 的几何，去除背景矩形）。
+       VS Code 以 -webkit-mask 染色渲染活动栏/视图头图标（fill 颜色被忽略，
+       仅取轮廓遮罩）——因此图标必须是镂空轮廓，不得有背景矩形。 -->
+  <path fill="#d7dae0" fill-rule="evenodd" d="
+    M165.29 165.29
+    H517.36
+    V400
+    H400
+    V517.36
+    H282.65
+    V634.72
+    H165.29
+    Z
+    M282.65 282.65
+    V400
+    H400
+    V282.65
+    Z
+  "/>
+  <path fill="#d7dae0" d="M517.36 400 H634.72 V634.72 H517.36 Z"/>
+</svg>

@@ -1,0 +1,31 @@
+# 依赖
+node_modules
+
+# 构建产物（宿主 + webview）
+dist
+out
+*.vsix
+media/webview.js
+media/webview.css
+media/webview.js.map
+media/webview.css.map
+
+# 测试运行时
+.vscode-test/
+
+# 工具本地状态
+# CodeGraph 索引（仅本地）
+.codegraph/
+# pi
+.pi/
+
+# 通用本地/生成文件防御
+.DS_Store
+Thumbs.db
+*.log
+*.tsbuildinfo
+
+.mcp.json
+# git worktrees (isolated feature workspaces)
+.worktrees/
+.superpowers/
