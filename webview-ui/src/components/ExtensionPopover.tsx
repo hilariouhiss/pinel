@@ -8,8 +8,6 @@ import refreshIcon from "lucide-static/icons/refresh-cw.svg";
 /** 视图选项（顺序 = UI 顺序；catalog = 插件目录，本地视图不请求宿主扩展列表）。 */
 const VIEW_OPTIONS: { value: ExtensionView | "catalog"; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "global", label: "Global" },
-  { value: "project", label: "Project" },
   { value: "catalog", label: "Catalog" },
 ];
 
@@ -17,10 +15,8 @@ interface Props {
   /** 触发按钮元素引用（非 null 即打开，仅作开关信号；焦点管理自记录触发按钮）。 */
   anchor: HTMLElement | null;
   items: ExtensionItem[];
-  /** 当前视图（catalog 为本地视图；all/global/project 由宿主按视图重拉列表）。 */
+  /** 当前视图（catalog 为本地视图；all 由宿主拉取合并列表）。 */
   view: ExtensionView | "catalog";
-  /** 是否有 workspace（无则 project 视图不可用）。 */
-  projectAvailable: boolean;
   /** Pinel 插件安装态（null=未检测）；offer 显示安装区（仅管理视图）。 */
   pinelPluginState: PinelPluginState | null;
   /** 插件目录项（含安装态；宿主 catalogState 消息）。 */
@@ -49,9 +45,8 @@ interface Props {
 /**
  * 信息条 Extensions chip 的扩展管理弹层（屏幕居中模态，同 config-popover 模式）：
  * - 数据源：宿主 getExtensionList(view)（打开/切视图时按视图拉取；启停/卸载后宿主重发刷新）
- * - All/Global/Project 三态切换（对齐 pi config 心智）+ Catalog 插件目录视图（宿主 catalogState）
- * - project 视图含继承行（全局包项目未覆盖，inherited 徽标 + dimmed；开关 = 写项目覆盖
- *   条目，隐藏卸载按钮）；无 workspace 时 project 视图提示不可用
+ * - All/Catalog 两态切换 + Catalog 插件目录视图（宿主 catalogState）
+ * - All 视图：本地扩展不去重（global/local 徽标区分范围）；包按 identity 去重（项目覆盖优先）
  * - catalog 视图：pi-packages / rpiv-mono 两组，每项 Install 按钮 + 已装态 + compat 标注
  *   （tui-only/limited 置灰徽标 + title 说明），按组 Install default set（rpiv 三包）
  *   与 Install all（pi-packages git 整仓）；安装中按钮禁用防重复点击
@@ -63,7 +58,6 @@ export function ExtensionPopover({
   anchor,
   items,
   view,
-  projectAvailable,
   pinelPluginState,
   catalog,
   installing,
@@ -126,10 +120,7 @@ export function ExtensionPopover({
   const renderRow = (item: ExtensionItem) => {
     const busy = updating.has(extensionRowKey(item));
     return (
-      <div
-        key={extensionRowKey(item)}
-        className={`extension-item${item.inherited ? " inherited" : ""}`}
-      >
+      <div key={extensionRowKey(item)} className="extension-item">
         <div className="extension-item-main">
           <span className="extension-item-name" title={item.source}>
             {item.name}
@@ -137,7 +128,8 @@ export function ExtensionPopover({
           {item.sourceKind && (
             <span className="extension-item-badge kind">{item.sourceKind}</span>
           )}
-          <span className="extension-item-badge">{item.inherited ? "inherited" : item.scope}</span>
+          {/* 范围徽标：global = 全局（agentDir）；local = 项目本地（<workspace>/.pi） */}
+          <span className="extension-item-badge">{item.scope === "global" ? "global" : "local"}</span>
           {item.filtered && <span className="extension-item-tag">filtered</span>}
           <span className="extension-item-version">{item.version ?? "—"}</span>
           {item.update === "available" && (
@@ -159,28 +151,18 @@ export function ExtensionPopover({
           className={`extension-item-toggle${item.enabled ? " on" : ""}`}
           role="switch"
           aria-checked={item.enabled}
-          title={
-            item.inherited
-              ? item.enabled
-                ? "Disable in this project (overrides global)"
-                : "Enable in this project (overrides global)"
-              : item.enabled
-                ? "Disable"
-                : "Enable"
-          }
+          title={item.enabled ? "Disable" : "Enable"}
           onClick={() => onToggle(item, !item.enabled)}
         >
           {item.enabled ? "On" : "Off"}
         </button>
-        {!item.inherited && (
-          <button
-            className="extension-item-delete"
-            title="Uninstall"
-            aria-label={`Uninstall ${item.name}`}
-            onClick={() => onUninstall(item)}
-            dangerouslySetInnerHTML={{ __html: deleteIcon }}
-          />
-        )}
+        <button
+          className="extension-item-delete"
+          title="Uninstall"
+          aria-label={`Uninstall ${item.name}`}
+          onClick={() => onUninstall(item)}
+          dangerouslySetInnerHTML={{ __html: deleteIcon }}
+        />
       </div>
     );
   };
@@ -338,9 +320,6 @@ export function ExtensionPopover({
             </button>
           ))}
         </div>
-        {view === "project" && !projectAvailable && (
-          <div className="extension-popover-empty">No workspace folder — project scope unavailable</div>
-        )}
         {view !== "catalog" && pinelPluginState !== "installed" && (
           <div className="pinel-plugin-install">
             <span className="pinel-plugin-install-text">

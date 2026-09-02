@@ -2384,14 +2384,6 @@ body {
   color: var(--vscode-button-foreground);
 }
 
-.extension-item.inherited {
-  opacity: 0.65;
-}
-
-.extension-item.inherited:hover {
-  opacity: 1;
-}
-
 /* 插件目录（Catalog 视图） */
 .catalog-group-header {
   display: flex;

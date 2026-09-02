@@ -77,7 +77,7 @@ export default function App() {
   const [forkMessages, setForkMessages] = useState<ForkMessageItem[]>([]);
   /** 扩展列表（getExtensionList 响应填充；挂载预热 + 打开管理弹层拉取，启停/卸载后宿主重发）。 */
   const [extensions, setExtensions] = useState<ExtensionItem[]>([]);
-  /** 扩展弹层当前视图（All/Global/Project 切换；切换时重拉列表）。 */
+  /** 扩展弹层当前视图（All/Catalog 切换；All 时重拉列表）。 */
   const [extensionView, setExtensionView] = useState<ExtensionView | "catalog">("all");
   /** 更新检查条目（extensionUpdates 消息填充；与 extensions 经 useMemo 合并渲染）。 */
   const [updateEntries, setUpdateEntries] = useState<ExtensionUpdateEntry[]>([]);
@@ -91,8 +91,6 @@ export default function App() {
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   /** 安装中的 spec（防重复点击；catalogState 刷新时清除）。 */
   const [installing, setInstalling] = useState<Set<string>>(new Set());
-  /** 是否有 workspace（project 视图可用性提示）。 */
-  const [extensionProjectAvailable, setExtensionProjectAvailable] = useState(true);
   /** 会话历史列表（header 弹层数据；getSessionList 响应填充）。 */
   const [sessionItems, setSessionItems] = useState<SessionListItem[]>([]);
   /** 会话统计（get_session_stats 推送；null=尚未拉取）。 */
@@ -400,7 +398,6 @@ export default function App() {
         break;
       case "extensionList":
         setExtensions(msg.items);
-        setExtensionProjectAvailable(msg.projectAvailable);
         setUpdatingKeys(new Set()); // 更新流程后列表重发 = 清乐观忙态
         break;
       case "extensionUpdates":
@@ -910,7 +907,6 @@ export default function App() {
         anchor={popover === "ext" ? extensionChipRef.current : null}
         items={mergedExtensions}
         view={extensionView}
-        projectAvailable={extensionProjectAvailable}
         pinelPluginState={pinelPluginState}
         catalog={catalog}
         installing={installing}
