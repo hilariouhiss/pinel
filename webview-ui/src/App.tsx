@@ -280,6 +280,11 @@ export default function App() {
         if (msg.message.role === "user") {
           stickToBottom.current = true;
         }
+        // assistant 落定与清流同帧提交：占位槽 key = m-${messages.length} 与落定消息
+        // key 相同 → React 原地复用 DOM（settle 不重挂载，入场动效/卡片展开态不重放）
+        if (msg.message.role === "assistant") {
+          setStreamBlocks([]);
+        }
         setMessages((prev) => [...prev, msg.message]);
         break;
       case "bash":
@@ -801,7 +806,8 @@ export default function App() {
         ))}
         {streamBlocks.length > 0 && (
           <MessageView
-            key="streaming"
+            /* key = 落定后将获得的 m-${messages.length}：settle 同 key 原地切换到权威 content */
+            key={`m-${messages.length}`}
             message={{ role: "assistant", content: [] }}
             streamBlocks={streamBlocks}
             tools={tools}

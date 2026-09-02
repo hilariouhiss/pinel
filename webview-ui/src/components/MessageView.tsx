@@ -241,12 +241,14 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
 
   // assistant（含流式占位）
   if (streamBlocks) {
-    // 流式中的消息无复制按钮（半截消息复制无意义；settle 后重渲染自动出现）
+    // 流式中的消息无消息级复制按钮（半截消息复制无意义；settle 后重渲染自动出现）
+    // key 用 blk- 前缀与下方落定分支一致：settle 同 key 原地复用 DOM，动效/展开态不重放；
+    // 仅最后一个块 live：出现下一块即上一块已结束（thinking/正文不再停留在流式态）
     return (
       <div className="msg msg-assistant">
         <div className="msg-role">Pi</div>
         {streamBlocks.map((block, i) => (
-          <BlockView key={`s-${i}`} kind={block.kind} text={block.text} toolCall={block.toolCall} live tools={tools} toolResults={toolResults} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} />
+          <BlockView key={`blk-${i}`} kind={block.kind} text={block.text} toolCall={block.toolCall} live={i === streamBlocks.length - 1} tools={tools} toolResults={toolResults} mainModelName={mainModelName} mainThinkingLevel={mainThinkingLevel} />
         ))}
       </div>
     );
@@ -260,7 +262,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
       <div className="msg-role">Pi</div>
       {blocks.map((block, i) => (
         <BlockView
-          key={`b-${i}`}
+          key={`blk-${i}`}
           kind={block.type === "thinking" ? "thinking" : block.type === "toolCall" ? "toolCall" : "text"}
           text={block.type === "thinking" ? (block.thinking ?? "") : block.type === "text" ? (block.text ?? "") : ""}
           toolCall={
