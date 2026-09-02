@@ -3359,6 +3359,51 @@ html:not(.pinel-scrolling) :is(.pinel-scroll, .todopanel-body, .composer-input):
   color: var(--vscode-descriptionForeground);
 }
 
+/* 模式弹层资源分组（包主勾选 + 折叠；Local 组无主勾选恒展开） */
+.mode-group {
+  margin: 2px 0;
+}
+
+.mode-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-weight: 600;
+}
+
+.mode-group-chevron {
+  flex: none;
+  width: 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--vscode-foreground);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mode-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode-group-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--vscode-descriptionForeground);
+}
+
+.mode-group-master {
+  margin-left: auto;
+}
+
+.mode-group-item {
+  padding-left: 18px;
+}
+
 .mode-create-row {
   display: flex;
   gap: 6px;
