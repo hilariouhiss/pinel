@@ -3467,7 +3467,58 @@ html:not(.pinel-scrolling) :is(.pinel-scroll, .todopanel-body, .composer-input):
 }
 
 .mode-group-item {
-  padding-left: 18px;
+  padding-left: 28px;
+  cursor: default; /* 包组内行为纯展示，无勾选框交互 */
+}
+
+/* 包组内展示行的 kind 徽标固定宽（skill/ext 对齐；组内行无勾选框，纯展示） */
+.mode-group-kind {
+  display: inline-block;
+  width: 28px;
+  text-align: center;
+}
+
+/* 本地资源小标题（包组之后；无勾选框非折叠） */
+.mode-local-label {
+  padding: 4px 8px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  opacity: 0.55;
+}
+
+/* 全部展开/折叠按钮（标题行内联；对齐 popover-refresh 尺寸） */
+.mode-group-all-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.mode-group-all-btn:hover {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
+}
+
+.mode-group-all-btn .lucide {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.mode-ext-title {
+  display: flex;
+  align-items: center;
 }
 
 .mode-create-row {

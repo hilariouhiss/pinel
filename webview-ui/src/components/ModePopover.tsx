@@ -1,18 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import type { ModeState } from "../types";
-import { groupCheckState, groupResources, type GroupableResource } from "../mode-groups";
+import type { ModeExtension, ModeSkill, ModeState } from "../types";
+import { groupCheckState, groupPackageResources, type PackageGroup } from "../mode-groups";
 // SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
 import deleteIcon from "lucide-static/icons/trash-2.svg";
 import chevronRightIcon from "lucide-static/icons/chevron-right.svg";
 import chevronDownIcon from "lucide-static/icons/chevron-down.svg";
+import chevronsDownIcon from "lucide-static/icons/chevrons-down.svg";
+import chevronsUpIcon from "lucide-static/icons/chevrons-up.svg";
 import xIcon from "lucide-static/icons/x.svg";
 
 /**
  * 模式管理弹层（屏幕居中模态，同 extension-popover 模式）：
- * - 模式列表：Default（内置伪模式 = 全部本地 skills）+ 自定义模式按字母序，
+ * - 模式列表：Default（内置伪模式 = 全部资源生效）+ 自定义模式按字母序，
  *   单选切换（switchMode，宿主写盘后提示 reload），× 删除（Default 不可删）
- * - 选中模式编辑区：本地 skill 勾选清单（scope 徽标 + description 省略，
- *   按名称字母序），勾选即 updateModeSkills
+ * - 选中模式编辑区：
+ *   - Skills 区：仅本地 skill（global/project 徽标），逐个勾选
+ *   - Extensions 区：包组（主勾选框 = 整包开关，展开后缩进展示该包的 skills
+ *     与 extensions，无单项勾选）+ 本地扩展逐个勾选；标题行带全部展开/折叠按钮
  * - 底部新建行：输入 + Add
  * - 数据源：宿主 getModeState（打开时拉取；操作后宿主重发 modeState 刷新）
  * - 交互：Esc / 点击外部 / 标题栏关闭按钮关闭（Esc 在 window capture 阶段
@@ -36,7 +40,7 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
   /** 编辑中的模式名（null = Default/无选中；打开时默认选中当前激活模式）。 */
   const [editing, setEditing] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
-  /** 折叠的包组键（Local 组恒展开；弹层重开即复位）。 */
+  /** 折叠的包组键（弹层重开即复位）。 */
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
   // Esc 关闭：capture 阶段拦截 + stopPropagation，防止 Composer 的 Esc 分支同时触发
@@ -83,6 +87,10 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
   // 编辑区清单：字母序；模式配置里已卸载的 id 不展示（保存时宿主顺带剔除）
   const skillList = state ? [...state.skills].sort((a, b) => a.name.localeCompare(b.name)) : [];
   const extList = state ? [...state.extensions].sort((a, b) => a.name.localeCompare(b.name)) : [];
+  // Skills 区 = 仅本地 skill；Extensions 区 = 包组（含包 skills）+ 本地扩展
+  const localSkills = skillList.filter((s) => s.scope !== "package");
+  const localExts = extList.filter((e) => e.scope !== "package");
+  const pkgGroups = groupPackageResources(skillList, extList);
   const editingSkills = new Set(editingMode?.skills ?? []);
   const editingExts = new Set(editingMode?.extensions ?? []);
 
@@ -100,22 +108,23 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
     );
   };
 
-  /** 包组主勾选：全选 → 整组取消；否则整组勾上（一次 onUpdateSkills，宿主端过滤/持久化不变）。 */
-  const toggleGroup = (list: "skills" | "extensions", group: { items: GroupableResource[] }) => {
+  /** 包组主勾选（整包开关）：全选 → 整组取消；否则 skills + extensions 一并勾上。 */
+  const toggleGroup = (group: PackageGroup) => {
     if (!editingMode) {
       return;
     }
-    const current = list === "skills" ? editingMode.skills : editingMode.extensions;
-    const ids = new Set(group.items.map((i) => i.id));
-    const allSelected = group.items.every((i) => ids.has(i.id) && current.includes(i.id));
-    const next = allSelected
-      ? current.filter((s) => !ids.has(s))
-      : [...current, ...group.items.filter((i) => !current.includes(i.id)).map((i) => i.id)];
-    onUpdateSkills(
-      editingMode.name,
-      list === "skills" ? next : editingMode.skills,
-      list === "extensions" ? next : editingMode.extensions,
+    const skillIds = new Set(group.items.filter((i) => i.kind === "skill").map((i) => i.id));
+    const extIds = new Set(group.items.filter((i) => i.kind === "extension").map((i) => i.id));
+    const allSelected = group.items.every((i) =>
+      i.kind === "skill" ? editingSkills.has(i.id) : editingExts.has(i.id),
     );
+    const nextSkills = allSelected
+      ? editingMode.skills.filter((s) => !skillIds.has(s))
+      : [...editingMode.skills, ...group.items.filter((i) => i.kind === "skill" && !editingSkills.has(i.id)).map((i) => i.id)];
+    const nextExts = allSelected
+      ? editingMode.extensions.filter((e) => !extIds.has(e))
+      : [...editingMode.extensions, ...group.items.filter((i) => i.kind === "extension" && !editingExts.has(i.id)).map((i) => i.id)];
+    onUpdateSkills(editingMode.name, nextSkills, nextExts);
   };
 
   const toggleCollapse = (key: string) => {
@@ -130,76 +139,28 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
     });
   };
 
-  /** 分组清单渲染（skills/extensions 共用；showDesc 控制 description 列）。 */
-  const renderGrouped = (
-    list: "skills" | "extensions",
-    items: GroupableResource[],
-    selected: Set<string>,
-    showDesc: boolean,
-  ) => {
-    if (items.length === 0) {
-      return <div className="extension-popover-empty">No {list} found</div>;
-    }
-    return groupResources(items).map((group) => {
-      const isLocal = group.key === "local";
-      const state = groupCheckState(group.items, selected);
-      const folded = !isLocal && collapsed.has(group.key);
-      return (
-        <div key={group.key} className="mode-group">
-          <div className="mode-group-header">
-            {!isLocal && (
-              <button
-                className="mode-group-chevron"
-                aria-label={`${folded ? "Expand" : "Collapse"} ${group.label}`}
-                onClick={() => toggleCollapse(group.key)}
-              >
-                <span
-                  dangerouslySetInnerHTML={{ __html: folded ? chevronRightIcon : chevronDownIcon }}
-                />
-              </button>
-            )}
-            {!isLocal && (
-              <input
-                type="checkbox"
-                className="mode-group-master"
-                title={`${state === "all" ? "Disable" : "Enable"} all in ${group.label}`}
-                aria-label={`Toggle all in ${group.label}`}
-                checked={state === "all"}
-                ref={(el) => {
-                  if (el) {
-                    el.indeterminate = state === "some";
-                  }
-                }}
-                onChange={() => toggleGroup(list, group)}
-              />
-            )}
-            <span className="mode-group-name" title={isLocal ? undefined : group.key}>
-              {group.label}
-            </span>
-            <span className="mode-group-count">{group.items.length}</span>
-          </div>
-          {!folded &&
-            group.items.map((item) => (
-              <label key={item.id} className="mode-skill-row mode-group-item">
-                <input
-                  type="checkbox"
-                  checked={selected.has(item.id)}
-                  onChange={() => toggle(list, item.id)}
-                />
-                <span className="mode-skill-name" title={item.package ? `${item.package} · ${item.id}` : item.id}>
-                  {item.name}
-                </span>
-                <span className="extension-item-badge" title={item.package}>
-                  {item.scope === "package" ? "pkg" : item.scope}
-                </span>
-                {showDesc && (item as { description?: string }).description && (
-                  <span className="mode-skill-desc">{(item as { description?: string }).description}</span>
-                )}
-              </label>
-            ))}
-        </div>
-      );
-    });
+  /** 本地资源勾选行（skill 带 description 列；徽标 = scope）。 */
+  const renderLocalRow = (list: "skills" | "extensions", item: ModeSkill | ModeExtension, selected: Set<string>, showDesc: boolean) => (
+    <label key={item.id} className="mode-skill-row">
+      <input
+        type="checkbox"
+        checked={selected.has(item.id)}
+        onChange={() => toggle(list, item.id)}
+      />
+      <span className="mode-skill-name" title={item.id}>
+        {item.name}
+      </span>
+      <span className="extension-item-badge" title={item.scope}>
+        {item.scope}
+      </span>
+      {showDesc && (item as ModeSkill).description && (
+        <span className="mode-skill-desc">{(item as ModeSkill).description}</span>
+      )}
+    </label>
+  );
+
+  const setAllCollapsed = (collapseAll: boolean) => {
+    setCollapsed(collapseAll ? new Set(pkgGroups.map((g) => g.key)) : new Set());
   };
 
   const submitCreate = () => {
@@ -211,6 +172,8 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
     setNewName("");
     setEditing(name);
   };
+
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
   return (
     <>
@@ -270,13 +233,13 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
                 />
                 <span
                   className="mode-row-name"
-                  title={`Edit skills of ${m.name}`}
+                  title={`Edit resources of ${m.name}`}
                   onClick={() => setEditing(m.name)}
                 >
                   {m.name}
                 </span>
                 <span className="mode-row-desc">
-                  {m.skills.length} skill{m.skills.length === 1 ? "" : "s"}
+                  {plural(m.skills.length, "skill")} · {plural(m.extensions.length, "extension")}
                 </span>
                 <button
                   className="extension-item-delete"
@@ -297,11 +260,94 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
             <>
               <div className="extension-popover-section">
                 <div className="extension-popover-title">Skills in “{editingMode.name}”</div>
-                {renderGrouped("skills", skillList, editingSkills, true)}
+                {localSkills.length === 0 ? (
+                  <div className="extension-popover-empty">No local skills found</div>
+                ) : (
+                  localSkills.map((s) => renderLocalRow("skills", s, editingSkills, true))
+                )}
               </div>
               <div className="extension-popover-section">
-                <div className="extension-popover-title">Extensions in “{editingMode.name}”</div>
-                {renderGrouped("extensions", extList, editingExts, false)}
+                <div className="extension-popover-title mode-ext-title">
+                  Extensions in “{editingMode.name}”
+                  <button
+                    className="mode-group-all-btn"
+                    title="Expand all"
+                    aria-label="Expand all packages"
+                    onClick={() => setAllCollapsed(false)}
+                  >
+                    <span dangerouslySetInnerHTML={{ __html: chevronsDownIcon }} />
+                  </button>
+                  <button
+                    className="mode-group-all-btn"
+                    title="Collapse all"
+                    aria-label="Collapse all packages"
+                    onClick={() => setAllCollapsed(true)}
+                  >
+                    <span dangerouslySetInnerHTML={{ __html: chevronsUpIcon }} />
+                  </button>
+                </div>
+                {pkgGroups.length === 0 && localExts.length === 0 ? (
+                  <div className="extension-popover-empty">No extensions found</div>
+                ) : (
+                  <>
+                    {pkgGroups.map((group) => {
+                      const groupState = groupCheckState(
+                        group.items,
+                        new Set([...editingSkills, ...editingExts]),
+                      );
+                      const folded = collapsed.has(group.key);
+                      return (
+                        <div key={group.key} className="mode-group">
+                          <div className="mode-group-header">
+                            <button
+                              className="mode-group-chevron"
+                              aria-label={`${folded ? "Expand" : "Collapse"} ${group.label}`}
+                              onClick={() => toggleCollapse(group.key)}
+                            >
+                              <span
+                                dangerouslySetInnerHTML={{
+                                  __html: folded ? chevronRightIcon : chevronDownIcon,
+                                }}
+                              />
+                            </button>
+                            <input
+                              type="checkbox"
+                              className="mode-group-master"
+                              title={`${groupState === "all" ? "Disable" : "Enable"} package ${group.label}`}
+                              aria-label={`Toggle package ${group.label}`}
+                              checked={groupState === "all"}
+                              ref={(el) => {
+                                if (el) {
+                                  el.indeterminate = groupState === "some";
+                                }
+                              }}
+                              onChange={() => toggleGroup(group)}
+                            />
+                            <span className="mode-group-name" title={group.key}>
+                              {group.label}
+                            </span>
+                            <span className="mode-group-count">{group.items.length}</span>
+                          </div>
+                          {!folded &&
+                            group.items.map((item) => (
+                              <div key={`${item.kind}:${item.id}`} className="mode-skill-row mode-group-item">
+                                <span className="extension-item-badge mode-group-kind" title={item.kind}>
+                                  {item.kind === "skill" ? "skill" : "ext"}
+                                </span>
+                                <span className="mode-skill-name" title={`${group.label} · ${item.id}`}>
+                                  {item.name}
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      );
+                    })}
+                    {localExts.length > 0 && (
+                      <div className="mode-local-label">Local</div>
+                    )}
+                    {localExts.map((e) => renderLocalRow("extensions", e, editingExts, false))}
+                  </>
+                )}
               </div>
               <div className="extension-popover-section">
                 <div className="mode-hint">
