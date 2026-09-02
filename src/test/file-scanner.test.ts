@@ -94,4 +94,60 @@ suite("工作区文件扫描（@ 添加文件）单元测试", () => {
     assert.deepStrictEqual(items, []);
     assert.strictEqual(truncated, false);
   });
+
+  test("嵌套 .gitignore：子目录构建产物被过滤（v2 递归规则链）", async () => {
+    // 无根 .gitignore 的多包目录：各子包自己的 .gitignore 生效
+    const nested = await fs.mkdtemp(path.join(os.tmpdir(), "pinel-file-scanner-nested-"));
+    try {
+      // pkg-a：.gitignore 忽略 out/ 与 *.log；pkg-b：无忽略文件；pkg-c：子目录 .gitignore
+      await fs.mkdir(path.join(nested, "pkg-a", "out"), { recursive: true });
+      await fs.mkdir(path.join(nested, "pkg-a", "src"), { recursive: true });
+      await fs.writeFile(path.join(nested, "pkg-a", ".gitignore"), "out/\n*.log\n");
+      await fs.writeFile(path.join(nested, "pkg-a", "src", "a.ts"), "x");
+      await fs.writeFile(path.join(nested, "pkg-a", "out", "bundle.js"), "x");
+      await fs.writeFile(path.join(nested, "pkg-a", "err.log"), "x");
+      await fs.mkdir(path.join(nested, "pkg-b", "dist"), { recursive: true });
+      await fs.writeFile(path.join(nested, "pkg-b", "dist", "i.js"), "x");
+      await fs.writeFile(path.join(nested, "pkg-b", "keep.txt"), "x");
+      // 深层嵌套：pkg-c/webview/.gitignore 忽略本目录 dist/（构建产物在孙目录）
+      await fs.mkdir(path.join(nested, "pkg-c", "webview", "dist"), { recursive: true });
+      await fs.mkdir(path.join(nested, "pkg-c", "webview", "src"), { recursive: true });
+      await fs.writeFile(path.join(nested, "pkg-c", "webview", ".gitignore"), "dist/\n");
+      await fs.writeFile(path.join(nested, "pkg-c", "webview", "dist", "w.js"), "x");
+      await fs.writeFile(path.join(nested, "pkg-c", "webview", "src", "w.ts"), "x");
+
+      const { items } = await scanWorkspaceFiles(nested);
+      const paths = items.map((i) => i.path).sort();
+      assert.deepStrictEqual(paths, [
+        "pkg-a/.gitignore",
+        "pkg-a/src/a.ts",
+        "pkg-b/dist/i.js",
+        "pkg-b/keep.txt",
+        "pkg-c/webview/.gitignore",
+        "pkg-c/webview/src/w.ts",
+      ]);
+    } finally {
+      await fs.rm(nested, { recursive: true, force: true });
+    }
+  });
+
+  test("嵌套否定规则：深层 !keep 保留被父规则目录内的文件", async () => {
+    const neg = await fs.mkdtemp(path.join(os.tmpdir(), "pinel-file-scanner-neg-"));
+    try {
+      // 根忽略 logs/*.log，子目录否定 !important.log（ignore 包：父用 logs/* 才可被子否定）
+      await fs.mkdir(path.join(neg, "logs"), { recursive: true });
+      await fs.writeFile(path.join(neg, ".gitignore"), "logs/*\n");
+      await fs.writeFile(path.join(neg, "logs", ".gitignore"), "!important.log\n");
+      await fs.writeFile(path.join(neg, "logs", "run.log"), "x");
+      await fs.writeFile(path.join(neg, "logs", "important.log"), "x");
+
+      const { items } = await scanWorkspaceFiles(neg);
+      const paths = items.map((i) => i.path).sort();
+      // 根规则 logs/* 同样命中 logs/.gitignore 自身（git 语义）；important.log
+      // 被深层 !important.log 否定保留，run.log 仍被忽略
+      assert.deepStrictEqual(paths, [".gitignore", "logs/important.log"]);
+    } finally {
+      await fs.rm(neg, { recursive: true, force: true });
+    }
+  });
 });
