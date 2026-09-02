@@ -259,6 +259,16 @@ export function Composer({
       // 滚动条出现后内容区变窄、换行增多：按新 scrollHeight 重算一次高度
       ta.style.height = "auto";
       ta.style.height = `${Math.min(ta.scrollHeight, defaultMaxH)}px`;
+      // 高度重流后 scrollTop 不跟随光标（浏览器增长时保留 scrollTop，仅收缩时夹取）：
+      // 末尾打字新增行被底部裁剪、仅上半可见，需手动下滚；IME 组合期间浏览器
+      // 自行滚动到组合文本故不现。光标在末尾时滚到底（镜像原生 caret 跟随；
+      // 上滚后中途编辑不劫持用户滚动）。同步渲染层避免一帧错位。
+      if (ta.selectionStart === ta.value.length && ta.selectionEnd === ta.value.length) {
+        ta.scrollTop = ta.scrollHeight;
+        if (mdRef.current) {
+          mdRef.current.scrollTop = ta.scrollTop;
+        }
+      }
     }
     // 渲染层右缘让出滚动条宽度（offsetWidth - clientWidth）：换行与原文严格
     // 一致，文字不再被滚动条遮蔽（无滚动条时为 0，右缘保持 2px）
