@@ -805,9 +805,6 @@ body {
   font-weight: 700;
 }
 
-.qna-tab-confirm.active {
-  background: color-mix(in srgb, var(--vscode-button-background) 30%, transparent);
-  border-color: var(--vscode-button-background);
 }
 
 .qna-question {
@@ -904,55 +901,30 @@ body {
   color: var(--vscode-textLink-foreground);
 }
 
-.qna-custom {
-  display: flex;
-  gap: 6px;
-  align-items: center;
+/* 自定义回答行：选项同款外壳，内部输入框（placeholder 即提示） */
+.qna-option-custom {
+  cursor: default;
 }
 
-.qna-custom .uidialog-input {
+.qna-option-custom:hover {
+  border-color: var(--vscode-input-border); /* 非按钮行不暗示可点 */
+}
+
+.qna-custom-input {
   flex: 1;
-  margin-bottom: 0;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
 }
 
-.qna-review {
-  /* 确认标签内容区：无顶部虚线分隔 */
-  margin-top: 0;
-  padding-top: 0;
-}
-
-.qna-review-title {
-  font-weight: 600;
-  font-size: 12px;
-  margin-bottom: 6px;
-}
-
-.qna-review-row {
+/* 每页底部提交行：Submit（全部答完才可用）+ Cancel（放弃整卷） */
+.qna-submit-row {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: 12px;
-}
-
-.qna-review-q {
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.qna-review-a {
-  flex-shrink: 0;
-  color: var(--vscode-descriptionForeground);
-  max-width: 40%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.qna-review-actions {
-  display: flex;
+  justify-content: flex-end;
   gap: 6px;
   margin-top: 8px;
 }
@@ -1642,7 +1614,6 @@ body {
 
 .pinel-empty-title,
 .qna-question-title,
-.qna-review-title,
 .popover-titlebar-title,
 .config-popover-title {
   text-wrap: balance;
