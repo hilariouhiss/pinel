@@ -83,7 +83,7 @@ function gitMarkers(git: NonNullable<SessionEnv["git"]>): GitMarkerToken[] {
 
 /**
  * 会话信息条（输入卡正后方、从背后探出；设置面板「显示会话信息」开关开启时显示）。
- * 左侧环境段（Maple Mono NF）：`folderName on  branch [!?↑↓]`（p10k 风格）；
+ * 左侧环境段：`folderName on  branch [!?↑↓]`（p10k 风格）；
  * 右侧指标段：ponytail 状态（空心/实心点 + 档位图标，点击循环切换档位）、上下文占用/窗口、
  * 输入↑、输出↓、缓存命中率、成本$——↑↓ 对齐 pi CLI footer 语义（缓存读/写不再单列）。
  * 纯展示组件；各元素经 title 提供悬浮语义。

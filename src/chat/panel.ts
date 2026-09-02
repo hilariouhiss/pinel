@@ -646,9 +646,6 @@ export function getPanelHtml(webview: vscode.Webview, extensionUri: vscode.Uri, 
   const nonce = getNonce();
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "webview.js"));
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "webview.css"));
-  const fontRegularUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "fonts", "MapleMono-NF-Regular.ttf"));
-  const fontBoldUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "fonts", "MapleMono-NF-Bold.ttf"));
-  const fontItalicUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "fonts", "MapleMono-NF-Italic.ttf"));
 
   // CSP：禁止远程内容；脚本仅允许本 bundle（nonce）；样式允许内联 + 本地 bundle
   const csp = [
@@ -668,27 +665,6 @@ export function getPanelHtml(webview: vscode.Webview, extensionUri: vscode.Uri, 
   <link rel="stylesheet" href="${styleUri}" />
   <title>Pinel</title>
   <style>
-    @font-face {
-      font-family: "Maple Mono NF";
-      src: url("${fontRegularUri}") format("truetype");
-      font-weight: 400;
-      font-style: normal;
-      font-display: block;
-    }
-    @font-face {
-      font-family: "Maple Mono NF";
-      src: url("${fontBoldUri}") format("truetype");
-      font-weight: 700;
-      font-style: normal;
-      font-display: block;
-    }
-    @font-face {
-      font-family: "Maple Mono NF";
-      src: url("${fontItalicUri}") format("truetype");
-      font-weight: 400;
-      font-style: italic;
-      font-display: block;
-    }
     #boot-loader {
       position: fixed; inset: 0; z-index: 9999;
       display: flex; align-items: center; justify-content: center;

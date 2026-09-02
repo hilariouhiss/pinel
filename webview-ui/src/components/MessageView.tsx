@@ -11,6 +11,7 @@ import chevronRightIcon from "lucide-static/icons/chevron-right.svg";
 import chevronDownIcon from "lucide-static/icons/chevron-down.svg";
 import { vscode } from "../index";
 import { useSmoothText } from "../use-smooth-text";
+import { describeToolArgs } from "../tool-args";
 
 /** toolResult 消息解析结果（webview 内部类型，非宿主协议镜像）。 */
 export interface ToolResultInfo {
@@ -495,18 +496,9 @@ function ToolCallCard({
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const args = toolCall?.arguments ?? "";
   const displayArgs = useSmoothText(args, live === true);
-  const prettyArgs = useMemo(() => {
-    if (!args) {
-      return "";
-    }
-    try {
-      return JSON.stringify(JSON.parse(args), null, 2);
-    } catch {
-      return args;
-    }
-  }, [args]);
-  /** 流式中显示揭示中的原始参数（免每帧 JSON.parse 重试），完成后切换 pretty。 */
-  const shownArgs = live ? displayArgs : prettyArgs;
+  /** 直读化 args（命令/查询/路径等，无命中回退 pretty JSON）；流式中显示揭示中的原始参数。 */
+  const describedArgs = useMemo(() => describeToolArgs(args), [args]);
+  const shownArgs = live ? displayArgs : describedArgs;
   const output = toolCard?.output ?? result?.text ?? "";
   const status: "running" | "done" | "error" =
     toolCard?.status ?? (result ? (result.isError ? "error" : "done") : live ? "running" : "done");
@@ -522,9 +514,9 @@ function ToolCallCard({
   // name 缺失时图标与卡片风格保持一致
   const isSubagent = toolName === "subagent";
   const preview = output.trim() ? output : shownArgs;
-  /** 数据直拷：args（pretty JSON）+ 输出，不经过截断预览/卡片文字。 */
+  /** 数据直拷：直读 args（命令等）+ 输出，不经过截断预览/卡片文字。 */
   const copyToolText = () =>
-    [prettyArgs, output.trim()]
+    [describedArgs, output.trim()]
       .filter((s) => s.length > 0)
       .join("\n\n");
 
