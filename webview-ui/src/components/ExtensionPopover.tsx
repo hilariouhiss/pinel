@@ -47,9 +47,9 @@ interface Props {
  * - 数据源：宿主 getExtensionList(view)（打开/切视图时按视图拉取；启停/卸载后宿主重发刷新）
  * - All/Catalog 两态切换 + Catalog 插件目录视图（宿主 catalogState）
  * - All 视图：本地扩展不去重（global/local 徽标区分范围）；包按 identity 去重（项目覆盖优先）
- * - catalog 视图：pi-packages / rpiv-mono 两组，每项 Install 按钮 + 已装态 + compat 标注
- *   （tui-only/limited 置灰徽标 + title 说明），按组 Install default set（rpiv 三包）
- *   与 Install all（pi-packages git 整仓）；安装中按钮禁用防重复点击
+ * - catalog 视图：单列表按名称字母排序，每项 Install 按钮 + 已装态 + compat 标注
+ *   （tui-only/limited 置灰徽标 + title 说明）；顶部批量安装：推荐集 / rpiv 默认集三包 /
+ *   pi-packages git 整仓；安装中按钮禁用防重复点击
  * - 启停/卸载不关弹层（可连续操作）；reload 提示由宿主原生弹框处理
  * - 交互：Esc / 点击外部 / 标题栏关闭按钮关闭（Esc 在 window capture 阶段拦截
  *   stopPropagation，让位于 Composer 的中断/清空分支）；焦点管理对齐 SessionListPopover
@@ -175,13 +175,7 @@ export function ExtensionPopover({
       </div>
     );
 
-  // 目录视图：按组渲染；组头带批量安装按钮（rpiv = 默认集三包；pi-packages = git 整仓 9 包）
-  const catalogGroups: Array<{ group: "pi-packages" | "rpiv-mono"; label: string }> = [
-    { group: "pi-packages", label: "pi-packages (@gotgenes)" },
-    { group: "rpiv-mono", label: "rpiv-mono (@juicesharp)" },
-  ];
-
-  // 目录行渲染（Recommended 货架与原分组共用）。
+  // 目录行渲染。
   const renderCatalogRow = (e: CatalogItem) => {
     const busy = installing.has(e.installSpec);
     return (
@@ -217,60 +211,49 @@ export function ExtensionPopover({
     );
   };
 
-  // Recommended 货架：置顶列出推荐集（跨两组），一键装未装项；原分组内仍保留这些项
-  const renderRecommended = () => {
-    const recs = catalog.filter((e) => e.recommended);
-    const pending = recs.filter((e) => e.state !== "installed");
-    const busy = recs.some((e) => installing.has(e.installSpec));
+  // 目录单列表：全部条目按名称字母排序（推荐集不重复置顶，用 recommended/default 标签区分），
+  // 顶部一行批量安装按钮（推荐集 12 / rpiv 默认集三包 / pi-packages git 整仓）。
+  const renderCatalog = () => {
+    const sorted = [...catalog].sort((a, b) => a.name.localeCompare(b.name));
+    const recs = sorted.filter((e) => e.recommended);
+    const recPending = recs.filter((e) => e.state !== "installed");
+    const recBusy = recs.some((e) => installing.has(e.installSpec));
+    const defaults = sorted.filter((e) => e.defaultSet);
+    const defaultBusy = defaults.some((e) => installing.has(e.installSpec));
+    const defaultInstalled = defaults.length > 0 && defaults.every((e) => e.state === "installed");
     return (
-      <div className="extension-popover-section">
-        <div className="extension-popover-title catalog-group-header">
-          <span>Recommended</span>
-          <button
-            className="catalog-group-install"
-            disabled={pending.length === 0 || busy}
-            title={`Install ${pending.length} recommended package${pending.length === 1 ? "" : "s"}`}
-            onClick={() => onInstallCatalogGroup("recommended", recs.map((e) => e.installSpec))}
-          >
-            {busy ? "Installing…" : `Install recommended (${pending.length})`}
-          </button>
+      <div className="catalog-groups">
+        <div className="extension-popover-section">
+          <div className="extension-popover-title catalog-group-header catalog-batch-row">
+            <button
+              className="catalog-group-install"
+              disabled={recPending.length === 0 || recBusy}
+              title={`Install ${recPending.length} recommended package${recPending.length === 1 ? "" : "s"}`}
+              onClick={() => onInstallCatalogGroup("recommended", recs.map((e) => e.installSpec))}
+            >
+              {recBusy ? "Installing…" : `Install recommended (${recPending.length})`}
+            </button>
+            <button
+              className="catalog-group-install"
+              disabled={defaultInstalled || defaultBusy}
+              title="Install default set: rpiv-todo, rpiv-ask-user-question, rpiv-voice"
+              onClick={() => onInstallCatalogGroup("rpiv-mono", defaults.map((e) => e.installSpec))}
+            >
+              {defaultBusy ? "Installing…" : "Install default set"}
+            </button>
+            <button
+              className="catalog-group-install"
+              title="Install all 9 packages (git: github.com/gotgenes/pi-packages)"
+              onClick={() => onInstallCatalogGroup("pi-packages", [])}
+            >
+              Install all
+            </button>
+          </div>
+          {sorted.map(renderCatalogRow)}
         </div>
-        {recs.map(renderCatalogRow)}
       </div>
     );
   };
-
-  const renderCatalog = () => (
-    <div className="catalog-groups">
-      {renderRecommended()}
-      {catalogGroups.map(({ group, label }) => {
-        const entries = catalog.filter((e) => e.group === group);
-        const groupSpecs = entries.filter((e) => e.defaultSet).map((e) => e.installSpec);
-        const allInstalled = entries.length > 0 && entries.every((e) => e.state === "installed");
-        const groupBusy = groupSpecs.some((s) => installing.has(s));
-        return (
-          <div key={group} className="extension-popover-section">
-            <div className="extension-popover-title catalog-group-header">
-              <span>{label}</span>
-              <button
-                className="catalog-group-install"
-                disabled={allInstalled || groupBusy}
-                title={
-                  group === "rpiv-mono"
-                    ? "Install default set: rpiv-todo, rpiv-ask-user-question, rpiv-voice"
-                    : "Install all 9 packages (git: github.com/gotgenes/pi-packages)"
-                }
-                onClick={() => onInstallCatalogGroup(group, groupSpecs)}
-              >
-                {groupBusy ? "Installing…" : group === "rpiv-mono" ? "Install default set" : "Install all"}
-              </button>
-            </div>
-            {entries.map(renderCatalogRow)}
-          </div>
-        );
-      })}
-    </div>
-  );
 
   return (
     <>

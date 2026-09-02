@@ -2391,6 +2391,13 @@ body {
   justify-content: space-between;
 }
 
+/* 目录单列表顶部的批量安装按钮行（推荐集/默认集/整仓） */
+.catalog-batch-row {
+  justify-content: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .catalog-group-install {
   flex: none;
   padding: 2px 8px;
