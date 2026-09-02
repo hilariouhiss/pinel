@@ -19,7 +19,7 @@ pinel/
 │  └─ test/                # *.test.ts 单测 + extension.test.ts 集成 + fixtures/（fake-pi.js、long-running.js）
 ├─ src/test-no-workspace/  # 空窗口实例集成测试（独立套件）
 ├─ scripts/                # clean-test-userdata.mjs（npm test 前清理共享 user-data）+ pinel-plugin-smoke.mjs（真实 pi 冒烟，opt-in）
-├─ ../pi/                  # Pinel Pi 插件包（sibling 目录，npm 包 @hilariouhiss/pinel，pi install 安装；独立 tsc 检查不随主 bundle；发布：cd ../pi && npm publish）
+├─ ../pi/                  # Pinel Pi 插件包（monorepo 兄弟目录，npm 包 @hilariouhiss/pinel，pi install 安装；独立 tsc 检查不随主 bundle；发布：cd ../pi && npm publish）
 ├─ webview-ui/             # React webview（browser 平台，禁 import 宿主/vscode）；src/components/ + command-match.ts + types.ts（OutMessage 镜像，手工同步）+ esbuild.js
 ├─ media/                  # webview 图标用 lucide 内联进 bundle 不入库；pi-glyph.svg/pi-icon.png 品牌图标入库；webview 产物 gitignored
 ├─ .pi/plans/              # 计划文档（入库；v0.1/v0.2 边界与历史决策）
