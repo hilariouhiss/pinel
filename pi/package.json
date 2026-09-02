@@ -1,0 +1,27 @@
+{
+  "name": "@hilariouhiss/pinel",
+  "version": "0.1.0",
+  "description": "Pinel bridge plugin for Pi — prompt/MCP/workflow status push for the Pinel VS Code panel",
+  "keywords": ["pi-package", "pinel", "vscode"],
+  "license": "MIT",
+  "type": "module",
+  "files": ["pinel.ts", "extensions/", "skills/", "workflows/", "docs/", "README.md", "!**/*.test.ts"],
+  "dependencies": {
+    "@juicesharp/rpiv-workflow": "^2.7.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./pinel.ts", "./extensions/pinel-workflows.ts", "./extensions/plugin-usage-guide.ts", "./extensions/auto-commit.ts"],
+    "skills": ["./skills"]
+  }
+}
