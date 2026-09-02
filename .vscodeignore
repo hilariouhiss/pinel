@@ -20,3 +20,4 @@ pinel-plugin/**
 **/*.map
 **/*.ts
 **/.vscode-test.*
+docs/**
