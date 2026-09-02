@@ -1,0 +1,2 @@
+# 根级最小：子项目各自的 .gitignore 管辖其余产物
+node_modules/
