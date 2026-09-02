@@ -153,10 +153,6 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
                 {folded ? "▸" : "▾"}
               </button>
             )}
-            <span className="mode-group-name" title={isLocal ? undefined : group.key}>
-              {group.label}
-            </span>
-            <span className="mode-group-count">{group.items.length}</span>
             {!isLocal && (
               <input
                 type="checkbox"
@@ -172,6 +168,10 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
                 onChange={() => toggleGroup(list, group)}
               />
             )}
+            <span className="mode-group-name" title={isLocal ? undefined : group.key}>
+              {group.label}
+            </span>
+            <span className="mode-group-count">{group.items.length}</span>
           </div>
           {!folded &&
             group.items.map((item) => (

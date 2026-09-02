@@ -3397,7 +3397,7 @@ html:not(.pinel-scrolling) :is(.pinel-scroll, .todopanel-body, .composer-input):
 }
 
 .mode-group-master {
-  margin-left: auto;
+  flex: none;
 }
 
 .mode-group-item {
