@@ -154,6 +154,19 @@ body {
     animation: none;
     transition: none;
   }
+
+  /* 交互统一层同步降级：无过渡、无按压缩放 */
+  .pinel-root :where(button, .extension-item, .ctx-comp-row) {
+    transition: none;
+  }
+
+  .pinel-root :where(
+      button:not(:disabled):active,
+      .extension-item:active,
+      .ctx-comp-row:not(:disabled):active
+    ) {
+    transform: none;
+  }
 }
 
 /* 最近回合悬浮状态条：经 .recent-round-anchor（高 0 sticky）钉在滚动视口顶部，
@@ -229,7 +242,7 @@ body {
   color: var(--vscode-descriptionForeground);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.1s ease;
+  transition: opacity 0.1s ease, background-color 0.12s ease, color 0.12s ease;
 }
 
 /* 仅悬停卡片自身时显示该卡片的复制按钮（> 直子选择器：Pi 输出区的多个卡片
@@ -1425,7 +1438,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 5px;
+  border-radius: 4px;
   border: 1px solid var(--vscode-input-border);
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
@@ -1487,7 +1500,7 @@ body {
   height: calc(var(--vscode-font-size) * 1.5 + 12px);
   background: transparent;
   border: none;
-  border-radius: 5px;
+  border-radius: 4px;
   color: var(--vscode-descriptionForeground);
   font-size: calc(var(--vscode-font-size) - 1px);
   font-family: var(--pinel-font-family);
@@ -1513,7 +1526,7 @@ body {
   height: calc(var(--vscode-font-size) * 1.5 + 12px);
   background: transparent;
   border: none;
-  border-radius: 5px;
+  border-radius: 4px;
   padding: 0;
   cursor: pointer;
 }
@@ -1592,6 +1605,47 @@ body {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* 交互统一层：hover 变化此前多为瞬时跳变，这里补齐——
+   1) 全部交互元素的状态过渡 2) 按压反馈（全库原先 0 条 :active）
+   3) 键盘焦点环（原先仅 msg-copy-btn 一处）。
+   :where 零特异性：组件自带的 transition / focus-visible 声明优先级更高，不被此层覆盖 */
+.pinel-root :where(button:not(:disabled), .extension-item, .ctx-comp-row:not(:disabled)) {
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.12s ease,
+    opacity 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.pinel-root :where(
+    button:not(:disabled):active,
+    .extension-item:active,
+    .ctx-comp-row:not(:disabled):active
+  ) {
+  transform: scale(0.98);
+}
+
+.pinel-root :where(button, .extension-item, .ctx-comp-row):focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* 文本换行优化：正文 pretty（末行孤词收敛），长标题 balance（断行均衡） */
+.msg-text,
+.msg-text-live {
+  text-wrap: pretty;
+}
+
+.pinel-empty-title,
+.qna-question-title,
+.qna-review-title,
+.popover-titlebar-title,
+.config-popover-title {
+  text-wrap: balance;
 }
 
 /* ------------------------------------------------------------------ 配置面板 */
