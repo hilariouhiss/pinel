@@ -2948,7 +2948,7 @@ body {
   flex-wrap: wrap;
 }
 
-/* 环境段：Maple Mono NF（Nerd Font 分支图标），长分支/长名 ellipsis 防溢出 */
+/* 环境段：跟随编辑器字体（Nerd Font 分支图标），长分支/长名 ellipsis 防溢出 */
 .session-stats-env {
   min-width: 0;
   overflow: hidden;
