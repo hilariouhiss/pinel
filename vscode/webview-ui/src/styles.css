@@ -16,6 +16,11 @@ body,
   height: 100%;
   margin: 0;
   padding: 0;
+  /* 整面板固定高度、不滚动：内部滚动区（.pinel-scroll/.todopanel-body/.composer-input）
+     各自 overflow-y:auto。若 body 可滚，窄面板下 hover 提示条/绝对定位元素溢出会撑出
+     水平滚动条（右滚空白）；水平滚动条又压缩视口高度 → 100vh>100% 触发垂直滚动条
+     （header 被滚上去）。此处统一裁剪，固定定位弹层（position:fixed）不受影响。 */
+  overflow: hidden;
 }
 
 body {

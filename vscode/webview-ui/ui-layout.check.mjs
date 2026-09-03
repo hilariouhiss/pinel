@@ -21,4 +21,8 @@ assert.match(css, /\.ctx-chip-wrap:hover \.ctx-hover-tip \{\s*[\s\S]*?visibility
 // 4) 对话框按钮禁用态（问卷 Submit 未答完视觉反馈）
 assert.match(css, /\.uidialog-btn:disabled \{\s*opacity:\s*0\.5;/, "uidialog-btn 必须有 :disabled 半透明样式");
 
+// 5) 整面板固定高度不滚动：html/body/#root 必须 overflow:hidden（否则窄面板下 hover 提示条
+//    溢出撑出水平滚动条，水平滚动条压缩视口高度又反馈出垂直滚动条）
+assert.match(css, /html,\s+body,\s+#root\s*\{[^}]*overflow:\s*hidden;/, "html/body/#root 必须 overflow:hidden");
+
 console.log("ui-layout check OK");
