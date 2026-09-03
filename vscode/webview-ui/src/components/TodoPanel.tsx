@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { TodoTask } from "../types";
 // SVG 图标原始文本（esbuild text loader 内联；CSS 覆盖 fill 实现主题/状态色）
 import todoIcon from "lucide-static/icons/circle.svg";
@@ -17,7 +17,7 @@ interface Props {
  * 数据源：宿主从 todo 工具执行结果（details.tasks 全量快照）解析维护，
  * 空列表自动隐藏（App 层控制不渲染）。
  */
-export function TodoPanel({ todos }: Props) {
+export const TodoPanel = memo(function TodoPanel({ todos }: Props) {
   const [open, setOpen] = useState(true);
   const visible = todos.filter((t) => t.status !== "deleted");
   const done = visible.filter((t) => t.status === "completed").length;
@@ -75,4 +75,4 @@ export function TodoPanel({ todos }: Props) {
       </div>
     </div>
   );
-}
+});

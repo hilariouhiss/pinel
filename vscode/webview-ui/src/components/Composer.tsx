@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -112,7 +113,7 @@ function ComposerMarkdown({ content, mdRef }: { content: string; mdRef: RefObjec
   );
 }
 
-export function Composer({
+export const Composer = memo(function Composer({
   status,
   commands,
   popoverOpen = false,
@@ -632,4 +633,4 @@ export function Composer({
       </div>
     </div>
   );
-}
+});

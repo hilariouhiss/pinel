@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage, ContentBlock, StreamBlock, SubagentCardInfo, ToolCard } from "../types";
 import { Markdown } from "./Markdown";
 // SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
@@ -197,7 +197,7 @@ function assistantBlocks(content: ChatMessage["content"]): ContentBlock[] {
   return Array.isArray(content) ? (content as ContentBlock[]) : [];
 }
 
-export function MessageView({ message, tools, toolResults, streamBlocks, msgIndex, mainModelName, mainThinkingLevel, stale }: Props) {
+export const MessageView = memo(function MessageView({ message, tools, toolResults, streamBlocks, msgIndex, mainModelName, mainThinkingLevel, stale }: Props) {
   const userRef = useRef<HTMLDivElement>(null);
   const toolResultRef = useRef<HTMLDivElement>(null);
   /** 右键复制菜单位置（null=关闭）；每卡片实例独立（仅 user 卡片级使用）。 */
@@ -285,7 +285,7 @@ export function MessageView({ message, tools, toolResults, streamBlocks, msgInde
       ))}
     </div>
   );
-}
+});
 
 /** 终端命令卡（! / !!）：命令 + 流式输出 + 状态（复用 toolresult 样式）。
  *  运行中输出区自动滚到底（对齐 thinking 体跟随机制）；完成后可复制。 */

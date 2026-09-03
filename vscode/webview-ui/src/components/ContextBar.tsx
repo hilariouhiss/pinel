@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { ExtensionItem, ModeState, PinelMcp, PinelMcpServer, PinelPrompt, PinelPromptFile, SlashCommand } from "../types";
 import { modeResourceView } from "../mode-counts";
@@ -61,7 +61,7 @@ function compactChars(n: number): string {
  * - rows 为信息展示（非 listbox 选项），弹层开关是组件内局部 state，
  *   不触碰 App 的弹层枚举
  */
-export function ContextBar({
+export const ContextBar = memo(function ContextBar({
   commands,
   pinelMcp,
   pinelPrompt,
@@ -503,4 +503,4 @@ export function ContextBar({
       )}
     </>
   );
-}
+});

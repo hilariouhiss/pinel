@@ -218,14 +218,14 @@ export default function App() {
     scrollRef.current?.focus();
   };
 
-  const toolResults = useMemo(() => {
+  // 工具结果/命中集拆两段：稳定段只看 messages（流式期间引用不变）；流式命中只取
+  // 「新增 toolCall id 串」参与依赖——文本 delta 不改变 id 串，下游 useMemo 依赖值
+  // 相等则引用稳定。若整段 useMemo([messages, streamBlocks])，每次 flush 造新对象，
+  // 迫使所有 MessageView 重渲染（memo 失效）→ 流式期间主线程被无关消息重渲染占用，
+  // 底部按钮/弹层点击响应滞后（本次修复根因）。
+  const settledToolResults = useMemo(() => {
     const results: Record<string, ToolResultInfo> = {};
     const matched = new Set<string>();
-    for (const b of streamBlocks) {
-      if (b.kind === "toolCall" && b.toolCall?.id) {
-        matched.add(b.toolCall.id);
-      }
-    }
     for (const m of messages) {
       if (m.role === "assistant" && Array.isArray(m.content)) {
         for (const b of m.content as ContentBlock[]) {
@@ -246,7 +246,28 @@ export default function App() {
       }
     }
     return { results, matched };
-  }, [messages, streamBlocks]);
+  }, [messages]);
+
+  // 流式 toolCall id 串（稳定依赖键：文本 delta 不改 id 串 → 返回值相等 → 下游不重算）
+  const streamToolIdsKey = useMemo(() => {
+    const ids: string[] = [];
+    for (const b of streamBlocks) {
+      if (b.kind === "toolCall" && b.toolCall?.id) {
+        ids.push(b.toolCall.id);
+      }
+    }
+    return ids.join("\u0000");
+  }, [streamBlocks]);
+
+  const toolResults = useMemo(() => {
+    const matched = new Set(settledToolResults.matched);
+    if (streamToolIdsKey) {
+      for (const id of streamToolIdsKey.split("\u0000")) {
+        matched.add(id);
+      }
+    }
+    return { results: settledToolResults.results, matched };
+  }, [settledToolResults, streamToolIdsKey]);
 
   const handleMessage = useCallback((event: MessageEvent<HostMessage>) => {
     const msg = event.data;
@@ -555,7 +576,7 @@ export default function App() {
 
   // 模型/思考 chip 锚定下拉：toggle 打开并拉取列表（打开即清列表 + loading；
   // 关闭不重拉），选中后的状态回读刷新由宿主 set_model → get_state 链路负责
-  const openModel = () => {
+  const openModel = useCallback(() => {
     if (popover === "model") {
       setPopover(null);
       return;
@@ -564,9 +585,9 @@ export default function App() {
     setModelLoading(true);
     setModels([]);
     vscode.postMessage({ type: "getModels" });
-  };
+  }, [popover]);
 
-  const openThinking = () => {
+  const openThinking = useCallback(() => {
     if (popover === "thinking") {
       setPopover(null);
       return;
@@ -575,7 +596,7 @@ export default function App() {
     setThinkingLoading(true);
     setThinkingLevels([]);
     vscode.postMessage({ type: "getThinkingLevels" });
-  };
+  }, [popover]);
 
   // 选中模型/思考：发 set 消息并关闭下拉（状态回读刷新由宿主链路广播）
   const selectModel = (provider: string, modelId: string) => {
@@ -588,18 +609,18 @@ export default function App() {
     vscode.postMessage({ type: "setThinkingLevel", level });
   };
 
-  const openConfig = () => {
+  const openConfig = useCallback(() => {
     setPopover((prev) => (prev === "config" ? null : "config"));
     // 设置页 Models 区需要清单：打开时拉取（复用模型/思考 chip 的缓存）
     vscode.postMessage({ type: "getModels" });
     vscode.postMessage({ type: "getThinkingLevels" });
-  };
+  }, []);
 
   // 模式弹层：打开时拉取模式状态（实时扫描本地 skills + 读 pinel.modes）
-  const openModes = () => {
+  const openModes = useCallback(() => {
     setPopover((prev) => (prev === "mode" ? null : "mode")); // 已开则关闭（toggle）
     vscode.postMessage({ type: "getModeState" });
-  };
+  }, []);
   const switchMode = (name: string | null) => {
     vscode.postMessage({ type: "switchMode", name });
   };
@@ -623,14 +644,14 @@ export default function App() {
   };
 
   // 扩展管理弹层：打开时按当前视图拉取列表（每次打开实时扫描）+ 目录状态
-  const openExtensions = () => {
+  const openExtensions = useCallback(() => {
     setPopover((prev) => (prev === "ext" ? null : "ext")); // 已开则关闭（toggle）
     // 不清空 extensions：信息条 chip 常驻显示，宿主重扫后整体替换
     // catalog 为本地视图：宿主按 all 刷新扩展列表（背景），目录状态单独拉
     vscode.postMessage({ type: "getExtensionList" });
     vscode.postMessage({ type: "checkExtensionUpdates", force: false });
     vscode.postMessage({ type: "getCatalogState" });
-  };
+  }, []);
 
   // 扩展弹层视图切换：catalog 本地视图只拉目录；All 发宿主重拉
   const changeExtensionView = (view: "all" | "catalog") => {
