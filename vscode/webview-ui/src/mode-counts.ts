@@ -27,6 +27,9 @@ export function modeResourceView(state: ModeState | null): ModeResourceView | nu
     skills: state.skills
       .filter((s) => skillIds.has(s.id))
       .map((s) => ({ name: s.name, description: s.description })),
+    // ponytail: 扩展计数 = 模式勾选清单项（与模式扩展 id 集合交集），可能含已选但磁盘 .disabled 的本地扩展；
+    // 包内扩展按包内粒度计数且无 enabled 态（scanModeInventory 丢了 enabled 标记）。
+    // 需要精确时：scanModeInventory 按 enabled 过滤并重新对齐包粒度。
     extensions: state.extensions.filter((e) => extIds.has(e.id)).map((e) => e.name),
   };
 }

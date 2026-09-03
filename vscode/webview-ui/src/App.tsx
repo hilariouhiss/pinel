@@ -454,6 +454,8 @@ export default function App() {
     vscode.postMessage({ type: "getFileList" });
     // 预热拉取扩展列表：信息条 Extensions chip 常驻显示计数（装/卸/启停后宿主重推）
     vscode.postMessage({ type: "getExtensionList" });
+    // 预热拉取模式状态：信息条 Skills/Extensions chip 按激活模式计数（重开面板即生效）
+    vscode.postMessage({ type: "getModeState" });
     return () => window.removeEventListener("message", handleMessage);
   }, [handleMessage]);
 
