@@ -28,4 +28,4 @@ Thumbs.db
 .mcp.json
 # git worktrees (isolated feature workspaces)
 .worktrees/
-.superpowers/
+superpowers/
