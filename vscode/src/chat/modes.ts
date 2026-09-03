@@ -13,17 +13,19 @@ import {
 /**
  * 智能体模式纯函数模块（无 vscode 依赖，可单测）。
  *
- * 模式 = 一组启用的本地/包 skills 与扩展。切换模式把「不在激活模式里的资源」写成
- * 排除段（重启 pi 后生效）：
+ * 模式 = 一组启用的本地/包 skills / 扩展 / prompts。切换模式把「不在激活模式里的资源」
+ * 写成排除段（重启 pi 后生效）：
  * - 本地 skills：全局/项目 settings `skills` 数组 `!<目录名|文件名>`（SKILL.md 父目录名
  *   特例匹配，任意深度命中）；
  * - 本地扩展：同数组机制 `extensions` 键 `!<相对 baseDir 的 posix 路径>`（目录式扩展
  *   basename 恒为 index.ts，必须完整 rel 路径防碰撞）；
- * - 包 skills/扩展：包条目对象形式 `{source, skills:["!skills/foo"], extensions:["!x.ts"]}`
- *   （实测 applyPatterns：空 includes = 全启用、`!` 相对包根排除；省略键 = 该类型全量）。
+ * - 本地 prompts：同数组机制 `prompts` 键 `!prompts/<文件名>.md`（非递归，匹配 rel/name）；
+ * - 包 skills/扩展/prompts：包条目对象形式 `{source, skills:["!skills/foo"],
+ *   extensions:["!x.ts"], prompts:["!prompts/c7-docs.md"]}`（实测 applyPatterns：
+ *   空 includes = 全启用、`!` 相对包根排除；省略键 = 该类型全量）。
  *
  * 模式定义存全局 settings 的 `pinel.modes`（复用 pinel.autoCommit 先例）：
- * { active, modes: [{name, skills, extensions}], packageBaseline? }。
+ * { active, modes: [{name, skills, extensions, prompts}], packageBaseline? }。
  * active = null 即内置 Default（无排除 = 全部生效）。packageBaseline = identity →
  * Pinel 覆写前的包条目快照（Default/免过滤时还原，防吞用户手配）。
  *
@@ -64,17 +66,31 @@ export interface ModeExtension {
   identity?: string;
 }
 
-/** 扫描清单（本地 + 包资源的 skills/扩展全集）。 */
+/** 扫描出的 prompt 条目（本地 <dir>/prompts 顶层 .md 与包 <pkgRoot>/prompts 递归 .md）。 */
+export interface ModePrompt {
+  id: string;
+  /** 排除模式体（相对 baseDir/包根的 posix 路径，含 .md；匹配 rel/name/全路径）。 */
+  pattern: string;
+  name: string;
+  description?: string;
+  scope: ModeResourceScope;
+  package?: string;
+  identity?: string;
+}
+
+/** 扫描清单（本地 + 包资源的 skills/扩展/prompts 全集）。 */
 export interface ModeInventory {
   skills: ModeSkill[];
   extensions: ModeExtension[];
+  prompts: ModePrompt[];
 }
 
-/** 模式配置（pinel.modes.modes 条目）。skills/extensions = 资源 id 集。 */
+/** 模式配置（pinel.modes.modes 条目）。skills/extensions/prompts = 资源 id 集。 */
 export interface AgentMode {
   name: string;
   skills: string[];
   extensions: string[];
+  prompts: string[];
 }
 
 /** 模式状态（pinel.modes 防御解析产物）。active = null 即 Default。 */
@@ -121,6 +137,7 @@ export function readModesState(settings: SettingsObject): ModesState {
         name,
         skills: strings((m as Record<string, unknown>).skills),
         extensions: strings((m as Record<string, unknown>).extensions),
+        prompts: strings((m as Record<string, unknown>).prompts),
       });
     }
   }
@@ -187,8 +204,9 @@ const MAX_WALK_DEPTH = 6;
  * - 本地 skills：全局 <agentDir>/skills + ~/.agents/skills，项目 <root>/.pi/skills +
  *   <root>/.agents/skills（无 root 跳过项目根）；
  * - 本地扩展：<agentDir>/extensions + <root>/.pi/extensions（复用 scanLocalExtensions）；
- * - 包资源：每个（dedupe 后）包条目按 scope 解析安装根，扫约定目录 skills/ 与 extensions/
- *   （未安装/目录缺失 → 该包零贡献）。
+ * - 本地 prompts：<agentDir>/prompts + <root>/.pi/prompts（顶层 .md 非递归）；
+ * - 包资源：每个（dedupe 后）包条目按 scope 解析安装根，扫约定目录 skills/、extensions/
+ *   与 prompts/（未安装/目录缺失 → 该包零贡献）。
  * 结果按 name 字母序排序；同 id 首见优先。
  */
 export async function scanModeInventory(
@@ -199,6 +217,7 @@ export async function scanModeInventory(
 ): Promise<ModeInventory> {
   const skills: ModeSkill[] = [];
   const extensions: ModeExtension[] = [];
+  const prompts: ModePrompt[] = [];
   const seen = new Set<string>();
 
   // 本地 skills（v1 四根逻辑，id/pattern 升级为复合键/排除体）
@@ -235,6 +254,12 @@ export async function scanModeInventory(
     });
   }
 
+  // 本地 prompts（顶层 .md 非递归，对齐 pi collectAutoPromptEntries）
+  await collectLocalPrompts(path.join(agentDir, "prompts"), "global", prompts, seen);
+  if (projectRoot) {
+    await collectLocalPrompts(path.join(projectRoot, ".pi", "prompts"), "project", prompts, seen);
+  }
+
   // 包资源（约定目录；未安装/缺目录 → 零贡献）
   for (const pkg of packages) {
     const identity = packageIdentity(pkg.source, pkg.scope === "project" ? projectConfigDirPath : agentDir);
@@ -255,11 +280,13 @@ export async function scanModeInventory(
         identity,
       });
     }
+    await collectPackagePrompts(path.join(rootDir, "prompts"), rootDir, identity, display, prompts, seen);
   }
 
   skills.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   extensions.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-  return { skills, extensions };
+  prompts.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  return { skills, extensions, prompts };
 }
 
 /** 本地 skill 根扫描（pi 式根 .md + SKILL.md 目录递归；agents 式仅目录）。 */
@@ -380,6 +407,73 @@ async function collectPackageSkills(
   }
 }
 
+/** 本地 prompt 扫描（顶层 .md 非递归；id 带 prompts/ 前缀防与同名 pi 式根 skill 撞键）。 */
+async function collectLocalPrompts(dir: string, scope: ModeResourceScope, out: ModePrompt[], seen: Set<string>): Promise<void> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.isSymbolicLink()) {
+      continue;
+    }
+    if (entry.name.startsWith(".") || entry.name === "node_modules") {
+      continue;
+    }
+    if (!entry.name.endsWith(".md")) {
+      continue;
+    }
+    const fm = parseSkillFrontmatter(await readFileOrEmpty(path.join(dir, entry.name)));
+    pushUnique(out, seen, {
+      id: `local|${scope}|prompts/${entry.name}`,
+      pattern: `prompts/${entry.name}`,
+      name: entry.name.slice(0, -3),
+      description: fm.description,
+      scope,
+    });
+  }
+}
+
+/** 包 prompt 扫描（递归 .md；pattern = 包根相对 posix 路径含 .md）。 */
+async function collectPackagePrompts(
+  dir: string,
+  rootDir: string,
+  identity: string,
+  display: string,
+  out: ModePrompt[],
+  seen: Set<string>,
+): Promise<void> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.isSymbolicLink()) {
+      continue;
+    }
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await collectPackagePrompts(full, rootDir, identity, display, out, seen);
+    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      const rel = posixRel(rootDir, full);
+      const fm = parseSkillFrontmatter(await readFileOrEmpty(full));
+      pushUnique(out, seen, {
+        id: `pkg|${identity}|${rel}`,
+        pattern: rel,
+        name: entry.name.slice(0, -3),
+        description: fm.description,
+        scope: "package",
+        package: display,
+        identity,
+      });
+    }
+  }
+}
+
 function pushUnique<T extends { id: string }>(out: T[], seen: Set<string>, item: T): void {
   if (seen.has(item.id)) {
     return;
@@ -417,8 +511,9 @@ async function fileExists(p: string): Promise<boolean> {
 export interface ModeApplyPlan {
   localSkills: { global: string[]; project: string[] };
   localExtensions: { global: string[]; project: string[] };
-  /** identity → 该包需排除的 skills/extensions 模式体（空数组项不出现在键里）。 */
-  packageExclusions: Map<string, { skills: string[]; extensions: string[] }>;
+  localPrompts: { global: string[]; project: string[] };
+  /** identity → 该包需排除的 skills/extensions/prompts 模式体（空数组项不出现在键里）。 */
+  packageExclusions: Map<string, { skills: string[]; extensions: string[]; prompts: string[] }>;
 }
 
 /**
@@ -429,6 +524,7 @@ export function modeApplyPlan(state: ModesState, scan: ModeInventory): ModeApply
   const plan: ModeApplyPlan = {
     localSkills: { global: [], project: [] },
     localExtensions: { global: [], project: [] },
+    localPrompts: { global: [], project: [] },
     packageExclusions: new Map(),
   };
   const active = state.active ? state.modes.find((m) => m.name === state.active) : undefined;
@@ -457,6 +553,17 @@ export function modeApplyPlan(state: ModesState, scan: ModeInventory): ModeApply
       plan.localExtensions[e.scope].push(e.pattern);
     }
   }
+  const selectedPrompts = new Set(active.prompts);
+  for (const p of scan.prompts) {
+    if (selectedPrompts.has(p.id)) {
+      continue;
+    }
+    if (p.scope === "package") {
+      groupPackage(plan.packageExclusions, p.identity, p.pattern, "prompts");
+    } else {
+      plan.localPrompts[p.scope].push(p.pattern);
+    }
+  }
   return plan;
 }
 
@@ -464,14 +571,14 @@ function groupPackage(
   map: ModeApplyPlan["packageExclusions"],
   identity: string | undefined,
   pattern: string,
-  kind: "skills" | "extensions",
+  kind: "skills" | "extensions" | "prompts",
 ): void {
   if (!identity) {
     return; // 防御：包条目缺 identity 不可能（scan 恒填），跳过
   }
   let bucket = map.get(identity);
   if (!bucket) {
-    bucket = { skills: [], extensions: [] };
+    bucket = { skills: [], extensions: [], prompts: [] };
     map.set(identity, bucket);
   }
   bucket[kind].push(pattern);
@@ -480,13 +587,13 @@ function groupPackage(
 /**
  * 包条目数组应用过滤计划（单 settings 文件；纯函数）：
  * - 需要过滤的 identity：首次覆写前快照原条目进基线；新条目 = 原对象浅拷贝
- *   （保留 prompts/themes 等用户自定义键）+ source + 非空的 skills/extensions `!` 排除段；
+ *   （保留 themes 等用户自定义键）+ source + 非空的 skills/extensions/prompts `!` 排除段；
  * - 免过滤的 identity：基线有 → 还原基线（并出基线）；否则原样保留；
  * - 基线中已不在 packages 里的 identity 修剪。
  */
 export function planPackageEntries(
   packages: readonly unknown[],
-  exclusions: ReadonlyMap<string, { skills: string[]; extensions: string[] }>,
+  exclusions: ReadonlyMap<string, { skills: string[]; extensions: string[]; prompts: string[] }>,
   baseline: Readonly<Record<string, unknown>>,
   baseDir: string,
 ): { packages: unknown[]; baseline: Record<string, unknown> } {
@@ -505,7 +612,7 @@ export function planPackageEntries(
     }
     const identity = packageIdentity(source, baseDir);
     const ex = exclusions.get(identity);
-    const needed = !!ex && (ex.skills.length > 0 || ex.extensions.length > 0);
+    const needed = !!ex && (ex.skills.length > 0 || ex.extensions.length > 0 || ex.prompts.length > 0);
     if (!needed) {
       // 免过滤：优先还原基线（含基线中陈旧 identity 的隐式修剪）
       out.push(baseline[identity] !== undefined ? baseline[identity] : entry);
@@ -523,6 +630,11 @@ export function planPackageEntries(
       next.extensions = ex.extensions.map((p) => `!${p}`);
     } else {
       delete next.extensions;
+    }
+    if (ex.prompts.length > 0) {
+      next.prompts = ex.prompts.map((p) => `!${p}`);
+    } else {
+      delete next.prompts;
     }
     out.push(next);
   }

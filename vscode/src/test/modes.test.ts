@@ -24,7 +24,7 @@ function write(p: string, body: string): void {
   fs.writeFileSync(p, body, "utf8");
 }
 
-const EMPTY_SCAN: ModeInventory = { skills: [], extensions: [] };
+const EMPTY_SCAN: ModeInventory = { skills: [], extensions: [], prompts: [] };
 
 suite("modes 纯函数", function () {
   this.timeout(10000);
@@ -64,21 +64,21 @@ suite("modes 纯函数", function () {
       assert.strictEqual(state.active, "code");
       // 仅 code 合法：空名/缺名/非对象/字符串条目全部跳过
       assert.strictEqual(state.modes.length, 1);
-      assert.deepStrictEqual(state.modes[0], { name: "code", skills: ["a", "b"], extensions: ["x"] });
+      assert.deepStrictEqual(state.modes[0], { name: "code", skills: ["a", "b"], extensions: ["x"], prompts: [] });
     });
 
     test("write → read 往返 + 保留 pinel 节其余键 + packageBaseline 一并写入", () => {
       const settings: Record<string, unknown> = { pinel: { autoCommit: true, other: 1 }, theme: "dark" };
       writeModesState(settings, {
         active: "docs",
-        modes: [{ name: "docs", skills: ["local|global|a"], extensions: [] }],
+        modes: [{ name: "docs", skills: ["local|global|a"], extensions: [], prompts: [] }],
         packageBaseline: { "npm:x": "npm:x" },
       });
       assert.strictEqual((settings.pinel as Record<string, unknown>).autoCommit, true);
       assert.strictEqual(settings.theme, "dark");
       const back = readModesState(settings as never);
       assert.strictEqual(back.active, "docs");
-      assert.deepStrictEqual(back.modes, [{ name: "docs", skills: ["local|global|a"], extensions: [] }]);
+      assert.deepStrictEqual(back.modes, [{ name: "docs", skills: ["local|global|a"], extensions: [], prompts: [] }]);
       assert.deepStrictEqual(back.packageBaseline, { "npm:x": "npm:x" });
     });
 
@@ -160,6 +160,7 @@ suite("modes 纯函数", function () {
       assert.deepStrictEqual(await scanModeInventory(path.join(tmp, "no"), path.join(tmp, "no2"), undefined, []), {
         skills: [],
         extensions: [],
+        prompts: [],
       });
     });
   });
@@ -175,6 +176,7 @@ suite("modes 纯函数", function () {
         { id: "local|global|extensions/e.ts", pattern: "extensions/e.ts", name: "e", scope: "global" },
         { id: "pkg|npm:x|extensions/t.ts", pattern: "extensions/t.ts", name: "t", scope: "package", package: "x", identity: "npm:x" },
       ],
+      prompts: [],
     };
 
     test("Default（active=null）→ 全空", () => {
@@ -192,13 +194,14 @@ suite("modes 纯函数", function () {
             name: "m",
             skills: ["local|global|a"],
             extensions: ["pkg|npm:x|extensions/t.ts"],
+            prompts: [],
           },
         ],
       };
       const plan = modeApplyPlan(state, scan);
       assert.deepStrictEqual(plan.localSkills, { global: [], project: ["p"] });
       assert.deepStrictEqual(plan.localExtensions, { global: ["extensions/e.ts"], project: [] });
-      assert.deepStrictEqual(plan.packageExclusions.get("npm:x"), { skills: ["skills/s"], extensions: [] });
+      assert.deepStrictEqual(plan.packageExclusions.get("npm:x"), { skills: ["skills/s"], extensions: [], prompts: [] });
     });
 
     test("active 指向已删模式 → 全空（等同 Default）", () => {
@@ -209,9 +212,9 @@ suite("modes 纯函数", function () {
   });
 
   suite("planPackageEntries", () => {
-    const ex = new Map([["npm:x", { skills: ["skills/s"], extensions: [] }]]);
+    const ex = new Map([["npm:x", { skills: ["skills/s"], extensions: [], prompts: [] }]]);
 
-    test("首覆写快照基线；其余键保留；空类型省略键", () => {
+    test("首覆写快照基线；空类型省略键（含 prompts）", () => {
       const { packages, baseline } = planPackageEntries(
         ["npm:y", { source: "npm:x", prompts: ["prompts/r.md"] }],
         ex,
@@ -221,9 +224,8 @@ suite("modes 纯函数", function () {
       assert.deepStrictEqual(packages[0], "npm:y");
       assert.deepStrictEqual(packages[1], {
         source: "npm:x",
-        prompts: ["prompts/r.md"],
         skills: ["!skills/s"],
-      }); // extensions 空数组 → 省略键
+      }); // prompts/extensions 空数组 → 省略键（prompts 现也归模式管理）
       assert.deepStrictEqual(baseline, { "npm:x": { source: "npm:x", prompts: ["prompts/r.md"] } });
     });
 
@@ -269,6 +271,72 @@ suite("modes 纯函数", function () {
     });
     test("空排除 → 仅剩保留条目", () => {
       assert.deepStrictEqual(mergeSkillsEntries(["~/extra", "!old"], []), ["~/extra"]);
+    });
+  });
+
+  suite("prompts 支持", () => {
+    test("scanModeInventory 扫本地 + 包 prompt（本地非递归、包递归）", async () => {
+      const agentDir = path.join(tmp, "agent");
+      const home = path.join(tmp, "home");
+      // 本地 prompts（顶层 .md 非递归；嵌套 .md 跳过）
+      write(path.join(agentDir, "prompts", "local.md"), "---\ndescription: local desc\n---\n# x");
+      write(path.join(agentDir, "prompts", "nested", "skip.md"), "# skip"); // 非递归 → 不收
+      // 包 prompts（递归；已装根 = <agentDir>/npm/node_modules/<name>）
+      const pkgRoot = path.join(agentDir, "npm", "node_modules", "pi-pkg");
+      write(path.join(pkgRoot, "prompts", "c7-docs.md"), "---\ndescription: docs\n---\n# d");
+      write(path.join(pkgRoot, "prompts", "sub", "deep.md"), "# deep"); // 递归 → 收
+
+      const inv = await scanModeInventory(agentDir, home, undefined, [
+        { source: "npm:pi-pkg", scope: "global" },
+      ]);
+      const p = new Map(inv.prompts.map((x) => [x.id, x]));
+      assert.deepStrictEqual(p.get("local|global|prompts/local.md"), {
+        id: "local|global|prompts/local.md",
+        pattern: "prompts/local.md",
+        name: "local",
+        description: "local desc",
+        scope: "global",
+      });
+      assert.ok(![...p.keys()].some((k) => k.startsWith("local|global|prompts/nested")));
+      const pkg = p.get("pkg|npm:pi-pkg|prompts/c7-docs.md");
+      assert.ok(pkg);
+      assert.strictEqual(pkg.pattern, "prompts/c7-docs.md");
+      assert.strictEqual(pkg.package, "pi-pkg");
+      assert.strictEqual(pkg.identity, "npm:pi-pkg");
+      assert.ok(p.get("pkg|npm:pi-pkg|prompts/sub/deep.md"));
+    });
+
+    test("modeApplyPlan 计算 prompt 排除（本地 + 包）", () => {
+      const scan: ModeInventory = {
+        skills: [],
+        extensions: [],
+        prompts: [
+          { id: "local|global|prompts/a.md", pattern: "prompts/a.md", name: "a", scope: "global" },
+          { id: "pkg|i|prompts/c7-docs.md", pattern: "prompts/c7-docs.md", name: "c7-docs", scope: "package", package: "ctx7", identity: "i" },
+        ],
+      };
+      const plan = modeApplyPlan(
+        { active: "m", modes: [{ name: "m", skills: [], extensions: [], prompts: [] }] },
+        scan,
+      );
+      assert.deepStrictEqual(plan.localPrompts.global, ["prompts/a.md"]);
+      assert.deepStrictEqual(plan.packageExclusions.get("i")?.prompts, ["prompts/c7-docs.md"]);
+    });
+
+    test("planPackageEntries 写/删 prompts 键", () => {
+      const ex = new Map([["npm:ctx7", { skills: [], extensions: [], prompts: ["prompts/c7-docs.md"] }]]);
+      const { packages } = planPackageEntries([{ source: "npm:ctx7" }], ex, {}, "/base");
+      assert.deepStrictEqual(packages, [
+        { source: "npm:ctx7", prompts: ["!prompts/c7-docs.md"] },
+      ]);
+      // 无 prompt 排除 → 不出现 prompts 键（省略键 = 全量）
+      const { packages: p2 } = planPackageEntries([{ source: "npm:ctx7" }], new Map(), {}, "/base");
+      assert.deepStrictEqual(p2, [{ source: "npm:ctx7" }]);
+    });
+
+    test("readModesState 容缺 prompts 为 []", () => {
+      const state = readModesState({ pinel: { modes: { active: "m", modes: [{ name: "m", skills: ["s"], extensions: [] }] } } });
+      assert.deepStrictEqual(state.modes[0].prompts, []);
     });
   });
 });

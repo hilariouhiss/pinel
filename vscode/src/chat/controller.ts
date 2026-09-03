@@ -2260,7 +2260,7 @@ export class ChatController {
       this.notice("warning", `Mode "${trimmed}" already exists`);
       return;
     }
-    state.modes.push({ name: trimmed, skills: [], extensions: [] });
+    state.modes.push({ name: trimmed, skills: [], extensions: [], prompts: [] });
     await this.persistModesOrNotify(state);
     await this.fireModeState();
   }
