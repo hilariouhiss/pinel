@@ -98,6 +98,7 @@ import {
   type AgentMode,
   type ModeExtension,
   type ModeInventory,
+  type ModePrompt,
   type ModeSkill,
   type ModesState,
 } from "./modes";
@@ -111,6 +112,7 @@ export interface ModeStatePayload {
   modes: AgentMode[];
   skills: ModeSkill[];
   extensions: ModeExtension[];
+  prompts: ModePrompt[];
 }
 import {
   inputResponseFor,
@@ -2161,9 +2163,9 @@ export class ChatController {
   }
 
   /**
-   * 应用激活模式的排除段（v2：本地 skills/扩展 + 包 skills/扩展）：
+   * 应用激活模式的排除段（本地 skills/扩展/prompts + 包 skills/扩展/prompts）：
    * 1. 扫描全量清单 → modeApplyPlan 决策（Default = 全空）；
-   * 2. 全局/项目 settings 的 skills/extensions 数组写本地 `!` 排除段（非 `!` 条目保留）；
+   * 2. 全局/项目 settings 的 skills/extensions/prompts 数组写本地 `!` 排除段（非 `!` 条目保留）；
    * 3. 包条目按 identity 应用对象过滤（首覆写快照基线，免过滤还原），
    *    基线变更回写 pinel.modes（合并写，单文件原子替换）。
    */
@@ -2183,17 +2185,21 @@ export class ChatController {
       }
       const skillEx = plan.localSkills[scope];
       const extEx = plan.localExtensions[scope];
+      const promptEx = plan.localPrompts[scope];
       const settings = await readSettings(file);
       if (
         skillEx.length === 0 &&
         extEx.length === 0 &&
+        promptEx.length === 0 &&
         settings.skills === undefined &&
-        settings.extensions === undefined
+        settings.extensions === undefined &&
+        settings.prompts === undefined
       ) {
         continue;
       }
       settings.skills = mergeSkillsEntries(settings.skills, skillEx);
       settings.extensions = mergeSkillsEntries(settings.extensions, extEx);
+      settings.prompts = mergeSkillsEntries(settings.prompts, promptEx);
       await writeSettings(file, settings);
     }
     // 2) 包过滤：全局 + 项目 packages 数组顺序处理，基线贯通（同 identity 双条目共用快照）
@@ -2246,7 +2252,7 @@ export class ChatController {
   async getModeState(): Promise<ModeStatePayload> {
     const state = await this.readModesFromDisk();
     const inventory = await this.scanInventory();
-    return { active: state.active, modes: state.modes, skills: inventory.skills, extensions: inventory.extensions };
+    return { active: state.active, modes: state.modes, skills: inventory.skills, extensions: inventory.extensions, prompts: inventory.prompts };
   }
 
   /** 新建模式（空名静默忽略；重名 notice；不切换激活项）。 */
@@ -2289,7 +2295,7 @@ export class ChatController {
 
   /** 更新模式 skill 集（顺带剔除已卸载的 id）；改激活项 = 重算排除段 + notice 提示
    *  reload（不弹框：勾选是连续小步操作，弹框会刷屏；switchMode 才走确认弹窗）。 */
-  async updateModeSkills(name: string, skills: string[], extensions: string[] = []): Promise<void> {
+  async updateModeSkills(name: string, skills: string[], extensions: string[] = [], prompts: string[] = []): Promise<void> {
     const state = await this.readModesFromDisk();
     const mode = state.modes.find((m) => m.name === name);
     if (!mode) {
@@ -2298,8 +2304,10 @@ export class ChatController {
     const inventory = await this.scanInventory();
     const skillIds = new Set(inventory.skills.map((s) => s.id));
     const extIds = new Set(inventory.extensions.map((e) => e.id));
+    const promptIds = new Set(inventory.prompts.map((p) => p.id));
     mode.skills = skills.filter((s) => skillIds.has(s));
     mode.extensions = extensions.filter((e) => extIds.has(e));
+    mode.prompts = prompts.filter((p) => promptIds.has(p));
     await this.persistModesOrNotify(state);
     const activeEdit = state.active === name;
     if (activeEdit) {

@@ -244,12 +244,13 @@ interface WebviewDeleteModeMessage {
   name: string;
 }
 
-/** 更新模式资源集（skills + extensions；改激活项 = 重算排除段并 notice 提示 reload）。 */
+/** 更新模式资源集（skills + extensions + prompts；改激活项 = 重算排除段并 notice 提示 reload）。 */
 interface WebviewUpdateModeSkillsMessage {
   type: "updateModeSkills";
   name: string;
   skills: string[];
   extensions?: string[];
+  prompts?: string[];
 }
 
 /** 切换模式（null = Default；写盘后提示 reload）。 */
@@ -516,7 +517,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         void this.controller.deleteMode(msg.name);
         break;
       case "updateModeSkills":
-        void this.controller.updateModeSkills(msg.name, msg.skills, msg.extensions ?? []);
+        void this.controller.updateModeSkills(msg.name, msg.skills, msg.extensions ?? [], msg.prompts ?? []);
         break;
       case "switchMode":
         void this.controller.switchMode(msg.name);
