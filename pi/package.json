@@ -1,6 +1,6 @@
 {
   "name": "@hilariouhiss/pinel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pinel bridge plugin for Pi — prompt/MCP/workflow status push for the Pinel VS Code panel",
   "keywords": ["pi-package", "pinel", "vscode"],
   "license": "MIT",
