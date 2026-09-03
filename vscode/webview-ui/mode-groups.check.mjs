@@ -44,6 +44,18 @@ assert.deepStrictEqual(
   "identity 缺失回退 package 名",
 );
 
+// 第三参 prompts 归入同 identity 包组，排 skill/extension 之后
+const withPrompts = groupPackageResources(
+  [mk("pkg|z|skills/a", "package", "zeta", "z")],
+  [mk("pkg|z|exts/e1", "package", "zeta", "z")],
+  [mk("pkg|z|prompts/p.md", "package", "zeta", "z")],
+);
+assert.deepStrictEqual(
+  withPrompts[0].items.map((i) => `${i.kind}:${i.id}`),
+  ["skill:pkg|z|skills/a", "extension:pkg|z|exts/e1", "prompt:pkg|z|prompts/p.md"],
+  "prompt 归入同 identity 包组，排 skill/extension 之后",
+);
+
 // 主勾选三态
 const items = [{ id: "1" }, { id: "2" }];
 assert.strictEqual(groupCheckState(items, new Set()), "none", "全未选 = none");

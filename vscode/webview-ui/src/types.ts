@@ -216,11 +216,12 @@ export interface ExtensionUpdateEntry {
   latestVersion?: string;
 }
 
-/** 模式配置（宿主 AgentMode 镜像；skills/extensions = 资源 id 集）。 */
+/** 模式配置（宿主 AgentMode 镜像；skills/extensions/prompts = 资源 id 集）。 */
 export interface AgentMode {
   name: string;
   skills: string[];
   extensions: string[];
+  prompts: string[];
 }
 
 /** 扫描出的 skill（宿主 ModeSkill 镜像；id = 模式配置键，包资源带 package/identity）。 */
@@ -242,12 +243,23 @@ export interface ModeExtension {
   identity?: string;
 }
 
+/** 扫描出的 prompt（宿主 ModePrompt 镜像）。 */
+export interface ModePrompt {
+  id: string;
+  name: string;
+  description?: string;
+  scope: "global" | "project" | "package";
+  package?: string;
+  identity?: string;
+}
+
 /** 模式状态（宿主 modeState 消息/弹层数据源镜像）。 */
 export interface ModeState {
   active: string | null;
   modes: AgentMode[];
   skills: ModeSkill[];
   extensions: ModeExtension[];
+  prompts: ModePrompt[];
 }
 
 /** 模型默认配置（宿主 ModelDefaults 镜像）。 */

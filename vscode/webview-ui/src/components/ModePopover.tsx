@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { ModeExtension, ModeSkill, ModeState } from "../types";
-import { groupCheckState, groupPackageResources, type PackageGroup } from "../mode-groups";
+import type { ModeExtension, ModePrompt, ModeSkill, ModeState } from "../types";
+import { groupCheckState, groupPackageResources, type PackageGroup, type PackageGroupItem } from "../mode-groups";
 // SVG 图标原始文本（esbuild text loader 内联 lucide-static；stroke=currentColor 随容器 color 自适应主题）
 import deleteIcon from "lucide-static/icons/trash-2.svg";
 import chevronRightIcon from "lucide-static/icons/chevron-right.svg";
@@ -15,8 +15,9 @@ import xIcon from "lucide-static/icons/x.svg";
  *   单选切换（switchMode，宿主写盘后提示 reload），× 删除（Default 不可删）
  * - 选中模式编辑区：
  *   - Skills 区：仅本地 skill（global/project 徽标），逐个勾选
+ *   - Prompts 区：仅本地 prompt，逐个勾选
  *   - Extensions 区：包组（主勾选框 = 整包开关，展开后缩进展示该包的 skills
- *     与 extensions，无单项勾选）+ 本地扩展逐个勾选；标题行带全部展开/折叠按钮
+ *     与 extensions 与 prompts，无单项勾选）+ 本地扩展逐个勾选；标题行带全部展开/折叠按钮
  * - 底部新建行：输入 + Add
  * - 数据源：宿主 getModeState（打开时拉取；操作后宿主重发 modeState 刷新）
  * - 交互：Esc / 点击外部 / 标题栏关闭按钮关闭（Esc 在 window capture 阶段
@@ -30,7 +31,7 @@ interface Props {
   onSwitch: (name: string | null) => void;
   onCreate: (name: string) => void;
   onDelete: (name: string) => void;
-  onUpdateSkills: (name: string, skills: string[], extensions: string[]) => void;
+  onUpdateSkills: (name: string, skills: string[], extensions: string[], prompts: string[]) => void;
   onClose: () => void;
 }
 
@@ -87,44 +88,60 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
   // 编辑区清单：字母序；模式配置里已卸载的 id 不展示（保存时宿主顺带剔除）
   const skillList = state ? [...state.skills].sort((a, b) => a.name.localeCompare(b.name)) : [];
   const extList = state ? [...state.extensions].sort((a, b) => a.name.localeCompare(b.name)) : [];
-  // Skills 区 = 仅本地 skill；Extensions 区 = 包组（含包 skills）+ 本地扩展
+  const promptList = state ? [...state.prompts].sort((a, b) => a.name.localeCompare(b.name)) : [];
+  // Skills/Prompts 区 = 仅本地；Extensions 区 = 包组（含包 skills/extensions/prompts）+ 本地扩展
   const localSkills = skillList.filter((s) => s.scope !== "package");
   const localExts = extList.filter((e) => e.scope !== "package");
-  const pkgGroups = groupPackageResources(skillList, extList);
+  const localPrompts = promptList.filter((p) => p.scope !== "package");
+  const pkgGroups = groupPackageResources(skillList, extList, promptList);
   const editingSkills = new Set(editingMode?.skills ?? []);
   const editingExts = new Set(editingMode?.extensions ?? []);
+  const editingPrompts = new Set(editingMode?.prompts ?? []);
 
-  const toggle = (list: "skills" | "extensions", id: string) => {
+  const toggle = (list: "skills" | "extensions" | "prompts", id: string) => {
     if (!editingMode) {
       return;
     }
-    const current = list === "skills" ? editingMode.skills : editingMode.extensions;
-    const selected = list === "skills" ? editingSkills : editingExts;
+    const current =
+      list === "skills" ? editingMode.skills
+        : list === "extensions" ? editingMode.extensions
+        : editingMode.prompts;
+    const selected =
+      list === "skills" ? editingSkills
+        : list === "extensions" ? editingExts
+        : editingPrompts;
     const next = selected.has(id) ? current.filter((s) => s !== id) : [...current, id];
     onUpdateSkills(
       editingMode.name,
       list === "skills" ? next : editingMode.skills,
       list === "extensions" ? next : editingMode.extensions,
+      list === "prompts" ? next : editingMode.prompts,
     );
   };
 
-  /** 包组主勾选（整包开关）：全选 → 整组取消；否则 skills + extensions 一并勾上。 */
+  /** 包组主勾选（整包开关）：全选 → 整组取消；否则 skills + extensions + prompts 一并勾上。 */
   const toggleGroup = (group: PackageGroup) => {
     if (!editingMode) {
       return;
     }
     const skillIds = new Set(group.items.filter((i) => i.kind === "skill").map((i) => i.id));
     const extIds = new Set(group.items.filter((i) => i.kind === "extension").map((i) => i.id));
-    const allSelected = group.items.every((i) =>
-      i.kind === "skill" ? editingSkills.has(i.id) : editingExts.has(i.id),
-    );
+    const promptIds = new Set(group.items.filter((i) => i.kind === "prompt").map((i) => i.id));
+    const isSelected = (i: PackageGroupItem) =>
+      i.kind === "skill" ? editingSkills.has(i.id)
+        : i.kind === "extension" ? editingExts.has(i.id)
+        : editingPrompts.has(i.id);
+    const allSelected = group.items.every(isSelected);
     const nextSkills = allSelected
       ? editingMode.skills.filter((s) => !skillIds.has(s))
       : [...editingMode.skills, ...group.items.filter((i) => i.kind === "skill" && !editingSkills.has(i.id)).map((i) => i.id)];
     const nextExts = allSelected
       ? editingMode.extensions.filter((e) => !extIds.has(e))
       : [...editingMode.extensions, ...group.items.filter((i) => i.kind === "extension" && !editingExts.has(i.id)).map((i) => i.id)];
-    onUpdateSkills(editingMode.name, nextSkills, nextExts);
+    const nextPrompts = allSelected
+      ? editingMode.prompts.filter((p) => !promptIds.has(p))
+      : [...editingMode.prompts, ...group.items.filter((i) => i.kind === "prompt" && !editingPrompts.has(i.id)).map((i) => i.id)];
+    onUpdateSkills(editingMode.name, nextSkills, nextExts, nextPrompts);
   };
 
   const toggleCollapse = (key: string) => {
@@ -140,7 +157,7 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
   };
 
   /** 本地资源勾选行（skill 带 description 列；徽标 = scope）。 */
-  const renderLocalRow = (list: "skills" | "extensions", item: ModeSkill | ModeExtension, selected: Set<string>, showDesc: boolean) => (
+  const renderLocalRow = (list: "skills" | "extensions" | "prompts", item: ModeSkill | ModeExtension | ModePrompt, selected: Set<string>, showDesc: boolean) => (
     <label key={item.id} className="mode-skill-row">
       <input
         type="checkbox"
@@ -239,7 +256,7 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
                   {m.name}
                 </span>
                 <span className="mode-row-desc">
-                  {plural(m.skills.length, "skill")} · {plural(m.extensions.length, "extension")}
+                  {plural(m.skills.length, "skill")} · {plural(m.extensions.length, "extension")} · {plural(m.prompts.length, "prompt")}
                 </span>
                 <button
                   className="extension-item-delete"
@@ -264,6 +281,14 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
                   <div className="extension-popover-empty">No local skills found</div>
                 ) : (
                   localSkills.map((s) => renderLocalRow("skills", s, editingSkills, true))
+                )}
+              </div>
+              <div className="extension-popover-section">
+                <div className="extension-popover-title">Prompts in “{editingMode.name}”</div>
+                {localPrompts.length === 0 ? (
+                  <div className="extension-popover-empty">No local prompts found</div>
+                ) : (
+                  localPrompts.map((p) => renderLocalRow("prompts", p, editingPrompts, true))
                 )}
               </div>
               <div className="extension-popover-section">
@@ -293,7 +318,7 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
                     {pkgGroups.map((group) => {
                       const groupState = groupCheckState(
                         group.items,
-                        new Set([...editingSkills, ...editingExts]),
+                        new Set([...editingSkills, ...editingExts, ...editingPrompts]),
                       );
                       const folded = collapsed.has(group.key);
                       return (
@@ -332,7 +357,7 @@ export function ModePopover({ anchor, state, onSwitch, onCreate, onDelete, onUpd
                             group.items.map((item) => (
                               <div key={`${item.kind}:${item.id}`} className="mode-skill-row mode-group-item">
                                 <span className="extension-item-badge mode-group-kind" title={item.kind}>
-                                  {item.kind === "skill" ? "skill" : "ext"}
+                                  {item.kind === "skill" ? "skill" : item.kind === "extension" ? "ext" : "prompt"}
                                 </span>
                                 <span className="mode-skill-name" title={`${group.label} · ${item.id}`}>
                                   {item.name}

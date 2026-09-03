@@ -13,11 +13,11 @@ export interface PackageResource {
   identity?: string;
 }
 
-/** 包组内的单条资源（skill 在前、extension 在后，各保持传入序）。 */
+/** 包组内的单条资源（skill 在前、extension 在后、prompt 最后，各保持传入序）。 */
 export interface PackageGroupItem {
   id: string;
   name: string;
-  kind: "skill" | "extension";
+  kind: "skill" | "extension" | "prompt";
 }
 
 export interface PackageGroup {
@@ -28,10 +28,11 @@ export interface PackageGroup {
   items: PackageGroupItem[];
 }
 
-/** 包 skills + 包 extensions → 按包归并分组（组按 label 字母序；非包资源跳过）。 */
+/** 包 skills + 包 extensions + 包 prompts → 按包归并分组（组按 label 字母序；非包资源跳过）。 */
 export function groupPackageResources(
   skills: readonly PackageResource[],
   extensions: readonly PackageResource[],
+  prompts: readonly PackageResource[] = [],
 ): PackageGroup[] {
   const map = new Map<string, PackageGroup>();
   const push = (item: PackageResource, kind: PackageGroupItem["kind"]) => {
@@ -51,6 +52,9 @@ export function groupPackageResources(
   }
   for (const e of extensions) {
     push(e, "extension");
+  }
+  for (const p of prompts) {
+    push(p, "prompt");
   }
   return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
