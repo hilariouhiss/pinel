@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import type { ExtensionItem, PinelMcp, PinelMcpServer, PinelPrompt, PinelPromptFile, SlashCommand } from "../types";
+import type { ExtensionItem, ModeState, PinelMcp, PinelMcpServer, PinelPrompt, PinelPromptFile, SlashCommand } from "../types";
+import { modeResourceView } from "../mode-counts";
 
 interface Props {
   /** 斜杠命令列表（宿主 get_commands 镜像；prompts/skills chip 计数与弹层明细数据源）。 */
@@ -17,6 +18,8 @@ interface Props {
   extensionsOpen: boolean;
   /** Extensions chip 元素引用（App 持有，ExtensionPopover 开关信号 + 焦点还原锚）。 */
   extensionChipRef: RefObject<HTMLButtonElement | null>;
+  /** 模式状态（宿主 modeState 消息；undefined = 未加载 → 计数回退 live/磁盘源）。 */
+  modeState?: ModeState | null;
   /** 当前模式名（宿主 pinel.modes.active 镜像；undefined = Default）。 */
   modeName?: string;
   /** 模式弹层开启态（chip 高亮 + aria-expanded）。 */
@@ -66,6 +69,7 @@ export function ContextBar({
   onOpenExtensions,
   extensionsOpen,
   extensionChipRef,
+  modeState,
   modeName,
   modesOpen = false,
   onOpenModes,
@@ -75,6 +79,13 @@ export function ContextBar({
   const skills = commands.filter((c) => c.source === "skill");
   // 扩展计数只算启用项（对齐 pi tui [Extensions] 段只列已加载；禁用项在管理弹层中灰显）
   const enabledExtensions = extensions.filter((e) => e.enabled);
+  // 模式感知计数：激活自定义模式时 Skills/Extensions chip 一律改用模式勾选集
+  // （Default/未加载 → modeView null → 回退 live commands / 磁盘启用项，零回归）
+  const modeView = modeResourceView(modeState ?? null);
+  const visibleSkills = modeView ? modeView.skills : skills;
+  const skillCount = visibleSkills.length;
+  const extensionCount = modeView ? modeView.extensions.length : enabledExtensions.length;
+  const extensionNames = modeView ? modeView.extensions : enabledExtensions.map((e) => e.name);
   const [open, setOpen] = useState<CtxKind | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const contextChipRef = useRef<HTMLButtonElement>(null);
@@ -99,7 +110,7 @@ export function ContextBar({
     open === "context"
       ? contextChipRef.current
       : open === "skill"
-        ? skills.length > 0
+        ? skillCount > 0
           ? skillChipRef.current
           : null
         : open === "prompt"
@@ -380,7 +391,7 @@ export function ContextBar({
         );
       });
     }
-    const list = open === "prompt" ? prompts : skills;
+    const list = open === "prompt" ? prompts : visibleSkills;
     return list.map((c) => (
       <div key={c.name} className="ctx-popover-row" title={c.description}>
         <span className="ctx-popover-name">/{c.name}</span>
@@ -445,7 +456,7 @@ export function ContextBar({
           pinelPrompt ? `Context ${contextCount}` : "Context –",
           contextHover,
         )}
-        {skills.length > 0 && renderChip("skill", `Skills ${skills.length}`, skills.map((s) => s.name).join(", "))}
+        {skillCount > 0 && renderChip("skill", `Skills ${skillCount}`, visibleSkills.map((s) => s.name).join(", "))}
         {prompts.length > 0 && renderChip("prompt", `Prompts ${prompts.length}`, prompts.map((p) => `/${p.name}`).join(", "))}
         {/* Extensions chip 常驻（管理入口不可因零扩展而消失）：点击走 App 侧管理弹层；
             先收内部弹层防双浮层 */}
@@ -462,10 +473,10 @@ export function ContextBar({
               onOpenExtensions();
             }}
           >
-            {`Extensions ${enabledExtensions.length}`}
+            {`Extensions ${extensionCount}`}
           </button>
           <span className="ctx-hover-tip" role="tooltip">
-            {enabledExtensions.map((e) => e.name).join(", ") || "无已启用扩展（点击打开管理弹层）"}
+            {extensionNames.join(", ") || "无已启用扩展（点击打开管理弹层）"}
           </span>
         </span>
         {mcpVisible &&

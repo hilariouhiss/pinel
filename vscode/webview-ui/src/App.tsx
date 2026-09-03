@@ -881,6 +881,7 @@ export default function App() {
           onOpenExtensions={openExtensions}
           extensionsOpen={popover === "ext"}
           extensionChipRef={extensionChipRef}
+          modeState={modeState}
           modeName={status.modeName}
           modesOpen={popover === "mode"}
           onOpenModes={openModes}
