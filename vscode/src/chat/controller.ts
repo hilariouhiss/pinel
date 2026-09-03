@@ -340,6 +340,8 @@ export class ChatController {
   private configWatcher: vscode.Disposable;
   /** 保存文件监听（脏标记随保存实时更新；dispose 释放）。 */
   private saveWatcher: vscode.Disposable;
+  /** .git 状态文件监听（commit/stage/checkout/fetch 不触发 onDidSaveTextDocument；dispose 释放）。 */
+  private gitWatcher: vscode.Disposable | null = null;
   /** 是否已触发过自动重启自愈（手动 restart 重置；置位后初始同步短路重试）。 */
   private modelHealRestarted = false;
   /** 最近一次初始状态同步中 get_state 的尝试次数（测试钩子）。 */
@@ -537,6 +539,7 @@ export class ChatController {
       return null;
     }
     this.workspaceRoot = root.uri.fsPath;
+    this.setupGitWatcher();
     this.setProcessState("starting");
 
     const command = this.resolvePiCommand();
@@ -731,6 +734,7 @@ export class ChatController {
     this.workspaceWatcher.dispose();
     this.configWatcher.dispose();
     this.saveWatcher.dispose();
+    this.gitWatcher?.dispose();
     if (this.gitRefreshTimer) {
       clearTimeout(this.gitRefreshTimer);
       this.gitRefreshTimer = null;
@@ -2408,6 +2412,29 @@ export class ChatController {
   }
 
   /** 保存文件后去抖刷新 git 脏标记（合并短时间内的连续保存）。 */
+  /** 监听 .git 状态文件：commit/stage/checkout/fetch/push 会改写这些文件但不触发
+   *  onDidSaveTextDocument——监听后去抖刷新，消除提交后信息条仍显示陈旧 [!]（tracked changes）。
+   *  root 变化（切换工作区/重启）时重建；无 workspace 或非仓库时 watcher 永不触发（无害）。 */
+  private setupGitWatcher(): void {
+    if (!this.workspaceRoot) {
+      return;
+    }
+    if (this.gitWatcher) {
+      this.gitWatcher.dispose();
+    }
+    const root = this.workspaceRoot;
+    const patterns = [".git/HEAD", ".git/index", ".git/packed-refs", ".git/refs/**"];
+    const watchers = patterns.map((p) =>
+      vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, p)),
+    );
+    for (const w of watchers) {
+      w.onDidChange(() => this.scheduleGitRefresh());
+      w.onDidCreate(() => this.scheduleGitRefresh());
+      w.onDidDelete(() => this.scheduleGitRefresh());
+    }
+    this.gitWatcher = vscode.Disposable.from(...watchers);
+  }
+
   private scheduleGitRefresh(): void {
     if (this.gitRefreshTimer) {
       clearTimeout(this.gitRefreshTimer);
